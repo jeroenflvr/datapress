@@ -1,11 +1,10 @@
-mod db;
 mod errors;
 mod handlers;
 mod models;
-mod repository;
-mod schema;
+mod store;
 
 use actix_web::{middleware, web, App, HttpServer};
+use store::Store;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -14,16 +13,17 @@ async fn main() -> std::io::Result<()> {
     )
     .init();
 
-    let conn = db::load_into_memory("data/us_accidents")
-        .expect("Failed to load DB into memory");
-    let db = db::init_pool(conn)
-        .expect("Failed to create connection pool");
+    let store = Store::load("data/accidents.parquet")
+        .expect("failed to load store");
+
+    let state = web::Data::new(store);
 
     log::info!("Listening on http://0.0.0.0:8080");
 
     HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(db.clone()))
+            .app_data(state.clone())
+            .wrap(middleware::Compress::default())
             .wrap(middleware::Logger::default())
             .service(handlers::health)
             .service(handlers::get_accidents)

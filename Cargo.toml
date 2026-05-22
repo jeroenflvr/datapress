@@ -4,13 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-actix-web = "4.12.1"
-duckdb = { version = "1.10503.0", features = ["bundled"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-tokio = { version = "1.52.2", features = ["full"] }
-env_logger = "0.11.9"
-log = "0.4.28"
+actix-web = { version = "4.12.1", features = ["compress-gzip", "compress-brotli", "compress-zstd"] }
+tokio   = { version = "1.52.2", features = ["full"] }
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+env_logger = "0.11"
+log        = "0.4"
+arrow      = "58"
+parquet    = { version = "58", features = ["arrow"] }
+itoa = "1"
+ryu  = "1"
 
 [profile.release]
 opt-level = 3
