@@ -12,8 +12,10 @@ env_logger = "0.11"
 log        = "0.4"
 arrow      = "58"
 parquet    = { version = "58", features = ["arrow"] }
-itoa = "1"
-ryu  = "1"
+datafusion = "53.1.0"
+itoa  = "1"
+ryu   = "1"
+rayon = "1"
 
 [profile.release]
 opt-level = 3

@@ -33,7 +33,7 @@ pub async fn query_accidents(
     let page_size = body.page_size.clamp(1, 1000);
     let req       = body.into_inner();
 
-    match state.query(&req) {
+    match state.query(&req).await {
         Ok(arr) => json_page(arr, page, page_size),
         Err(e)  => e.error_response(),
     }

@@ -3,7 +3,7 @@ mod handlers;
 mod models;
 mod store;
 
-use actix_web::{middleware, web, App, HttpServer};
+use actix_web::{web, App, HttpServer};
 use store::Store;
 
 #[actix_web::main]
@@ -23,8 +23,8 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
-            .wrap(middleware::Compress::default())
-            .wrap(middleware::Logger::default())
+            // .wrap(middleware::Compress::default())
+            // .wrap(middleware::Logger::default())
             .service(handlers::health)
             .service(handlers::get_accidents)
             .service(handlers::query_accidents)

@@ -29,6 +29,10 @@ impl From<parquet::errors::ParquetError> for AppError {
     fn from(e: parquet::errors::ParquetError) -> Self { AppError::Internal(e.to_string()) }
 }
 
+impl From<datafusion::error::DataFusionError> for AppError {
+    fn from(e: datafusion::error::DataFusionError) -> Self { AppError::Internal(e.to_string()) }
+}
+
 impl ResponseError for AppError {
     fn status_code(&self) -> StatusCode {
         match self {

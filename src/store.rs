@@ -1,16 +1,20 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use arrow::array::{
     Array, ArrayRef, BooleanArray, Float32Array, Float64Array,
     Int8Array, Int16Array, Int32Array, Int64Array,
-    LargeStringArray, RecordBatch, Scalar, StringArray,
+    LargeStringArray, RecordBatch, Scalar, StringArray, UInt32Array,
 };
 use arrow::compute;
 use arrow::compute::kernels::cmp::{eq, gt, gt_eq, lt, lt_eq, neq};
 use arrow::datatypes::{DataType, Field, Schema};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use serde_json::Value as JsonValue;
+
+use datafusion::datasource::MemTable;
+use datafusion::prelude::SessionContext;
 
 use crate::errors::AppError;
 use crate::models::{Predicate, QueryRequest};
@@ -19,10 +23,17 @@ use crate::models::{Predicate, QueryRequest};
 // Store – all rows in one RecordBatch; filters via Arrow SIMD compute kernels
 // ---------------------------------------------------------------------------
 
+/// Pre-built equality index: lowercase col name → string-encoded value → sorted row ids.
+type EqIndex = HashMap<String, HashMap<String, Vec<u32>>>;
+
 pub struct Store {
     data:    RecordBatch,
     /// Lowercase column name → column index.
     col_idx: HashMap<String, usize>,
+    /// Equality index for O(1) eq/in lookup in get_page().
+    index:   EqIndex,
+    /// DataFusion context with the data registered as table "accidents".
+    ctx:     SessionContext,
 }
 
 impl Store {
@@ -51,8 +62,32 @@ impl Store {
             .map(|(i, f)| (f.name().to_lowercase(), i))
             .collect();
 
-        log::info!("loaded {} rows, {} cols", data.num_rows(), schema.fields().len());
-        Ok(Self { data, col_idx })
+        let mem_mb: usize = data.columns().iter()
+            .map(|c| c.get_buffer_memory_size())
+            .sum::<usize>()
+            / 1_048_576;
+        let index = build_eq_index(&data);
+
+        // Register partitioned in-memory table for DataFusion predicate queries.
+        let n_parts   = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+        let part_size = (data.num_rows() + n_parts - 1) / n_parts;
+        let parts: Vec<Vec<RecordBatch>> = (0..n_parts)
+            .map(|i| {
+                let start = i * part_size;
+                let len   = part_size.min(data.num_rows() - start);
+                vec![data.slice(start, len)]
+            })
+            .filter(|v| v[0].num_rows() > 0)
+            .collect();
+        let ctx = SessionContext::new();
+        let provider = MemTable::try_new(data.schema(), parts)?;
+        ctx.register_table("accidents", Arc::new(provider))?;
+
+        log::info!(
+            "loaded {} rows, {} cols, {}MB resident, {} indexed cols, {} df partitions",
+            data.num_rows(), schema.fields().len(), mem_mb, index.len(), n_parts
+        );
+        Ok(Self { data, col_idx, index, ctx })
     }
 
     // -----------------------------------------------------------------------
@@ -75,20 +110,21 @@ impl Store {
             return self.slice_json(offset, limit);
         }
 
-        let mut mask: Option<BooleanArray> = None;
-        if let Some(v) = state {
-            let m = eq_str(self.data.column(self.col_req("state")?), v)?;
-            mask = Some(and_opt(mask, m)?);
-        }
-        if let Some(v) = severity {
-            let m = eq_int(self.data.column(self.col_req("severity")?), v)?;
-            mask = Some(and_opt(mask, m)?);
-        }
-        if let Some(v) = city {
-            let m = eq_str(self.data.column(self.col_req("city")?), v)?;
-            mask = Some(and_opt(mask, m)?);
+        // Index fast path: O(1) lookup + O(page_size) take.
+        let mut preds: Vec<Predicate> = Vec::new();
+        if let Some(v) = state    { preds.push(Predicate { col: "state".into(),    op: "eq".into(), val: Some(JsonValue::String(v.into())) }); }
+        if let Some(v) = severity { preds.push(Predicate { col: "severity".into(), op: "eq".into(), val: Some(JsonValue::Number(serde_json::Number::from(v))) }); }
+        if let Some(v) = city     { preds.push(Predicate { col: "city".into(),     op: "eq".into(), val: Some(JsonValue::String(v.into())) }); }
+
+        if let Some(rows) = self.try_index(&preds) {
+            return serialize(&self.take_page(&rows, offset, limit)?);
         }
 
+        // Fallback: full SIMD scan.
+        let mut mask: Option<BooleanArray> = None;
+        for pred in &preds {
+            mask = Some(and_opt(mask, self.eval_pred(pred)?)?);
+        }
         let filtered = compute::filter_record_batch(&self.data, &mask.unwrap())?;
         let start = offset.min(filtered.num_rows());
         let len   = limit.min(filtered.num_rows() - start);
@@ -99,28 +135,29 @@ impl Store {
     // POST /api/accidents/query – arbitrary predicates + column projection
     // -----------------------------------------------------------------------
 
-    pub fn query(&self, req: &QueryRequest) -> Result<String, AppError> {
+    pub async fn query(&self, req: &QueryRequest) -> Result<String, AppError> {
         let page      = req.page.max(1);
         let page_size = req.page_size.clamp(1, 1000);
         let offset    = ((page - 1) * page_size) as usize;
         let limit     = page_size as usize;
 
-        let batch = if req.predicates.is_empty() {
+        // No predicates → O(1) raw Arrow slice, no engine overhead.
+        if req.predicates.is_empty() {
             let start = offset.min(self.data.num_rows());
             let len   = limit.min(self.data.num_rows() - start);
-            self.data.slice(start, len)
-        } else {
-            let mut mask: Option<BooleanArray> = None;
-            for pred in &req.predicates {
-                mask = Some(and_opt(mask, self.eval_pred(pred)?)?);
-            }
-            let filtered = compute::filter_record_batch(&self.data, &mask.unwrap())?;
-            let start = offset.min(filtered.num_rows());
-            let len   = limit.min(filtered.num_rows() - start);
-            filtered.slice(start, len)
-        };
+            return serialize(&self.project(self.data.slice(start, len), &req.columns)?);
+        }
 
-        serialize(&self.project(batch, &req.columns)?)
+        // Predicates → DataFusion SQL: multi-threaded vectorised execution
+        // handles all operators (eq, gte, like, ilike, in, …) correctly.
+        let sql     = build_query_sql(req)?;
+        let df      = self.ctx.sql(&sql).await?;
+        let batches = df.collect().await?;
+        if batches.is_empty() || batches.iter().all(|b| b.num_rows() == 0) {
+            return Ok("[]".to_string());
+        }
+        let batch = compute::concat_batches(&batches[0].schema(), batches.iter())?;
+        serialize(&batch)
     }
 
     // -----------------------------------------------------------------------
@@ -188,6 +225,225 @@ impl Store {
         };
         cmp_scalar(col, op, val)
     }
+
+    // -----------------------------------------------------------------------
+    // Index helpers
+    // -----------------------------------------------------------------------
+
+    /// Gather `limit` rows starting at `offset` from a pre-computed index row list.
+    /// O(page_size) — far cheaper than filter_record_batch on the full dataset.
+    fn take_page(&self, rows: &[u32], offset: usize, limit: usize) -> Result<RecordBatch, AppError> {
+        let start = offset.min(rows.len());
+        let len   = limit.min(rows.len() - start);
+        let idx   = UInt32Array::from(rows[start..start + len].to_vec());
+        let cols: Vec<ArrayRef> = self.data.columns()
+            .iter()
+            .map(|c| arrow::compute::take(c.as_ref(), &idx, None::<arrow::compute::TakeOptions>)
+                     .map_err(AppError::from))
+            .collect::<Result<_, _>>()?;
+        RecordBatch::try_new(self.data.schema(), cols).map_err(AppError::from)
+    }
+
+    /// Try to resolve `predicates` entirely from the pre-built equality index.
+    /// Returns `None` if any predicate references a non-indexed column or uses
+    /// an operator other than `eq` / `in` — caller falls back to the SIMD scan.
+    fn try_index(&self, predicates: &[Predicate]) -> Option<Vec<u32>> {
+        if predicates.is_empty() { return None; }
+
+        let mut result: Option<Vec<u32>> = None;
+        for pred in predicates {
+            let col_lower = pred.col.to_lowercase();
+            let col_map   = self.index.get(&col_lower)?; // not indexed → None
+
+            let rows: Vec<u32> = match pred.op.as_str() {
+                "eq" => {
+                    let key = json_index_key(pred.val.as_ref()?)?;
+                    col_map.get(&key).cloned().unwrap_or_default()
+                }
+                "in" => {
+                    let items = pred.val.as_ref()?.as_array()?;
+                    let mut merged: Vec<u32> = Vec::new();
+                    for item in items {
+                        if let Some(r) = col_map.get(&json_index_key(item)?) {
+                            merged = union_sorted(&merged, r);
+                        }
+                    }
+                    merged
+                }
+                _ => return None, // unsupported op → use SIMD scan
+            };
+
+            result = Some(match result {
+                None    => rows,
+                Some(r) => intersect_sorted(&r, &rows),
+            });
+        }
+
+        result
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SQL builder – converts QueryRequest predicates to a DataFusion SQL string
+// ---------------------------------------------------------------------------
+
+fn build_query_sql(req: &QueryRequest) -> Result<String, AppError> {
+    let cols = if req.columns.is_empty() {
+        "*".to_string()
+    } else {
+        req.columns.iter()
+            .map(|c| format!("\"{}\"", c.replace('"', "\"\"")))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    let page_size = req.page_size.clamp(1, 1000);
+    let offset    = (req.page.max(1) - 1) * page_size;
+
+    let clauses: Vec<String> = req.predicates.iter()
+        .map(pred_to_sql)
+        .collect::<Result<_, _>>()?;
+
+    Ok(format!(
+        "SELECT {cols} FROM accidents WHERE {} LIMIT {page_size} OFFSET {offset}",
+        clauses.join(" AND ")
+    ))
+}
+
+fn pred_to_sql(pred: &Predicate) -> Result<String, AppError> {
+    // Quote the column identifier to allow special characters (parens, spaces …).
+    let col = format!("\"{}\"", pred.col.replace('"', "\"\""));
+
+    match pred.op.as_str() {
+        "is_null"     => return Ok(format!("{col} IS NULL")),
+        "is_not_null" => return Ok(format!("{col} IS NOT NULL")),
+        _ => {}
+    }
+
+    let val = pred.val.as_ref()
+        .ok_or_else(|| AppError::InvalidValue(format!("'{}' requires a value", pred.op)))?;
+
+    if pred.op == "in" {
+        let items = val.as_array()
+            .filter(|a| !a.is_empty())
+            .ok_or_else(|| AppError::InvalidValue("'in' needs a non-empty array".into()))?;
+        let lits: Vec<String> = items.iter()
+            .map(json_to_sql_lit)
+            .collect::<Result<_, _>>()?;
+        return Ok(format!("{col} IN ({})", lits.join(", ")));
+    }
+
+    let sql_op = match pred.op.as_str() {
+        "eq"    => "=",
+        "neq"   => "!=",
+        "gt"    => ">",
+        "gte"   => ">=",
+        "lt"    => "<",
+        "lte"   => "<=",
+        "like"  => "LIKE",
+        "ilike" => "ILIKE",
+        other   => return Err(AppError::UnknownOperator(other.into())),
+    };
+
+    Ok(format!("{col} {sql_op} {}", json_to_sql_lit(val)?))
+}
+
+fn json_to_sql_lit(val: &JsonValue) -> Result<String, AppError> {
+    match val {
+        JsonValue::String(s) => Ok(format!("'{}'", s.replace('\'', "''"))),
+        JsonValue::Number(n) => Ok(n.to_string()),
+        JsonValue::Bool(b)   => Ok(b.to_string()),
+        JsonValue::Null      => Ok("NULL".to_string()),
+        _ => Err(AppError::InvalidValue("unsupported literal type in predicate".into())),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Equality index – built once at startup, queried on every predicate request
+// ---------------------------------------------------------------------------
+
+/// Encode a JSON scalar as the string key used in the equality index.
+fn json_index_key(val: &JsonValue) -> Option<String> {
+    match val {
+        JsonValue::String(s) => Some(s.clone()),
+        JsonValue::Number(n) => Some(n.to_string()),
+        JsonValue::Bool(b)   => Some(b.to_string()),
+        _ => None,
+    }
+}
+
+/// Merge-intersect two sorted `u32` slices.
+fn intersect_sorted(a: &[u32], b: &[u32]) -> Vec<u32> {
+    let mut out = Vec::new();
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() && j < b.len() {
+        match a[i].cmp(&b[j]) {
+            Ordering::Equal   => { out.push(a[i]); i += 1; j += 1; }
+            Ordering::Less    => i += 1,
+            Ordering::Greater => j += 1,
+        }
+    }
+    out
+}
+
+/// Merge-union two sorted `u32` slices (deduplicating equal values).
+fn union_sorted(a: &[u32], b: &[u32]) -> Vec<u32> {
+    let mut out = Vec::with_capacity(a.len() + b.len());
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() && j < b.len() {
+        match a[i].cmp(&b[j]) {
+            Ordering::Less    => { out.push(a[i]); i += 1; }
+            Ordering::Greater => { out.push(b[j]); j += 1; }
+            Ordering::Equal   => { out.push(a[i]); i += 1; j += 1; }
+        }
+    }
+    out.extend_from_slice(&a[i..]);
+    out.extend_from_slice(&b[j..]);
+    out
+}
+
+/// Build an equality index in parallel (one rayon task per column).
+/// Columns with cardinality > MAX_CARD are skipped (floats, free-text, IDs).
+fn build_eq_index(data: &RecordBatch) -> EqIndex {
+    use rayon::prelude::*;
+    const MAX_CARD: usize = 100_000;
+    let n = data.num_rows();
+
+    data.schema().fields().par_iter().enumerate()
+        .filter_map(|(ci, field)| {
+            let col       = data.column(ci);
+            let col_lower = field.name().to_lowercase();
+            let mut map: HashMap<String, Vec<u32>> = HashMap::new();
+
+            macro_rules! index_col {
+                ($arr_ty:ty) => {{
+                    let arr = col.as_any().downcast_ref::<$arr_ty>()?;
+                    for row in 0..n {
+                        if arr.is_null(row) { continue; }
+                        let key = arr.value(row).to_string();
+                        if let Some(v) = map.get_mut(&key) {
+                            v.push(row as u32);
+                        } else {
+                            if map.len() >= MAX_CARD { return None; }
+                            map.insert(key, vec![row as u32]);
+                        }
+                    }
+                }};
+            }
+
+            match field.data_type() {
+                DataType::Utf8    => index_col!(StringArray),
+                DataType::Boolean => index_col!(BooleanArray),
+                DataType::Int8    => index_col!(Int8Array),
+                DataType::Int16   => index_col!(Int16Array),
+                DataType::Int32   => index_col!(Int32Array),
+                DataType::Int64   => index_col!(Int64Array),
+                _ => return None,
+            }
+
+            Some((col_lower, map))
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
