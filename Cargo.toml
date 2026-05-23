@@ -1,18 +1,52 @@
 [package]
-name = "fast-api"
+name    = "fast-api"
 version = "0.1.0"
 edition = "2024"
 
+# ---------------------------------------------------------------------------
+# Features select the backend. Each binary requires its own feature, so a
+# `cargo build --bin fast-api-duckdb` never compiles DataFusion (and vice
+# versa) — keeping build times and binary size minimal per backend.
+# ---------------------------------------------------------------------------
+[features]
+default    = []
+duckdb     = ["dep:duckdb"]
+datafusion = ["dep:arrow", "dep:parquet", "dep:datafusion", "dep:rayon", "dep:itoa", "dep:ryu"]
+
+# ---------------------------------------------------------------------------
+# Always-on dependencies (shared HTTP layer, serde, logging).
+# ---------------------------------------------------------------------------
 [dependencies]
-actix-web = "4.12.1"
-duckdb = { version = "1.10503.0", features = ["bundled"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-tokio = { version = "1.52.2", features = ["full"] }
-env_logger = "0.11.9"
-log = "0.4.28"
+actix-web  = { version = "4.12.1", features = ["compress-gzip", "compress-brotli", "compress-zstd"] }
+tokio      = { version = "1.52.2", features = ["full"] }
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+env_logger = "0.11"
+log        = "0.4"
+
+# Backend-specific, all optional.
+duckdb     = { version = "1.10503.0", features = ["bundled"], optional = true }
+arrow      = { version = "58", optional = true }
+parquet    = { version = "58", features = ["arrow"], optional = true }
+datafusion = { version = "53", optional = true }
+rayon      = { version = "1", optional = true }
+itoa       = { version = "1", optional = true }
+ryu        = { version = "1", optional = true }
+
+# ---------------------------------------------------------------------------
+# Binaries
+# ---------------------------------------------------------------------------
+[[bin]]
+name              = "fast-api-duckdb"
+path              = "src/bin/duckdb.rs"
+required-features = ["duckdb"]
+
+[[bin]]
+name              = "fast-api-datafusion"
+path              = "src/bin/datafusion.rs"
+required-features = ["datafusion"]
 
 [profile.release]
-opt-level = 3
-lto = true
+opt-level     = 3
+lto           = true
 codegen-units = 1

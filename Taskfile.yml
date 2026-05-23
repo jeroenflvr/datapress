@@ -1,0 +1,82 @@
+version: '3'
+
+# ---------------------------------------------------------------------------
+# Build & run two HTTP servers backed by different query engines:
+#   - fast-api-duckdb       : DuckDB in-memory (main branch original)
+#   - fast-api-datafusion   : Arrow + DataFusion (feat/noduck)
+#
+# Usage:
+#   task build:duckdb        # build only the DuckDB binary
+#   task build:datafusion    # build only the DataFusion binary
+#   task build               # build both
+#   task run:duckdb          # build + run DuckDB binary
+#   task run:datafusion      # build + run DataFusion binary
+#   task check               # cargo check both
+#   task clean
+# ---------------------------------------------------------------------------
+
+vars:
+  RELEASE: '--release'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  # -------------------------------------------------------------------------
+  # Build
+  # -------------------------------------------------------------------------
+  build:duckdb:
+    desc: Build the DuckDB-backed binary (release)
+    cmds:
+      - cargo build {{.RELEASE}} --bin fast-api-duckdb --features duckdb
+
+  build:datafusion:
+    desc: Build the Arrow + DataFusion-backed binary (release)
+    cmds:
+      - cargo build {{.RELEASE}} --bin fast-api-datafusion --features datafusion
+
+  build:
+    desc: Build both binaries
+    deps: [build:duckdb, build:datafusion]
+
+  # -------------------------------------------------------------------------
+  # Run
+  # -------------------------------------------------------------------------
+  run:duckdb:
+    desc: Run the DuckDB binary (release)
+    deps: [build:duckdb]
+    cmds:
+      - RUST_LOG=info ./target/release/fast-api-duckdb
+
+  run:datafusion:
+    desc: Run the DataFusion binary (release)
+    deps: [build:datafusion]
+    cmds:
+      - RUST_LOG=info ./target/release/fast-api-datafusion
+
+  # -------------------------------------------------------------------------
+  # Dev helpers
+  # -------------------------------------------------------------------------
+  check:
+    desc: Type-check both backends
+    cmds:
+      - cargo check --bin fast-api-duckdb     --features duckdb
+      - cargo check --bin fast-api-datafusion --features datafusion
+
+  check:duckdb:
+    cmds:
+      - cargo check --bin fast-api-duckdb --features duckdb
+
+  check:datafusion:
+    cmds:
+      - cargo check --bin fast-api-datafusion --features datafusion
+
+  fmt:
+    cmds:
+      - cargo fmt
+
+  clean:
+    cmds:
+      - cargo clean

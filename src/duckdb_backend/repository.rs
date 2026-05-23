@@ -1,9 +1,9 @@
 use duckdb::{params_from_iter, Connection};
 use serde_json::Value as JsonValue;
 
+use crate::duckdb_backend::schema::{find_column, col_ref, ALL_COLUMNS};
 use crate::errors::AppError;
 use crate::models::{Predicate, QueryRequest};
-use crate::schema::{find_column, col_ref, ALL_COLUMNS};
 
 // ---------------------------------------------------------------------------
 // Parameter binding

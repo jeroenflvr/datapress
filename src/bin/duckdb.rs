@@ -1,11 +1,5 @@
-mod db;
-mod errors;
-mod handlers;
-mod models;
-mod repository;
-mod schema;
-
 use actix_web::{middleware, web, App, HttpServer};
+use fast_api::duckdb_backend::{db, handlers};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -19,7 +13,7 @@ async fn main() -> std::io::Result<()> {
     let db = db::init_pool(conn)
         .expect("Failed to create connection pool");
 
-    log::info!("Listening on http://0.0.0.0:8080");
+    log::info!("Listening on http://0.0.0.0:8080 (DuckDB backend)");
 
     HttpServer::new(move || {
         App::new()

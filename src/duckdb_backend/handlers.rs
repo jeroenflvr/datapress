@@ -1,8 +1,8 @@
 use actix_web::{get, post, web, HttpResponse, ResponseError};
 
-use crate::db::{DbPool, DbPoolRef};
+use crate::duckdb_backend::db::{DbPool, DbPoolRef};
+use crate::duckdb_backend::repository::AccidentsRepository;
 use crate::models::{PaginationParams, QueryRequest};
-use crate::repository::AccidentsRepository;
 
 #[get("/health")]
 pub async fn health() -> HttpResponse {
