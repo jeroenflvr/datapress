@@ -124,6 +124,7 @@ name = "accidents"                    # used in the URL: /api/datasets/accidents
 | `listen`  | `127.0.0.1`   | Loopback by default — the service is **not** exposed on a network interface unless you opt in. |
 | `port`    | `8080`        |                                                                                                |
 | `workers` | *(unset)*     | Actix worker threads. Unset = one per CPU.                                                     |
+| `prefix`  | `""`          | URL path prefix mounted in front of every route (e.g. `"/datapress"`) — useful behind a reverse proxy that passes the path through unchanged. Must start with `/` and not end with `/`. |
 
 ### Source
 

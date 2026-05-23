@@ -80,3 +80,62 @@ tasks:
     desc: Build a release wheel into ./target/wheels/
     cmds:
       - uv tool run --with maturin maturin build --release
+
+  # ---------------------------------------------------------------------
+  # Changelog (git-cliff)
+  # ---------------------------------------------------------------------
+  changelog:
+    desc: Regenerate CHANGELOG.md from the full git history
+    cmds:
+      - uv tool run --from git-cliff git-cliff --config cliff.toml --output CHANGELOG.md
+
+  changelog:unreleased:
+    desc: Preview unreleased changes (since the last tag) on stdout
+    cmds:
+      - uv tool run --from git-cliff git-cliff --config cliff.toml --unreleased
+
+  changelog:release:
+    desc: "Bump CHANGELOG for a new tag. Usage: task changelog:release -- v0.2.0"
+    cmds:
+      - uv tool run --from git-cliff git-cliff --config cliff.toml --tag {{.CLI_ARGS}} --output CHANGELOG.md
+
+  # ---------------------------------------------------------------------
+  # Release: stamp CHANGELOG, commit, tag, push.
+  # Usage:  task release -- v0.2.0
+  # ---------------------------------------------------------------------
+  release:
+    desc: "Cut a release: bump version, update CHANGELOG, commit, tag, push. Usage: task release -- v0.2.0"
+    vars:
+      VERSION: '{{.CLI_ARGS}}'
+      # Strip leading "v" for Cargo.toml (Cargo wants 0.2.0, git tag wants v0.2.0).
+      BARE_VERSION:
+        sh: printf '%s' '{{.CLI_ARGS}}' | sed 's/^v//'
+    preconditions:
+      - sh: 'test -n "{{.VERSION}}"'
+        msg: "Missing version. Usage: task release -- v0.2.0"
+      - sh: '[[ "{{.VERSION}}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]'
+        msg: "Version must look like v1.2.3 (got: {{.VERSION}})"
+      - sh: 'test -z "$(git status --porcelain)"'
+        msg: "Working tree is dirty — commit or stash changes first."
+      - sh: '! git rev-parse "{{.VERSION}}" >/dev/null 2>&1'
+        msg: "Tag {{.VERSION}} already exists."
+    cmds:
+      # 1. Bump workspace version (single source of truth — all crates inherit via version.workspace = true).
+      - |
+        python3 -c "
+        import re, pathlib
+        p = pathlib.Path('Cargo.toml')
+        s = p.read_text()
+        new = re.sub(r'(?m)^(version\s*=\s*\")[^\"]+(\"\s*(?:#.*)?)$', r'\g<1>{{.BARE_VERSION}}\g<2>', s, count=1)
+        assert new != s, 'workspace version line not found in Cargo.toml'
+        p.write_text(new)
+        "
+      # 2. Refresh Cargo.lock with the new version.
+      - cargo update --workspace --offline 2>/dev/null || cargo check --workspace --quiet
+      # 3. Regenerate CHANGELOG stamped at the new tag.
+      - uv tool run --from git-cliff git-cliff --config cliff.toml --tag {{.VERSION}} --output CHANGELOG.md
+      # 4. Commit, tag, push.
+      - git add Cargo.toml Cargo.lock CHANGELOG.md
+      - git commit -m "chore(release): {{.VERSION}}"
+      - git tag -a {{.VERSION}} -m "Release {{.VERSION}}"
+      - git push --follow-tags

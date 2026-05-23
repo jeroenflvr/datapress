@@ -5,15 +5,44 @@ build-backend = "maturin"
 [project]
 name            = "datapress"
 description     = "Fast multi-backend (DuckDB / DataFusion) dataset HTTP server."
+readme          = "crates/python/README.md"
 requires-python = ">=3.9"
 dynamic         = ["version"]
 license         = { text = "MIT" }
+keywords        = ["parquet", "delta", "duckdb", "datafusion", "http", "api", "arrow"]
+classifiers     = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+    "Topic :: Database",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.urls]
+Homepage   = "https://github.com/jeroenflvr/fast-api"
+Source     = "https://github.com/jeroenflvr/fast-api"
+Issues     = "https://github.com/jeroenflvr/fast-api/issues"
 
 [tool.maturin]
 # The Cargo package lives in crates/python; the cdylib is named `datapress`.
-manifest-path = "crates/python/Cargo.toml"
-module-name   = "datapress"
-features      = ["pyo3/extension-module"]
-# Bundle the pure-Python __init__.py (re-exports + type hints) alongside
-# the compiled extension.
-python-source = "crates/python/python"
+manifest-path  = "crates/python/Cargo.toml"
+module-name    = "datapress"
+bindings       = "pyo3"
+features       = ["pyo3/extension-module"]
+# abi3 wheels work across Python 3.9+ on the same platform.
+python-source  = "crates/python/python"
+# Strip debug symbols from the released extension (big size win).
+strip          = true
+# Files copied next to the wheel metadata.
+include        = [
+    { path = "LICENSE",                        format = "sdist" },
+    { path = "crates/python/README.md",        format = "sdist" },
+]
