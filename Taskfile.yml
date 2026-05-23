@@ -126,8 +126,8 @@ tasks:
         import re, pathlib
         p = pathlib.Path('Cargo.toml')
         s = p.read_text()
-        new = re.sub(r'(?m)^(version\s*=\s*\")[^\"]+(\"\s*(?:#.*)?)$', r'\g<1>{{.BARE_VERSION}}\g<2>', s, count=1)
-        assert new != s, 'workspace version line not found in Cargo.toml'
+        new, n = re.subn(r'(?m)^(version\s*=\s*\")[^\"]+(\"\s*(?:#.*)?)$', r'\g<1>{{.BARE_VERSION}}\g<2>', s, count=1)
+        assert n == 1, 'workspace version line not found in Cargo.toml'
         p.write_text(new)
         "
       # 2. Refresh Cargo.lock with the new version.
