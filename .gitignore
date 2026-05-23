@@ -1,4 +1,14 @@
 /target
 data/
 datasets.toml
+
+# Maturin / PyO3 build output (the compiled extension lands here on `maturin develop`)
 *.abi3.so
+*.so
+*.pyd
+*.dylib
+crates/python/python/datapress/*.so
+crates/python/python/datapress/*.abi3.so
+__pycache__/
+*.egg-info/
+.venv/
