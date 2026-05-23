@@ -1,3 +1,4 @@
 /target
 data/
 datasets.toml
+*.abi3.so
