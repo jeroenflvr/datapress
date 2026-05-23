@@ -2,15 +2,6 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
 #[derive(Deserialize)]
-pub struct PaginationParams {
-    pub page:      Option<u64>,
-    pub page_size: Option<u64>,
-    pub state:     Option<String>,
-    pub severity:  Option<i64>,
-    pub city:      Option<String>,
-}
-
-#[derive(Deserialize)]
 pub struct Predicate {
     pub col: String,
     /// eq | neq | gt | gte | lt | lte | like | ilike | in | is_null | is_not_null

@@ -1,7 +1,9 @@
-use actix_web::{get, post, web, HttpResponse, ResponseError};
+use std::sync::Arc;
+
+use actix_web::{HttpResponse, ResponseError, get, post, web};
 
 use crate::datafusion_backend::store::Store;
-use crate::models::{PaginationParams, QueryRequest};
+use crate::models::QueryRequest;
 
 #[get("/health")]
 pub async fn health() -> HttpResponse {
@@ -10,36 +12,57 @@ pub async fn health() -> HttpResponse {
         .body(r#"{"status":"ok"}"#)
 }
 
-#[get("/api/accidents")]
-pub async fn get_accidents(
-    state:  web::Data<Store>,
-    params: web::Query<PaginationParams>,
-) -> HttpResponse {
-    let page      = params.page.unwrap_or(1).max(1);
-    let page_size = params.page_size.unwrap_or(100).clamp(1, 1000);
-
-    match state.get_page(page, page_size, params.state.as_deref(), params.severity, params.city.as_deref()) {
-        Ok(arr) => json_page(arr, page, page_size),
-        Err(e)  => e.error_response(),
-    }
+#[get("/api/datasets")]
+pub async fn list_datasets(state: web::Data<Arc<Store>>) -> HttpResponse {
+    let summaries: Vec<_> = state.names().into_iter().map(|n| {
+        let st = state.dataset(n).unwrap();
+        serde_json::json!({
+            "name":    st.schema.name,
+            "columns": st.schema.columns.len(),
+            "rows":    st.data.num_rows(),
+        })
+    }).collect();
+    HttpResponse::Ok().json(serde_json::json!({ "datasets": summaries }))
 }
 
-#[post("/api/accidents/query")]
-pub async fn query_accidents(
-    state: web::Data<Store>,
+#[get("/api/datasets/{name}/schema")]
+pub async fn get_schema(
+    state: web::Data<Arc<Store>>,
+    path:  web::Path<String>,
+) -> HttpResponse {
+    let name = path.into_inner();
+    let st = match state.dataset(&name) {
+        Ok(s)  => s,
+        Err(e) => return e.error_response(),
+    };
+    let sample = match state.sample(&name) {
+        Ok(s)  => s,
+        Err(e) => return e.error_response(),
+    };
+    let body = format!(
+        r#"{{"name":{name_lit},"columns":{cols},"sample":{sample}}}"#,
+        name_lit = serde_json::to_string(&st.schema.name).unwrap(),
+        cols     = serde_json::to_string(&st.schema.columns).unwrap(),
+    );
+    HttpResponse::Ok().content_type("application/json").body(body)
+}
+
+#[post("/api/datasets/{name}/query")]
+pub async fn query_dataset(
+    state: web::Data<Arc<Store>>,
+    path:  web::Path<String>,
     body:  web::Json<QueryRequest>,
 ) -> HttpResponse {
+    let name      = path.into_inner();
     let page      = body.page.max(1);
     let page_size = body.page_size.clamp(1, 1000);
     let req       = body.into_inner();
 
-    match state.query(&req).await {
-        Ok(arr) => json_page(arr, page, page_size),
-        Err(e)  => e.error_response(),
+    match state.query(&name, &req).await {
+        Ok(arr) => {
+            let body = format!(r#"{{"data":{arr},"page":{page},"page_size":{page_size}}}"#);
+            HttpResponse::Ok().content_type("application/json").body(body)
+        }
+        Err(e) => e.error_response(),
     }
-}
-
-fn json_page(arr: String, page: u64, page_size: u64) -> HttpResponse {
-    let body = format!(r#"{{"data":{arr},"page":{page},"page_size":{page_size}}}"#);
-    HttpResponse::Ok().content_type("application/json").body(body)
 }

@@ -1,9 +1,9 @@
-use duckdb::{params_from_iter, Connection};
+use duckdb::{Connection, params_from_iter};
 use serde_json::Value as JsonValue;
 
-use crate::duckdb_backend::schema::{find_column, col_ref, ALL_COLUMNS};
 use crate::errors::AppError;
 use crate::models::{Predicate, QueryRequest};
+use crate::schema::DatasetSchema;
 
 // ---------------------------------------------------------------------------
 // Parameter binding
@@ -32,13 +32,9 @@ fn json_to_param(v: &JsonValue) -> Result<ParamVal, AppError> {
     match v {
         JsonValue::String(s) => Ok(ParamVal::Text(s.clone())),
         JsonValue::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(ParamVal::Int(i))
-            } else if let Some(f) = n.as_f64() {
-                Ok(ParamVal::Float(f))
-            } else {
-                Err(AppError::InvalidValue(n.to_string()))
-            }
+            if let Some(i) = n.as_i64()      { Ok(ParamVal::Int(i)) }
+            else if let Some(f) = n.as_f64() { Ok(ParamVal::Float(f)) }
+            else                              { Err(AppError::InvalidValue(n.to_string())) }
         }
         JsonValue::Bool(b) => Ok(ParamVal::Bool(*b)),
         other => Err(AppError::InvalidValue(format!("unsupported type: {other}"))),
@@ -49,23 +45,25 @@ fn json_to_param(v: &JsonValue) -> Result<ParamVal, AppError> {
 // SQL helpers
 // ---------------------------------------------------------------------------
 
-/// Build the `'key', expr` pairs for a `json_object(…)` call.
-fn json_obj_pairs(col_specs: &[(&str, bool)]) -> String {
-    col_specs
-        .iter()
-        .map(|(name, is_ts)| {
-            if *is_ts {
-                format!("'{}', CAST(\"{}\" AS VARCHAR)", name, name)
+/// Build the `'key', expr` pairs for a `json_object(…)` call from a list of
+/// schema columns. Temporal columns are CAST to VARCHAR.
+fn json_obj_pairs<'a, I>(cols: I) -> String
+where
+    I: IntoIterator<Item = &'a crate::schema::ColumnInfo>,
+{
+    cols.into_iter()
+        .map(|c| {
+            let q = DatasetSchema::quote_ident(&c.name);
+            if c.logical.needs_cast() {
+                format!("'{}', CAST({} AS VARCHAR)", c.name.replace('\'', "''"), q)
             } else {
-                format!("'{}', \"{}\"", name, name)
+                format!("'{}', {}", c.name.replace('\'', "''"), q)
             }
         })
         .collect::<Vec<_>>()
         .join(", ")
 }
 
-/// Execute `sql` and stream each row's `json_object` string into a JSON array.
-/// Rows are streamed one at a time — no aggregate allocation in DuckDB memory.
 fn stream_as_json_array(
     conn: &Connection,
     sql: &str,
@@ -79,9 +77,7 @@ fn stream_as_json_array(
     let mut first = true;
     while let Some(row) = rows.next()? {
         let obj: String = row.get(0)?;
-        if !first {
-            buf.push(',');
-        }
+        if !first { buf.push(','); }
         buf.push_str(&obj);
         first = false;
     }
@@ -89,119 +85,98 @@ fn stream_as_json_array(
     Ok(buf)
 }
 
-// ---------------------------------------------------------------------------
-// Repository
-// ---------------------------------------------------------------------------
-
-pub struct AccidentsRepository<'a> {
-    conn: &'a Connection,
+fn build_where<S: AsRef<str>>(conditions: &[S]) -> String {
+    if conditions.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " WHERE {}",
+            conditions.iter().map(|c| c.as_ref()).collect::<Vec<_>>().join(" AND ")
+        )
+    }
 }
 
-impl<'a> AccidentsRepository<'a> {
-    pub fn new(conn: &'a Connection) -> Self {
-        Self { conn }
+// ---------------------------------------------------------------------------
+// Repository — scoped to a single dataset's schema
+// ---------------------------------------------------------------------------
+
+pub struct DatasetRepository<'a> {
+    conn:   &'a Connection,
+    schema: &'a DatasetSchema,
+}
+
+impl<'a> DatasetRepository<'a> {
+    pub fn new(conn: &'a Connection, schema: &'a DatasetSchema) -> Self {
+        Self { conn, schema }
     }
 
-    /// Simple paginated scan with optional equality filters.
-    pub fn get_page(
-        &self,
-        page: u64,
-        page_size: u64,
-        state: Option<&str>,
-        severity: Option<i64>,
-        city: Option<&str>,
-    ) -> Result<String, AppError> {
-        let offset = (page - 1) * page_size;
-
-        let mut conditions: Vec<&'static str> = Vec::new();
-        let mut bind_vals: Vec<ParamVal> = Vec::new();
-
-        if let Some(s) = state {
-            conditions.push("State = ?");
-            bind_vals.push(ParamVal::Text(s.to_owned()));
-        }
-        if let Some(sev) = severity {
-            conditions.push("Severity = ?");
-            bind_vals.push(ParamVal::Int(sev));
-        }
-        if let Some(c) = city {
-            conditions.push("City = ?");
-            bind_vals.push(ParamVal::Text(c.to_owned()));
-        }
-
-        let where_clause = build_where(&conditions);
-        let pairs = json_obj_pairs(ALL_COLUMNS);
-        let sql = format!(
-            "SELECT json_object({pairs}) FROM accidents{where_clause} \
-             LIMIT {page_size} OFFSET {offset}"
-        );
-
-        stream_as_json_array(self.conn, &sql, &bind_vals)
-    }
-
-    /// Flexible query: caller picks columns and supplies arbitrary predicates.
     pub fn query(&self, req: &QueryRequest) -> Result<String, AppError> {
-        let col_specs: Vec<(&'static str, bool)> = if req.columns.is_empty() {
-            ALL_COLUMNS.to_vec()
+        // Resolve projection through the dataset schema.
+        let cols: Vec<&crate::schema::ColumnInfo> = if req.columns.is_empty() {
+            self.schema.columns.iter().collect()
         } else {
             req.columns
                 .iter()
-                .map(|name| {
-                    find_column(name)
-                        .ok_or_else(|| AppError::UnknownColumn(name.clone()))
-                })
+                .map(|n| self.schema.find(n))
                 .collect::<Result<_, _>>()?
         };
 
-        let page = req.page.max(1);
+        let page      = req.page.max(1);
         let page_size = req.page_size.clamp(1, 1000);
-        let offset = (page - 1) * page_size;
+        let offset    = (page - 1) * page_size;
 
-        let mut conditions: Vec<String> = Vec::new();
-        let mut bind_vals: Vec<ParamVal> = Vec::new();
+        let mut conditions: Vec<String>   = Vec::new();
+        let mut bind_vals:  Vec<ParamVal> = Vec::new();
 
         for pred in &req.predicates {
             self.apply_predicate(pred, &mut conditions, &mut bind_vals)?;
         }
 
         let where_clause = build_where(&conditions);
-        let pairs = json_obj_pairs(&col_specs);
+        let pairs        = json_obj_pairs(cols);
+        let table        = DatasetSchema::quote_ident(&self.schema.name);
         let sql = format!(
-            "SELECT json_object({pairs}) FROM accidents{where_clause} \
+            "SELECT json_object({pairs}) FROM {table}{where_clause} \
              LIMIT {page_size} OFFSET {offset}"
         );
 
         stream_as_json_array(self.conn, &sql, &bind_vals)
     }
 
+    /// Return a single row at offset 0 (used by `/schema` for a discoverable
+    /// sample). Returns `null` when the dataset is empty.
+    pub fn sample(&self) -> Result<String, AppError> {
+        let pairs = json_obj_pairs(self.schema.columns.iter());
+        let table = DatasetSchema::quote_ident(&self.schema.name);
+        let sql = format!("SELECT json_object({pairs}) FROM {table} LIMIT 1");
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            Ok(row.get::<_, String>(0)?)
+        } else {
+            Ok("null".into())
+        }
+    }
+
     fn apply_predicate(
         &self,
-        pred: &Predicate,
+        pred:       &Predicate,
         conditions: &mut Vec<String>,
-        bind_vals: &mut Vec<ParamVal>,
+        bind_vals:  &mut Vec<ParamVal>,
     ) -> Result<(), AppError> {
-        let (col_name, _) = find_column(&pred.col)
-            .ok_or_else(|| AppError::UnknownColumn(pred.col.clone()))?;
-        let cref = col_ref(col_name);
+        let col = self.schema.find(&pred.col)?;
+        let cref = DatasetSchema::quote_ident(&col.name);
 
         match pred.op.as_str() {
-            "is_null" => {
-                conditions.push(format!("{cref} IS NULL"));
-            }
-            "is_not_null" => {
-                conditions.push(format!("{cref} IS NOT NULL"));
-            }
+            "is_null"     => { conditions.push(format!("{cref} IS NULL")); }
+            "is_not_null" => { conditions.push(format!("{cref} IS NOT NULL")); }
             "in" => {
-                let arr = pred
-                    .val
-                    .as_ref()
+                let arr = pred.val.as_ref()
                     .and_then(|v| v.as_array())
                     .filter(|a| !a.is_empty())
-                    .ok_or_else(|| {
-                        AppError::InvalidValue(format!(
-                            "'in' requires a non-empty array for column {col_name}"
-                        ))
-                    })?;
+                    .ok_or_else(|| AppError::InvalidValue(
+                        format!("'in' requires a non-empty array for column {}", col.name),
+                    ))?;
                 let placeholders = arr.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
                 conditions.push(format!("{cref} IN ({placeholders})"));
                 for v in arr {
@@ -218,28 +193,15 @@ impl<'a> AccidentsRepository<'a> {
                     "lte"   => "<=",
                     "like"  => "LIKE",
                     "ilike" => "ILIKE",
-                    other   => return Err(AppError::UnknownOperator(other.to_string())),
+                    other   => return Err(AppError::UnknownOperator(other.into())),
                 };
-                let val = pred.val.as_ref().ok_or_else(|| {
-                    AppError::InvalidValue(format!(
-                        "operator '{op}' requires a value for column {col_name}"
-                    ))
-                })?;
+                let val = pred.val.as_ref().ok_or_else(|| AppError::InvalidValue(
+                    format!("operator '{op}' requires a value for column {}", col.name),
+                ))?;
                 conditions.push(format!("{cref} {sql_op} ?"));
                 bind_vals.push(json_to_param(val)?);
             }
         }
         Ok(())
-    }
-}
-
-fn build_where<S: AsRef<str>>(conditions: &[S]) -> String {
-    if conditions.is_empty() {
-        String::new()
-    } else {
-        format!(
-            " WHERE {}",
-            conditions.iter().map(|c| c.as_ref()).collect::<Vec<_>>().join(" AND ")
-        )
     }
 }

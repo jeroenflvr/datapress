@@ -3,7 +3,15 @@
 A catalogue of `curl` smoke tests and `oha` benchmarks against either backend
 (`fast-api-duckdb` or `fast-api-datafusion`) listening on `:8080`.
 
-The dataset is the US Accidents corpus (~7.7M rows, ~45 columns).
+The dataset is the US Accidents corpus (~7.7M rows, ~45 columns), registered
+in `datasets.toml` as `accidents`.
+
+Two discovery endpoints are available at all times:
+
+- `GET /api/datasets` — list of registered datasets
+- `GET /api/datasets/{name}/schema` — column metadata + one sample row
+
+All query traffic goes through `POST /api/datasets/{name}/query`.
 
 ---
 
@@ -19,7 +27,7 @@ equality index on the DataFusion side) combined with a range predicate. Small
 projection, small page.
 
 ```bash
-curl -s -X POST http://localhost:8080/api/accidents/query \
+curl -s -X POST http://localhost:8080/api/datasets/accidents/query \
   -H 'Content-Type: application/json' \
   -d '{
     "columns": ["ID", "Severity", "City", "State", "Start_Time", "Weather_Condition", "Temperature(F)"],
@@ -38,7 +46,7 @@ Combines a substring search on a large `Utf8` column with a numeric range —
 exercises the string kernel and the numeric kernel in a single query.
 
 ```bash
-curl -s -X POST http://localhost:8080/api/accidents/query \
+curl -s -X POST http://localhost:8080/api/datasets/accidents/query \
   -H 'Content-Type: application/json' \
   -d '{
     "columns": ["ID", "City", "State", "Start_Time", "Description", "Temperature(F)", "Severity"],
@@ -57,7 +65,7 @@ Validates that the `IN` operator on a low-cardinality column resolves to a
 disjunction over the equality index.
 
 ```bash
-curl -s -X POST http://localhost:8080/api/accidents/query \
+curl -s -X POST http://localhost:8080/api/datasets/accidents/query \
   -H 'Content-Type: application/json' \
   -d '{
     "columns": ["ID", "City", "State", "Severity", "Start_Time", "Weather_Condition"],
@@ -77,36 +85,19 @@ curl -s -X POST http://localhost:8080/api/accidents/query \
 Sustained load at moderate concurrency; everything below should be sub-ms per
 request on a warm cache.
 
-### L1. GET — California severity 3
+### L1. POST — severity ≥ 3 in Texas
 
-Cheapest possible path: GET handler with two equality filters, page size 5.
-
-```bash
-oha -c 4 -n 10000 "http://127.0.0.1:8080/api/accidents?state=CA&severity=3&page=1&page_size=5"
-```
-
-### L2. GET — Miami, FL
-
-Two equality filters on string columns. Verifies that the equality index
-covers `City` as well as `State`.
-
-```bash
-oha -c 4 -n 10000 "http://127.0.0.1:8080/api/accidents?city=Miami&state=FL&page_size=3"
-```
-
-### L3. POST — severity ≥ 3 in Texas
-
-POST equivalent of S1 under load. Compare against L1 to measure the cost of
-JSON body parsing vs query-string parsing.
+POST equivalent of S1 under load. Establishes the baseline cost of JSON
+body parsing + the equality-index fast path.
 
 ```bash
 oha -c 4 -n 10000 -m POST \
   -H "Content-Type: application/json" \
   -d '{"columns":["ID","Severity","City","State","Start_Time","Weather_Condition","Temperature(F)"],"predicates":[{"col":"State","op":"eq","val":"TX"},{"col":"Severity","op":"gte","val":3}],"page":1,"page_size":5}' \
-  http://127.0.0.1:8080/api/accidents/query
+  http://127.0.0.1:8080/api/datasets/accidents/query
 ```
 
-### L4. POST — fog + below freezing
+### L2. POST — fog + below freezing
 
 Mixed `ILIKE` + numeric range under load. Probably the highest per-request
 cost in this section.
@@ -115,10 +106,10 @@ cost in this section.
 oha -c 4 -n 10000 -m POST \
   -H "Content-Type: application/json" \
   -d '{"columns":["ID","City","State","Start_Time","Description","Temperature(F)","Severity"],"predicates":[{"col":"Description","op":"ilike","val":"%fog%"},{"col":"Temperature(F)","op":"lt","val":32}],"page":1,"page_size":5}' \
-  http://127.0.0.1:8080/api/accidents/query
+  http://127.0.0.1:8080/api/datasets/accidents/query
 ```
 
-### L5. POST — `IN` (NY/NJ/CT) severity 4
+### L3. POST — `IN` (NY/NJ/CT) severity 4
 
 POST equivalent of S3 under load.
 
@@ -126,7 +117,7 @@ POST equivalent of S3 under load.
 oha -c 4 -n 10000 -m POST \
   -H "Content-Type: application/json" \
   -d '{"columns":["ID","City","State","Severity","Start_Time","Weather_Condition"],"predicates":[{"col":"State","op":"in","val":["NY","NJ","CT"]},{"col":"Severity","op":"eq","val":4}],"page":1,"page_size":10}' \
-  http://127.0.0.1:8080/api/accidents/query
+  http://127.0.0.1:8080/api/datasets/accidents/query
 ```
 
 ---
@@ -149,7 +140,7 @@ the string kernel, not a memory test.
 oha -c 8 -n 2000 -m POST \
   -H "Content-Type: application/json" \
   -d '{"columns":["ID","State","Start_Time","Description","Severity"],"predicates":[{"col":"Description","op":"ilike","val":"%black ice%"},{"col":"Description","op":"ilike","val":"%bridge%"}],"page":1,"page_size":20}' \
-  http://127.0.0.1:8080/api/accidents/query
+  http://127.0.0.1:8080/api/datasets/accidents/query
 ```
 
 ### H2. Wide numeric range — hot temperature + low visibility
@@ -163,7 +154,7 @@ SIMD numeric comparator + the cost of building a wide candidate batch.
 oha -c 8 -n 2000 -m POST \
   -H "Content-Type: application/json" \
   -d '{"columns":["ID","City","State","Temperature(F)","Visibility(mi)","Weather_Condition","Start_Time"],"predicates":[{"col":"Temperature(F)","op":"gte","val":80},{"col":"Temperature(F)","op":"lte","val":100},{"col":"Visibility(mi)","op":"lt","val":2}],"page":1,"page_size":50}' \
-  http://127.0.0.1:8080/api/accidents/query
+  http://127.0.0.1:8080/api/datasets/accidents/query
 ```
 
 ### H3. Geographic bounding box (US southwest quadrant)
@@ -176,7 +167,7 @@ is compared four times. A realistic GIS workload.
 oha -c 8 -n 2000 -m POST \
   -H "Content-Type: application/json" \
   -d '{"columns":["ID","Start_Lat","Start_Lng","City","State","Severity","Start_Time"],"predicates":[{"col":"Start_Lat","op":"gte","val":32.0},{"col":"Start_Lat","op":"lte","val":37.0},{"col":"Start_Lng","op":"gte","val":-120.0},{"col":"Start_Lng","op":"lte","val":-110.0}],"page":1,"page_size":100}' \
-  http://127.0.0.1:8080/api/accidents/query
+  http://127.0.0.1:8080/api/datasets/accidents/query
 ```
 
 ### H4. Wide projection — all ~45 columns, page_size 500
@@ -190,7 +181,7 @@ not the scan path.
 oha -c 4 -n 1000 -m POST \
   -H "Content-Type: application/json" \
   -d '{"columns":["ID","Source","Severity","Start_Time","End_Time","Start_Lat","Start_Lng","End_Lat","End_Lng","Distance(mi)","Description","Street","City","County","State","Zipcode","Country","Timezone","Airport_Code","Weather_Timestamp","Temperature(F)","Wind_Chill(F)","Humidity(%)","Pressure(in)","Visibility(mi)","Wind_Direction","Wind_Speed(mph)","Precipitation(in)","Weather_Condition","Amenity","Bump","Crossing","Give_Way","Junction","No_Exit","Railway","Roundabout","Station","Stop","Traffic_Calming","Traffic_Signal","Turning_Loop","Sunrise_Sunset","Civil_Twilight","Nautical_Twilight","Astronomical_Twilight"],"predicates":[{"col":"State","op":"eq","val":"CA"},{"col":"Severity","op":"gte","val":3}],"page":1,"page_size":500}' \
-  http://127.0.0.1:8080/api/accidents/query
+  http://127.0.0.1:8080/api/datasets/accidents/query
 ```
 
 ### H5. Deep pagination — page 5000
@@ -204,7 +195,7 @@ ORDER BY + cursor-based pagination strategy.
 oha -c 8 -n 2000 -m POST \
   -H "Content-Type: application/json" \
   -d '{"columns":["ID","City","State","Severity","Start_Time"],"predicates":[{"col":"Severity","op":"gte","val":2}],"page":5000,"page_size":50}' \
-  http://127.0.0.1:8080/api/accidents/query
+  http://127.0.0.1:8080/api/datasets/accidents/query
 ```
 
 ### H6. Large `IN` list (20 states) + `ILIKE`
@@ -218,7 +209,7 @@ LIMIT only saves a fraction of the work.
 oha -c 8 -n 2000 -m POST \
   -H "Content-Type: application/json" \
   -d '{"columns":["ID","City","State","Description","Severity","Start_Time"],"predicates":[{"col":"State","op":"in","val":["CA","TX","FL","NY","PA","IL","OH","GA","NC","MI","NJ","VA","WA","AZ","MA","TN","IN","MO","MD","WI"]},{"col":"Description","op":"ilike","val":"%accident%"}],"page":1,"page_size":100}' \
-  http://127.0.0.1:8080/api/accidents/query
+  http://127.0.0.1:8080/api/datasets/accidents/query
 ```
 
 ### H7. Boolean flag conjunction + range
@@ -232,7 +223,7 @@ SIMD comparison — a different code path from H2/H3.
 oha -c 8 -n 2000 -m POST \
   -H "Content-Type: application/json" \
   -d '{"columns":["ID","City","State","Junction","Traffic_Signal","Crossing","Severity"],"predicates":[{"col":"Junction","op":"eq","val":true},{"col":"Traffic_Signal","op":"eq","val":true},{"col":"Crossing","op":"eq","val":true},{"col":"Severity","op":"gte","val":3}],"page":1,"page_size":50}' \
-  http://127.0.0.1:8080/api/accidents/query
+  http://127.0.0.1:8080/api/datasets/accidents/query
 ```
 
 ### H8. Triple `ILIKE` on `Description` — worst-case string CPU
@@ -245,7 +236,7 @@ incurs three full scans of its `Description` value.
 oha -c 4 -n 1000 -m POST \
   -H "Content-Type: application/json" \
   -d '{"columns":["ID","State","Description","Start_Time"],"predicates":[{"col":"Description","op":"ilike","val":"%closed%"},{"col":"Description","op":"ilike","val":"%lane%"},{"col":"Description","op":"ilike","val":"%due to%"}],"page":1,"page_size":50}' \
-  http://127.0.0.1:8080/api/accidents/query
+  http://127.0.0.1:8080/api/datasets/accidents/query
 ```
 
 ### H9. `IS NOT NULL` + range on a sparse column
@@ -259,7 +250,7 @@ how each backend chains nullable comparators.
 oha -c 8 -n 2000 -m POST \
   -H "Content-Type: application/json" \
   -d '{"columns":["ID","Precipitation(in)","Weather_Condition","State","Start_Time"],"predicates":[{"col":"Precipitation(in)","op":"is_not_null"},{"col":"Precipitation(in)","op":"gt","val":0.5},{"col":"Wind_Speed(mph)","op":"gte","val":20}],"page":1,"page_size":100}' \
-  http://127.0.0.1:8080/api/accidents/query
+  http://127.0.0.1:8080/api/datasets/accidents/query
 ```
 
 ### H10. Full table, no predicates, 18 columns × 1000 rows
@@ -272,7 +263,7 @@ concurrency (`-c 2`) avoids saturating the link before the backend.
 oha -c 2 -n 200 -m POST \
   -H "Content-Type: application/json" \
   -d '{"columns":["ID","Source","Severity","Start_Time","End_Time","Start_Lat","Start_Lng","Distance(mi)","Description","City","County","State","Zipcode","Temperature(F)","Humidity(%)","Visibility(mi)","Wind_Speed(mph)","Weather_Condition"],"predicates":[],"page":1,"page_size":1000}' \
-  http://127.0.0.1:8080/api/accidents/query
+  http://127.0.0.1:8080/api/datasets/accidents/query
 ```
 
 ---
