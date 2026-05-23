@@ -98,6 +98,13 @@ pub struct DatasetConfig {
     pub s3:     Option<S3Config>,
     #[serde(default)]
     pub index:  IndexConfig,
+    /// When `true`, the backend should keep the dataset on disk and stream
+    /// it at query time instead of materialising it into RAM at startup.
+    /// Trades the in-memory hot paths (raw Arrow slice, equality index)
+    /// for bounded memory use on large / multi-file sources. Currently
+    /// honoured by the DataFusion backend for local parquet.
+    #[serde(default)]
+    pub lazy:   bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -346,6 +353,12 @@ impl DatasetConfig {
     /// Expand `source.location` to a concrete list of local `.parquet`
     /// files. Only valid for `kind = parquet` on local paths — S3 and
     /// Delta sources are resolved by the backend itself.
+    ///
+    /// Accepts three location shapes:
+    ///   * a single `*.parquet` file
+    ///   * a directory (lists every `*.parquet` directly inside, non-recursive)
+    ///   * a glob pattern containing `*`, `?` or `[…]` (e.g.
+    ///     `data/year=2024/*.parquet`, `data/**/*.parquet`)
     pub fn resolve_local_parquet_files(&self) -> Result<Vec<PathBuf>, AppError> {
         if self.source.is_s3() {
             return Err(AppError::Internal(format!(
@@ -353,11 +366,32 @@ impl DatasetConfig {
                 self.name
             )));
         }
-        let path = Path::new(&self.source.location);
+        let loc = &self.source.location;
+
+        // Glob pattern? Expand and require at least one match.
+        if loc.contains('*') || loc.contains('?') || loc.contains('[') {
+            let mut files: Vec<PathBuf> = glob::glob(loc)
+                .map_err(|e| AppError::Internal(format!(
+                    "dataset '{}': bad glob pattern '{loc}': {e}", self.name
+                )))?
+                .filter_map(|r| r.ok())
+                .filter(|p| p.is_file()
+                    && p.extension().and_then(|e| e.to_str()) == Some("parquet"))
+                .collect();
+            files.sort();
+            if files.is_empty() {
+                return Err(AppError::Internal(format!(
+                    "dataset '{}': glob '{loc}' matched no .parquet files",
+                    self.name
+                )));
+            }
+            return Ok(files);
+        }
+
+        let path = Path::new(loc);
         if !path.exists() {
             return Err(AppError::Internal(format!(
-                "dataset '{}': source path does not exist: {}",
-                self.name, self.source.location
+                "dataset '{}': source path does not exist: {loc}", self.name
             )));
         }
 
@@ -372,15 +406,15 @@ impl DatasetConfig {
         }
 
         let mut files: Vec<PathBuf> = std::fs::read_dir(path)
-            .map_err(|e| AppError::Internal(format!("read {}: {e}", self.source.location)))?
+            .map_err(|e| AppError::Internal(format!("read {loc}: {e}")))?
             .filter_map(|entry| entry.ok().map(|e| e.path()))
             .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("parquet"))
             .collect();
         files.sort();
         if files.is_empty() {
             return Err(AppError::Internal(format!(
-                "dataset '{}': no *.parquet files found in {}",
-                self.name, self.source.location
+                "dataset '{}': no *.parquet files found in {loc}",
+                self.name
             )));
         }
         Ok(files)

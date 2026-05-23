@@ -128,7 +128,8 @@ impl PyS3Config {
 ///
 /// Args:
 ///     name (str): URL-safe identifier; matches ``[A-Za-z0-9_.\-]+``.
-///     source (str): Local path or ``s3://bucket/prefix`` URI.
+///     source (str): Local path, glob pattern (``data/*.parquet``,
+///         ``data/year=*/*.parquet``) or ``s3://bucket/prefix`` URI.
 ///     format (str): ``"parquet"`` (default) or ``"delta"``.
 ///     mode (str): Index mode — ``"auto"`` (default), ``"none"`` or ``"list"``.
 ///     description (str | None): Free-text shown in the listing endpoint.
@@ -137,6 +138,13 @@ impl PyS3Config {
 ///         when ``mode="list"``.
 ///     index_max_cardinality (int | None): Upper bound on distinct values
 ///         per indexed column.
+///     lazy (bool): When ``True`` the dataset is **not** materialised into
+///         RAM at startup. Queries stream from disk via DataFusion's
+///         ``ListingTable``, with column-projection and predicate pushdown.
+///         Trades the in-memory hot paths (raw slice, equality index) for
+///         bounded memory — essential for wide (hundreds of columns) or
+///         multi-file parquet datasets. DataFusion backend, local parquet
+///         only.
 #[pyclass(name = "DatasetConfig", module = "datapress")]
 #[derive(Clone)]
 pub struct PyDatasetConfig {
@@ -150,6 +158,8 @@ pub struct PyDatasetConfig {
     #[pyo3(get, set)] pub s3:                    Option<PyS3Config>,
     #[pyo3(get, set)] pub index_columns:         Option<Vec<String>>,
     #[pyo3(get, set)] pub index_max_cardinality: Option<usize>,
+    /// Stream from disk instead of materialising into RAM.
+    #[pyo3(get, set)] pub lazy:                  bool,
 }
 
 #[pymethods]
@@ -158,13 +168,15 @@ impl PyDatasetConfig {
     ///
     /// Args:
     ///     name (str): URL-safe identifier.
-    ///     source (str): Local path or ``s3://bucket/prefix`` URI.
+    ///     source (str): Local path, glob (``data/*.parquet``) or ``s3://`` URI.
     ///     format (str): ``"parquet"`` (default) or ``"delta"``.
     ///     mode (str): ``"auto"`` (default), ``"none"`` or ``"list"``.
     ///     description (str | None): Free-text description.
     ///     s3 (S3Config | None): S3 credentials/endpoint, if ``source`` is ``s3://``.
     ///     index_columns (list[str] | None): Columns to index when ``mode="list"``.
     ///     index_max_cardinality (int | None): Max distinct values per indexed column.
+    ///     lazy (bool): Stream from disk instead of loading into RAM.
+    ///         DataFusion backend / local parquet only. Defaults to ``False``.
     #[new]
     #[pyo3(signature = (
         name,
@@ -175,6 +187,7 @@ impl PyDatasetConfig {
         s3                    = None,
         index_columns         = None,
         index_max_cardinality = None,
+        lazy                  = false,
     ))]
     fn new(
         name:                  String,
@@ -185,10 +198,11 @@ impl PyDatasetConfig {
         s3:                    Option<PyS3Config>,
         index_columns:         Option<Vec<String>>,
         index_max_cardinality: Option<usize>,
+        lazy:                  bool,
     ) -> Self {
         Self {
             name, source, format, mode, description, s3,
-            index_columns, index_max_cardinality,
+            index_columns, index_max_cardinality, lazy,
         }
     }
 }
@@ -227,6 +241,7 @@ impl PyDatasetConfig {
             source: SourceConfig { kind, location: self.source },
             s3,
             index,
+            lazy:   self.lazy,
         })
     }
 }

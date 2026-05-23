@@ -59,6 +59,7 @@ class DatasetConfig:
     s3: Optional[S3Config]
     index_columns: Optional[list[str]]
     index_max_cardinality: Optional[int]
+    lazy: bool
 
     def __init__(
         self,
@@ -70,12 +71,14 @@ class DatasetConfig:
         s3: Optional[S3Config] = None,
         index_columns: Optional[list[str]] = None,
         index_max_cardinality: Optional[int] = None,
+        lazy: bool = False,
     ) -> None:
         """Build a :class:`DatasetConfig`.
 
         Args:
             name: URL-safe identifier; matches ``[A-Za-z0-9_.\\-]+``.
-            source: Local path or ``s3://bucket/prefix`` URI.
+            source: Local path, glob pattern (``data/*.parquet``,
+                ``data/year=*/*.parquet``) or ``s3://bucket/prefix`` URI.
             format: ``"parquet"`` (default) or ``"delta"``.
             mode: Index mode — ``"auto"`` (default), ``"none"`` or ``"list"``.
             description: Free-text shown in the listing endpoint.
@@ -83,6 +86,12 @@ class DatasetConfig:
             index_columns: Columns to build an index over when ``mode="list"``.
             index_max_cardinality: Upper bound on distinct values per
                 indexed column.
+            lazy: When ``True`` the dataset is **not** materialised into
+                RAM at startup. Queries stream from disk via DataFusion's
+                ``ListingTable``, with column-projection and predicate
+                pushdown. Essential for wide (hundreds of columns) or
+                multi-file parquet datasets. DataFusion backend, local
+                parquet only. Defaults to ``False``.
         """
         ...
 

@@ -35,7 +35,7 @@ pub async fn get_schema(
         Ok(s)  => s,
         Err(e) => return e.error_response(),
     };
-    let sample = match state.sample(&name) {
+    let sample = match state.sample(&name).await {
         Ok(s)  => s,
         Err(e) => return e.error_response(),
     };

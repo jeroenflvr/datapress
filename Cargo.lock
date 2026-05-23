@@ -2428,6 +2428,7 @@ dependencies = [
  "arrow",
  "datafusion",
  "duckdb",
+ "glob",
  "log",
  "parquet",
  "serde",

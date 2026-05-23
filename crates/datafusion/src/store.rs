@@ -15,6 +15,10 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use serde_json::Value as JsonValue;
 
 use datafusion::datasource::{MemTable, TableProvider};
+use datafusion::datasource::file_format::parquet::ParquetFormat;
+use datafusion::datasource::listing::{
+    ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
+};
 use datafusion::prelude::{ParquetReadOptions, SessionContext};
 
 use object_store::aws::AmazonS3Builder;
@@ -37,10 +41,16 @@ type EqIndex = HashMap<String, HashMap<String, Vec<u32>>>;
 
 /// Per-dataset state: schema metadata, the resident RecordBatch, and the
 /// equality index built per the dataset's `[dataset.index]` policy.
+///
+/// When `lazy` is true the dataset is *not* materialised: `data` holds an
+/// empty `RecordBatch` carrying only the schema, `index` is empty, and
+/// every query is dispatched to DataFusion SQL against a registered
+/// `ListingTable`.
 pub struct DatasetState {
     pub schema: DatasetSchema,
     pub data:   RecordBatch,
     pub index:  EqIndex,
+    pub lazy:   bool,
 }
 
 /// Multi-dataset registry. Each dataset is registered in the shared
@@ -110,8 +120,25 @@ impl Store {
 
     /// JSON for the first row of the dataset, or `null` if empty. Used by
     /// `GET /api/datasets/{name}/schema` for discoverability.
-    pub fn sample(&self, name: &str) -> Result<String, AppError> {
+    pub async fn sample(&self, name: &str) -> Result<String, AppError> {
         let st = self.dataset(name)?;
+
+        // Lazy datasets have no resident batch — pull one row via SQL.
+        if st.lazy {
+            let table = DatasetSchema::quote_ident(&st.schema.name);
+            let sql = format!("SELECT * FROM {table} LIMIT 1");
+            let df = self.ctx.sql(&sql).await?;
+            let batches = df.collect().await?;
+            if batches.is_empty() || batches.iter().all(|b| b.num_rows() == 0) {
+                return Ok("null".into());
+            }
+            let arr = serialize(&batches[0].slice(0, 1))?;
+            let trimmed = arr.trim();
+            let inner = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']'))
+                .unwrap_or(trimmed);
+            return Ok(inner.to_string());
+        }
+
         if st.data.num_rows() == 0 {
             return Ok("null".into());
         }
@@ -171,6 +198,7 @@ impl Store {
 
     /// Run a `QueryRequest` against `name`. Empty predicates → O(1) Arrow
     /// slice. Otherwise → DataFusion SQL on the single registered table.
+    /// Lazy datasets skip the in-memory hot paths and always dispatch to SQL.
     pub async fn query(&self, name: &str, req: &QueryRequest) -> Result<String, AppError> {
         let st = self.dataset(name)?;
 
@@ -179,23 +207,27 @@ impl Store {
         let offset    = ((page - 1) * page_size) as usize;
         let limit     = page_size as usize;
 
-        // No predicates → O(1) raw Arrow slice, no engine overhead.
-        if req.predicates.is_empty() {
-            let start = offset.min(st.data.num_rows());
-            let len   = limit.min(st.data.num_rows() - start);
-            return serialize(&project(&st.schema, st.data.slice(start, len), &req.columns)?);
+        // In-memory hot paths only fire when the dataset is materialised.
+        if !st.lazy {
+            // No predicates → O(1) raw Arrow slice, no engine overhead.
+            if req.predicates.is_empty() {
+                let start = offset.min(st.data.num_rows());
+                let len   = limit.min(st.data.num_rows() - start);
+                return serialize(&project(&st.schema, st.data.slice(start, len), &req.columns)?);
+            }
+
+            // Index fast path: if every predicate is eq/in on an indexed column,
+            // resolve via the pre-built equality index — far cheaper than a full
+            // SIMD scan over the entire RecordBatch.
+            if let Some(rows) = try_index(&st.index, &req.predicates) {
+                let batch = take_page(&st.data, &rows, offset, limit)?;
+                return serialize(&project(&st.schema, batch, &req.columns)?);
+            }
         }
 
-        // Index fast path: if every predicate is eq/in on an indexed column,
-        // resolve via the pre-built equality index — far cheaper than a full
-        // SIMD scan over the entire RecordBatch.
-        if let Some(rows) = try_index(&st.index, &req.predicates) {
-            let batch = take_page(&st.data, &rows, offset, limit)?;
-            return serialize(&project(&st.schema, batch, &req.columns)?);
-        }
-
-        // Fallback: DataFusion SQL — multi-threaded vectorised execution
-        // covers all operators (LIKE, ILIKE, ranges, NOT NULL, …).
+        // Fallback (and only path for lazy datasets): DataFusion SQL —
+        // multi-threaded vectorised execution covers all operators
+        // (LIKE, ILIKE, ranges, NOT NULL, …).
         let sql     = build_query_sql(&st.schema, req)?;
         let df      = self.ctx.sql(&sql).await?;
         let batches = df.collect().await?;
@@ -215,6 +247,21 @@ async fn build_dataset(
     d: &DatasetConfig,
     ctx: &SessionContext,
 ) -> Result<(DatasetState, Arc<dyn TableProvider>), AppError> {
+    // Lazy datasets: register a ListingTable straight against the source
+    // files and skip the materialise / index / partition pipeline below.
+    // Only local parquet is supported for now — lazy on remote or delta
+    // sources is rejected so the user gets a clear config-time error rather
+    // than silently falling through to the eager path.
+    if d.lazy {
+        match (d.source.kind, d.source.is_s3()) {
+            (SourceKind::Parquet, false) => return build_lazy_local_parquet(d, ctx).await,
+            _ => return Err(AppError::Internal(format!(
+                "dataset '{}': lazy mode is only supported for local parquet (kind=parquet, no s3)",
+                d.name
+            ))),
+        }
+    }
+
     // Fetch raw RecordBatches from whichever backing store the dataset
     // is configured to use. All four (parquet, delta) x (local, s3)
     // combinations converge into one Vec<RecordBatch>; the materialisation
@@ -272,7 +319,76 @@ async fn build_dataset(
         data.num_rows(), schema.columns.len(), mem_mb, index.len()
     );
 
-    Ok((DatasetState { schema, data, index }, provider))
+    Ok((DatasetState { schema, data, index, lazy: false }, provider))
+}
+
+/// Build a lazy state + `ListingTable` provider for a local parquet dataset.
+/// The dataset is never read into RAM; DataFusion streams row groups on
+/// each query. The returned `DatasetState.data` is an empty `RecordBatch`
+/// carrying only the schema (used by the `*Schema` endpoint).
+async fn build_lazy_local_parquet(
+    d:   &DatasetConfig,
+    ctx: &SessionContext,
+) -> Result<(DatasetState, Arc<dyn TableProvider>), AppError> {
+    let files = d.resolve_local_parquet_files()?;
+
+    let urls: Vec<ListingTableUrl> = files.iter()
+        .map(|p| {
+            let s = p.to_str().ok_or_else(|| AppError::Internal(format!(
+                "dataset '{}': non-utf8 path {}", d.name, p.display()
+            )))?;
+            ListingTableUrl::parse(s).map_err(|e| AppError::Internal(format!(
+                "dataset '{}': bad url '{s}': {e}", d.name
+            )))
+        })
+        .collect::<Result<_, _>>()?;
+
+    let opts = ListingOptions::new(Arc::new(ParquetFormat::default()))
+        .with_file_extension(".parquet");
+
+    let session_state = ctx.state();
+    let resolved_schema = opts
+        .infer_schema(&session_state, &urls[0])
+        .await
+        .map_err(|e| AppError::Internal(format!(
+            "dataset '{}': infer parquet schema: {e}", d.name
+        )))?;
+
+    let cfg = ListingTableConfig::new_with_multi_paths(urls)
+        .with_listing_options(opts)
+        .with_schema(resolved_schema.clone());
+    let table = ListingTable::try_new(cfg)
+        .map_err(|e| AppError::Internal(format!(
+            "dataset '{}': ListingTable::try_new: {e}", d.name
+        )))?;
+    let provider: Arc<dyn TableProvider> = Arc::new(table);
+
+    let arrow_sch = resolved_schema;
+    let columns: Vec<ColumnInfo> = arrow_sch.fields().iter().map(|f| {
+        let dt = f.data_type();
+        ColumnInfo {
+            name:     f.name().clone(),
+            logical:  arrow_to_logical(dt),
+            sql_type: format!("{dt:?}"),
+            nullable: f.is_nullable(),
+        }
+    }).collect();
+    let schema = DatasetSchema::new(&d.name, columns);
+
+    // Empty RecordBatch carrying just the schema — keeps the existing
+    // `DatasetState.data` invariant (“something we can hand to serialize”)
+    // intact for code that only inspects the schema.
+    let empty = RecordBatch::new_empty(arrow_sch.clone());
+
+    log::info!(
+        "dataset '{}' [{}, lazy]: {} files, {} cols (no materialise, no index)",
+        d.name, d.source.kind.as_str(), files.len(), schema.columns.len()
+    );
+
+    Ok((
+        DatasetState { schema, data: empty, index: EqIndex::new(), lazy: true },
+        provider,
+    ))
 }
 
 /// Original local-parquet code path — sync file I/O, one batch per row group.
@@ -475,9 +591,13 @@ fn build_query_sql(schema: &DatasetSchema, req: &QueryRequest) -> Result<String,
         .collect::<Result<_, _>>()?;
 
     let table = DatasetSchema::quote_ident(&schema.name);
+    let where_clause = if clauses.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", clauses.join(" AND "))
+    };
     Ok(format!(
-        "SELECT {cols} FROM {table} WHERE {} LIMIT {page_size} OFFSET {offset}",
-        clauses.join(" AND ")
+        "SELECT {cols} FROM {table}{where_clause} LIMIT {page_size} OFFSET {offset}"
     ))
 }
 
