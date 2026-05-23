@@ -4,7 +4,7 @@ name: Publish datapress to PyPI
 # Only tag builds upload to PyPI.
 on:
   push:
-    branches: [main]
+    branches: [main, feat/multi-backend]
     tags:     ['v*']
   pull_request:
   workflow_dispatch:
