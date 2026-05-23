@@ -40,7 +40,11 @@ jobs:
           manylinux:      auto
           args:           --release --out dist
           rust-toolchain: stable
-          sccache:        'true'
+          # sccache disabled: wrapping `c++` inside the manylinux container
+          # makes the bundled duckdb-sys C++ build fail silently. The
+          # Swatinem/rust-cache step above already caches target/ between
+          # runs, which covers the same C++ object files.
+          sccache:        'false'
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-linux-${{ matrix.target }}
@@ -64,7 +68,7 @@ jobs:
           target:         aarch64
           args:           --release --out dist
           rust-toolchain: stable
-          sccache:        'true'
+          sccache:        'false'
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-macos-aarch64
