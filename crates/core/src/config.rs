@@ -53,6 +53,12 @@ pub struct ServerConfig {
     pub port:    u16,
     /// Number of actix worker threads. `None` (= unset) → one per CPU.
     pub workers: Option<usize>,
+    /// Optional URL path prefix — useful when sitting behind a reverse
+    /// proxy that rewrites e.g. `/datapress/...` → `/...`. When set, every
+    /// route is mounted under this prefix (so the proxy can pass the URL
+    /// through unchanged). Must start with `/` and not end with `/`; the
+    /// empty string (default) means no prefix.
+    pub prefix:  String,
 }
 
 impl Default for ServerConfig {
@@ -62,6 +68,7 @@ impl Default for ServerConfig {
             listen:  IpAddr::from([127, 0, 0, 1]),
             port:    8080,
             workers: None,
+            prefix:  String::new(),
         }
     }
 }
@@ -226,6 +233,21 @@ impl AppConfig {
     }
 
     fn validate(&self) -> Result<(), AppError> {
+        // Server prefix: empty, or must start with '/' and not end with '/'.
+        let p = &self.server.prefix;
+        if !p.is_empty() {
+            if !p.starts_with('/') {
+                return Err(AppError::Internal(format!(
+                    "server.prefix must start with '/' (got '{p}')"
+                )));
+            }
+            if p.ends_with('/') {
+                return Err(AppError::Internal(format!(
+                    "server.prefix must not end with '/' (got '{p}')"
+                )));
+            }
+        }
+
         if self.datasets.is_empty() {
             return Err(AppError::Internal(
                 "datasets.toml has no [[dataset]] entries".into(),

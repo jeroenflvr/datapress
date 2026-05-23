@@ -18,10 +18,12 @@ pub async fn serve(cfg: AppConfig) -> std::io::Result<()> {
     );
     let addr    = (cfg.server.listen, cfg.server.port);
     let workers = cfg.server.workers;
+    let prefix  = cfg.server.prefix.clone();
 
     log::info!(
-        "Listening on http://{}:{} (DataFusion backend, {} workers)",
+        "Listening on http://{}:{}{} (DataFusion backend, {} workers)",
         cfg.server.listen, cfg.server.port,
+        if prefix.is_empty() { "".into() } else { format!("{prefix}/") },
         workers.map(|w| w.to_string()).unwrap_or_else(|| "auto".into()),
     );
 
@@ -29,11 +31,14 @@ pub async fn serve(cfg: AppConfig) -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(store.clone()))
             .wrap(middleware::Logger::default())
-            .service(handlers::health)
-            .service(handlers::list_datasets)
-            .service(handlers::get_schema)
-            .service(handlers::query_dataset)
-            .service(handlers::reload_dataset)
+            .service(
+                web::scope(prefix.as_str())
+                    .service(handlers::health)
+                    .service(handlers::list_datasets)
+                    .service(handlers::get_schema)
+                    .service(handlers::query_dataset)
+                    .service(handlers::reload_dataset),
+            )
     });
     if let Some(w) = workers {
         server = server.workers(w);
