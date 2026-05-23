@@ -5,6 +5,8 @@ pub enum AppError {
     UnknownColumn(String),
     UnknownOperator(String),
     InvalidValue(String),
+    NotFound(String),
+    Forbidden(String),
     Internal(String),
 }
 
@@ -14,6 +16,8 @@ impl std::fmt::Display for AppError {
             AppError::UnknownColumn(c)   => write!(f, "unknown column: {c}"),
             AppError::UnknownOperator(o) => write!(f, "unknown operator: {o}"),
             AppError::InvalidValue(v)    => write!(f, "invalid value: {v}"),
+            AppError::NotFound(n)        => write!(f, "not found: {n}"),
+            AppError::Forbidden(m)       => write!(f, "forbidden: {m}"),
             AppError::Internal(s)        => write!(f, "internal error: {s}"),
         }
     }
@@ -49,8 +53,10 @@ impl From<datafusion::error::DataFusionError> for AppError {
 impl ResponseError for AppError {
     fn status_code(&self) -> StatusCode {
         match self {
-            AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            _                     => StatusCode::BAD_REQUEST,
+            AppError::Internal(_)  => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::NotFound(_)  => StatusCode::NOT_FOUND,
+            AppError::Forbidden(_) => StatusCode::FORBIDDEN,
+            _                      => StatusCode::BAD_REQUEST,
         }
     }
 

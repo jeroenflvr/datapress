@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use actix_web::{HttpResponse, ResponseError, get, post, web};
+use actix_web::{HttpRequest, HttpResponse, ResponseError, get, post, web};
 
+use crate::admin;
 use crate::duckdb_backend::db::{DbPool, Registry};
 use crate::duckdb_backend::repository::DatasetRepository;
 use crate::errors::AppError;
@@ -14,12 +15,11 @@ pub async fn health() -> HttpResponse {
 
 #[get("/api/datasets")]
 pub async fn list_datasets(reg: web::Data<Arc<Registry>>) -> HttpResponse {
-    let summaries: Vec<_> = reg.names().into_iter().map(|n| {
-        let s = &reg.datasets[n];
-        serde_json::json!({
+    let summaries: Vec<_> = reg.names().into_iter().filter_map(|n| {
+        reg.get(&n).ok().map(|s| serde_json::json!({
             "name":    s.name,
             "columns": s.columns.len(),
-        })
+        }))
     }).collect();
     HttpResponse::Ok().json(serde_json::json!({ "datasets": summaries }))
 }
@@ -31,22 +31,22 @@ pub async fn get_schema(
 ) -> HttpResponse {
     let name = path.into_inner();
     let schema = match reg.get(&name) {
-        Ok(s)  => s.clone(),
+        Ok(s)  => s,
         Err(e) => return e.error_response(),
     };
     let pool = reg.pool.clone();
+    let schema_for_block = schema.clone();
 
     let sample = web::block(move || -> Result<String, AppError> {
         let conn = DbPool::get(&pool);
-        DatasetRepository::new(&conn, &schema).sample()
+        DatasetRepository::new(&conn, &schema_for_block).sample()
     }).await;
 
     match sample {
         Ok(Ok(sample_json)) => {
-            let s = reg.get(&name).unwrap();
             let body = serde_json::json!({
-                "name":    s.name,
-                "columns": s.columns,
+                "name":    schema.name,
+                "columns": schema.columns,
                 "sample":  serde_json::from_str::<serde_json::Value>(&sample_json)
                     .unwrap_or(serde_json::Value::Null),
             });
@@ -73,7 +73,7 @@ pub async fn query_dataset(
     let req       = body.into_inner();
 
     let schema = match reg.get(&name) {
-        Ok(s)  => s.clone(),
+        Ok(s)  => s,
         Err(e) => return e.error_response(),
     };
     let pool = reg.pool.clone();
@@ -94,5 +94,28 @@ pub async fn query_dataset(
             HttpResponse::InternalServerError()
                 .json(serde_json::json!({ "error": "internal error" }))
         }
+    }
+}
+
+/// Admin endpoint: rebuild a dataset from disk and atomically swap it in.
+/// Requires `X-Admin-Token` matching `$ADMIN_TOKEN`. Disabled if the env var
+/// is unset.
+#[post("/api/datasets/{name}/reload")]
+pub async fn reload_dataset(
+    req:  HttpRequest,
+    reg:  web::Data<Arc<Registry>>,
+    path: web::Path<String>,
+) -> HttpResponse {
+    if let Err(e) = admin::require_admin(&req) {
+        return e.error_response();
+    }
+    let name = path.into_inner();
+    match reg.reload(&name).await {
+        Ok(stats) => HttpResponse::Ok().json(serde_json::json!({
+            "dataset":    name,
+            "rows":       stats.rows,
+            "elapsed_ms": stats.elapsed_ms,
+        })),
+        Err(e) => e.error_response(),
     }
 }

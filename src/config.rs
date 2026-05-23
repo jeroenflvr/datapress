@@ -1,10 +1,28 @@
 //! Runtime configuration loaded from `datasets.toml`.
 //!
-//! Each instance binds to a list of datasets. Backend-specific tuning (the
-//! equality-index policy used by the DataFusion backend) lives in a per-
-//! dataset `[dataset.index]` block.
+//! Each instance binds to a list of datasets. A dataset's `[dataset.source]`
+//! block selects the format (`parquet` or `delta`) and the location (a
+//! local path or an `s3://bucket/key` URL). When the location is on S3,
+//! an optional `[dataset.s3]` block carries non-secret connection details
+//! (region, endpoint, addressing style, …).
+//!
+//! Credentials are resolved at runtime via [`DatasetConfig::resolved_creds`]
+//! in this precedence order:
+//!
+//! 1. Per-dataset env vars `${PREFIX}_AWS_ACCESS_KEY_ID`,
+//!    `${PREFIX}_AWS_SECRET_ACCESS_KEY`, `${PREFIX}_AWS_SESSION_TOKEN`
+//!    where `${PREFIX}` is the dataset name uppercased with non-alphanumeric
+//!    characters replaced by `_` (e.g. `accidents` → `ACCIDENTS`,
+//!    `sales.eu-1` → `SALES_EU_1`).
+//! 2. Inline `access_key_id` / `secret_access_key` / `session_token` in the
+//!    `[dataset.s3]` block.
+//! 3. Plain `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` /
+//!    `AWS_SESSION_TOKEN`.
+//! 4. None — fall back to the engine's own provider chain
+//!    (`~/.aws/credentials`, IMDS, …).
 
 use std::collections::HashSet;
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -17,19 +35,140 @@ use crate::errors::AppError;
 
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
+    #[serde(default)]
+    pub server:   ServerConfig,
     #[serde(rename = "dataset", default)]
     pub datasets: Vec<DatasetConfig>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct ServerConfig {
+    /// Which engine to run. Must match the binary's compile-time feature.
+    pub backend: Backend,
+    /// Listen address. Defaults to loopback (127.0.0.1) — explicitly opt in
+    /// to 0.0.0.0 if you want to expose the port.
+    pub listen:  IpAddr,
+    /// TCP port.
+    pub port:    u16,
+    /// Number of actix worker threads. `None` (= unset) → one per CPU.
+    pub workers: Option<usize>,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            backend: Backend::default(),
+            listen:  IpAddr::from([127, 0, 0, 1]),
+            port:    8080,
+            workers: None,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Backend {
+    #[default]
+    Datafusion,
+    Duckdb,
+}
+
+impl Backend {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Backend::Datafusion => "datafusion",
+            Backend::Duckdb     => "duckdb",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct DatasetConfig {
     pub name:   String,
-    pub source: String,
+    pub source: SourceConfig,
+    #[serde(default)]
+    pub s3:     Option<S3Config>,
     #[serde(default)]
     pub index:  IndexConfig,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
+pub struct SourceConfig {
+    pub kind:     SourceKind,
+    /// Either a local filesystem path or an `s3://bucket/key` URL.
+    pub location: String,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SourceKind {
+    #[default]
+    Parquet,
+    Delta,
+}
+
+impl SourceKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SourceKind::Parquet => "parquet",
+            SourceKind::Delta   => "delta",
+        }
+    }
+}
+
+/// Non-secret S3 connection settings. Credentials are pulled from env / the
+/// AWS credential chain — see [`DatasetConfig::resolved_creds`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct S3Config {
+    pub region:           Option<String>,
+    /// Custom endpoint (MinIO, R2, Wasabi, LocalStack, …). Omit for AWS.
+    pub endpoint:         Option<String>,
+    /// `virtual` (default — `bucket.host`) or `path` (`host/bucket/`).
+    /// MinIO and most non-AWS providers require `path`.
+    pub addressing_style: AddressingStyle,
+    /// Allow plain-HTTP endpoints. Required for local MinIO over `http://…`.
+    pub allow_http:       bool,
+    /// Inline credentials. Strongly discouraged in production — prefer env
+    /// vars (see module docs).
+    pub access_key_id:     Option<String>,
+    pub secret_access_key: Option<String>,
+    pub session_token:     Option<String>,
+}
+
+impl Default for S3Config {
+    fn default() -> Self {
+        Self {
+            region:            None,
+            endpoint:          None,
+            addressing_style:  AddressingStyle::Virtual,
+            allow_http:        false,
+            access_key_id:     None,
+            secret_access_key: None,
+            session_token:     None,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AddressingStyle {
+    #[default]
+    Virtual,
+    Path,
+}
+
+impl AddressingStyle {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AddressingStyle::Virtual => "virtual",
+            AddressingStyle::Path    => "path",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct IndexConfig {
     pub mode:            IndexMode,
@@ -54,6 +193,21 @@ pub enum IndexMode {
     Auto,
     None,
     List,
+}
+
+/// Resolved S3 credentials. `None` fields mean "let the engine's default
+/// provider chain figure it out".
+#[derive(Debug, Clone, Default)]
+pub struct ResolvedCreds {
+    pub access_key_id:     Option<String>,
+    pub secret_access_key: Option<String>,
+    pub session_token:     Option<String>,
+}
+
+impl ResolvedCreds {
+    pub fn has_keypair(&self) -> bool {
+        self.access_key_id.is_some() && self.secret_access_key.is_some()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -106,23 +260,82 @@ impl AppConfig {
                 )));
             }
 
-            // Source must resolve to at least one parquet file (file or dir).
-            d.resolve_files()?;
+            // Location-specific checks.
+            if d.source.is_s3() {
+                d.source.s3_bucket()?;
+                if d.s3.as_ref().and_then(|s| s.region.as_deref()).is_none()
+                    && d.s3.as_ref().and_then(|s| s.endpoint.as_deref()).is_none()
+                    && std::env::var("AWS_REGION").is_err()
+                    && std::env::var("AWS_DEFAULT_REGION").is_err()
+                {
+                    log::warn!(
+                        "dataset '{}': S3 source without explicit region — \
+                         relying on AWS_REGION env var",
+                        d.name
+                    );
+                }
+            } else {
+                // Local path. For parquet we can fully resolve to a file
+                // list up front; for delta we only check that the directory
+                // exists (delta has its own layout — _delta_log/, …).
+                match d.source.kind {
+                    SourceKind::Parquet => { d.resolve_local_parquet_files()?; }
+                    SourceKind::Delta   => {
+                        let p = Path::new(&d.source.location);
+                        if !p.exists() {
+                            return Err(AppError::Internal(format!(
+                                "dataset '{}': delta location does not exist: {}",
+                                d.name, d.source.location
+                            )));
+                        }
+                    }
+                }
+            }
         }
         Ok(())
     }
 }
 
+impl SourceConfig {
+    pub fn is_s3(&self) -> bool {
+        self.location.starts_with("s3://")
+    }
+
+    /// Returns `(bucket, key_prefix_or_empty)` for an `s3://…` location.
+    pub fn s3_bucket(&self) -> Result<(&str, &str), AppError> {
+        let rest = self.location.strip_prefix("s3://")
+            .ok_or_else(|| AppError::Internal(format!(
+                "not an s3:// URL: {}", self.location
+            )))?;
+        let (bucket, key) = match rest.split_once('/') {
+            Some((b, k)) => (b, k),
+            None         => (rest, ""),
+        };
+        if bucket.is_empty() {
+            return Err(AppError::Internal(format!(
+                "s3 URL missing bucket: {}", self.location
+            )));
+        }
+        Ok((bucket, key))
+    }
+}
+
 impl DatasetConfig {
-    /// Expand `source` to a concrete list of `.parquet` files.
-    /// `source` is either a single `.parquet` file or a directory containing
-    /// one or more `*.parquet` files.
-    pub fn resolve_files(&self) -> Result<Vec<PathBuf>, AppError> {
-        let path = Path::new(&self.source);
+    /// Expand `source.location` to a concrete list of local `.parquet`
+    /// files. Only valid for `kind = parquet` on local paths — S3 and
+    /// Delta sources are resolved by the backend itself.
+    pub fn resolve_local_parquet_files(&self) -> Result<Vec<PathBuf>, AppError> {
+        if self.source.is_s3() {
+            return Err(AppError::Internal(format!(
+                "dataset '{}': resolve_local_parquet_files called on s3 source",
+                self.name
+            )));
+        }
+        let path = Path::new(&self.source.location);
         if !path.exists() {
             return Err(AppError::Internal(format!(
                 "dataset '{}': source path does not exist: {}",
-                self.name, self.source
+                self.name, self.source.location
             )));
         }
 
@@ -136,9 +349,8 @@ impl DatasetConfig {
             return Ok(vec![path.to_path_buf()]);
         }
 
-        // Directory: collect all *.parquet entries, sorted.
         let mut files: Vec<PathBuf> = std::fs::read_dir(path)
-            .map_err(|e| AppError::Internal(format!("read {}: {e}", self.source)))?
+            .map_err(|e| AppError::Internal(format!("read {}: {e}", self.source.location)))?
             .filter_map(|entry| entry.ok().map(|e| e.path()))
             .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("parquet"))
             .collect();
@@ -146,9 +358,59 @@ impl DatasetConfig {
         if files.is_empty() {
             return Err(AppError::Internal(format!(
                 "dataset '{}': no *.parquet files found in {}",
-                self.name, self.source
+                self.name, self.source.location
             )));
         }
         Ok(files)
+    }
+
+    /// Env-var prefix derived from the dataset name: uppercase with
+    /// non-alphanumeric chars replaced by `_`. E.g. `sales.eu-1` →
+    /// `SALES_EU_1`.
+    pub fn env_prefix(&self) -> String {
+        self.name
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_uppercase() } else { '_' })
+            .collect()
+    }
+
+    /// Resolve S3 credentials following the precedence chain documented at
+    /// the top of this module. Returns an empty struct when nothing was
+    /// found — the caller should then leave credential resolution to the
+    /// engine's default provider chain.
+    pub fn resolved_creds(&self) -> ResolvedCreds {
+        let prefix = self.env_prefix();
+        let from_env = |suffix: &str| {
+            std::env::var(format!("{prefix}_{suffix}")).ok()
+                .filter(|s| !s.is_empty())
+        };
+        let inline = self.s3.as_ref();
+        let plain_env = |k: &str| {
+            std::env::var(k).ok().filter(|s| !s.is_empty())
+        };
+
+        ResolvedCreds {
+            access_key_id: from_env("AWS_ACCESS_KEY_ID")
+                .or_else(|| inline.and_then(|s| s.access_key_id.clone()))
+                .or_else(|| plain_env("AWS_ACCESS_KEY_ID")),
+            secret_access_key: from_env("AWS_SECRET_ACCESS_KEY")
+                .or_else(|| inline.and_then(|s| s.secret_access_key.clone()))
+                .or_else(|| plain_env("AWS_SECRET_ACCESS_KEY")),
+            session_token: from_env("AWS_SESSION_TOKEN")
+                .or_else(|| inline.and_then(|s| s.session_token.clone()))
+                .or_else(|| plain_env("AWS_SESSION_TOKEN")),
+        }
+    }
+
+    /// Resolved S3 region: per-dataset env (`${PREFIX}_AWS_REGION`)
+    /// → inline → `AWS_REGION` → `AWS_DEFAULT_REGION` → `us-east-1`.
+    pub fn resolved_region(&self) -> String {
+        let prefix = self.env_prefix();
+        std::env::var(format!("{prefix}_AWS_REGION")).ok()
+            .filter(|s| !s.is_empty())
+            .or_else(|| self.s3.as_ref().and_then(|s| s.region.clone()))
+            .or_else(|| std::env::var("AWS_REGION").ok().filter(|s| !s.is_empty()))
+            .or_else(|| std::env::var("AWS_DEFAULT_REGION").ok().filter(|s| !s.is_empty()))
+            .unwrap_or_else(|| "us-east-1".to_string())
     }
 }

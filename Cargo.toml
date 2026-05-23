@@ -11,7 +11,12 @@ edition = "2024"
 [features]
 default    = []
 duckdb     = ["dep:duckdb"]
-datafusion = ["dep:arrow", "dep:parquet", "dep:datafusion", "dep:rayon", "dep:itoa", "dep:ryu"]
+datafusion = [
+    "dep:arrow", "dep:parquet", "dep:datafusion",
+    "dep:rayon", "dep:itoa", "dep:ryu", "dep:arc-swap",
+    "dep:object_store", "dep:url",
+    "dep:deltalake",
+]
 
 # ---------------------------------------------------------------------------
 # Always-on dependencies (shared HTTP layer, serde, logging).
@@ -33,6 +38,17 @@ datafusion = { version = "53", optional = true }
 rayon      = { version = "1", optional = true }
 itoa       = { version = "1", optional = true }
 ryu        = { version = "1", optional = true }
+arc-swap   = { version = "1", optional = true }
+
+# DataFusion-side S3 + Delta support.
+# - `object_store` 0.13 is what datafusion 53 / deltalake 0.32 align on.
+# - `url` is used to scope the registered object store per bucket.
+# - `deltalake` is gated on the `datafusion` feature (the only backend that
+#   uses delta-rs directly; the DuckDB backend uses DuckDB's own `delta`
+#   extension and needs no extra Rust crate).
+object_store = { version = "0.13", features = ["aws"], optional = true }
+url          = { version = "2", optional = true }
+deltalake = { version = "0.32", features = ["datafusion", "s3"], optional = true }
 
 # ---------------------------------------------------------------------------
 # Binaries

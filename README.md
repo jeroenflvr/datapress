@@ -64,26 +64,85 @@ p99 on your queries" — see [`TEST_Q.md`](TEST_Q.md) for a benchmark suite.
 
 ## Configuration: `datasets.toml`
 
-Every instance reads this file at startup. One `[[dataset]]` entry per
-table you want to expose.
+Every instance reads this file at startup. One `[server]` block plus one
+`[[dataset]]` entry per table you want to expose.
 
 ```toml
-[[dataset]]
-name   = "accidents"                  # used in the URL: /api/datasets/accidents/...
-source = "data/accidents.parquet"     # file OR directory of *.parquet
+[server]
+backend = "datafusion"   # "datafusion" (default) | "duckdb"
+listen  = "127.0.0.1"    # default; set to "0.0.0.0" to expose
+port    = 8080
+# workers = 8            # omit for one worker per CPU
 
-# Optional — DataFusion only. DuckDB ignores this block.
-[dataset.index]
-mode             = "auto"             # "auto" | "none" | "list"
-columns          = []                 # required when mode = "list"
-max_cardinality  = 100000             # used by "auto" to skip wide cols
+[[dataset]]
+name = "accidents"                    # used in the URL: /api/datasets/accidents/...
+
+  [dataset.source]
+  kind     = "parquet"                # "parquet" | "delta"
+  location = "data/accidents.parquet" # file, directory of *.parquet, or s3://…
+
+  # Optional — DataFusion only. DuckDB ignores this block.
+  [dataset.index]
+  mode             = "auto"           # "auto" | "none" | "list"
+  columns          = []               # required when mode = "list"
+  max_cardinality  = 100000           # used by "auto" to skip wide cols
 ```
+
+### Server
+
+| Field     | Default       | Notes                                                                                          |
+|-----------|---------------|------------------------------------------------------------------------------------------------|
+| `backend` | `datafusion`  | Informational hint; logged at startup. Each binary always runs as its own backend regardless of this value. |
+| `listen`  | `127.0.0.1`   | Loopback by default — the service is **not** exposed on a network interface unless you opt in. |
+| `port`    | `8080`        |                                                                                                |
+| `workers` | *(unset)*     | Actix worker threads. Unset = one per CPU.                                                     |
 
 ### Source
 
-- A single `.parquet` file, or
-- A directory containing one or more `*.parquet` files (read in sorted order;
-  no glob patterns).
+`[dataset.source]` is a tagged enum.
+
+| `kind`    | `location`                                          | Notes                                                                                  |
+|-----------|-----------------------------------------------------|----------------------------------------------------------------------------------------|
+| `parquet` | a `.parquet` file                                   | Read as-is.                                                                            |
+| `parquet` | a directory                                         | Every `*.parquet` inside (sorted, non-recursive). No glob patterns.                    |
+| `parquet` | `s3://bucket/key.parquet` or `s3://bucket/prefix/`  | Requires a `[dataset.s3]` block. DuckDB autoloads `httpfs`.                            |
+| `delta`   | a local directory                                   | Pointed at the table root (the dir containing `_delta_log/`).                          |
+| `delta`   | `s3://bucket/path/to/table`                         | Requires `[dataset.s3]`. DuckDB autoloads `delta`; DataFusion uses the `deltalake` crate. |
+
+#### S3 / S3-compatible storage
+
+```toml
+[[dataset]]
+name = "events"
+
+  [dataset.source]
+  kind     = "parquet"           # or "delta"
+  location = "s3://events/2025/*.parquet"
+
+  [dataset.s3]
+  region            = "us-east-1"
+  endpoint          = "http://localhost:9000"  # omit for AWS
+  addressing_style  = "path"                   # "virtual" (default) | "path"
+  allow_http        = true                     # only for non-https endpoints
+```
+
+| Field              | Default       | Notes                                                                          |
+|--------------------|---------------|--------------------------------------------------------------------------------|
+| `region`           | `us-east-1`   | Falls back to `AWS_REGION` env, then `us-east-1`.                              |
+| `endpoint`         | *(unset)*     | Custom S3 endpoint (MinIO, R2, Wasabi, Backblaze, …).                          |
+| `addressing_style` | `virtual`     | `virtual` = `https://bucket.host`, `path` = `https://host/bucket` (MinIO).     |
+| `allow_http`       | `false`       | Must be `true` if `endpoint` is `http://…`.                                    |
+| `access_key_id`, `secret_access_key`, `session_token` | *(unset)* | Inline creds. Discouraged for prod — use env vars instead. |
+
+**Credential precedence** (highest → lowest):
+
+1. Per-dataset env vars: `${PREFIX}_AWS_ACCESS_KEY_ID`, `${PREFIX}_AWS_SECRET_ACCESS_KEY`, `${PREFIX}_AWS_SESSION_TOKEN`, `${PREFIX}_AWS_REGION`.
+   `PREFIX` is the dataset name uppercased with every non-alphanumeric character mapped to `_` (e.g. `accidents` → `ACCIDENTS_AWS_…`, `my-bucket` → `MY_BUCKET_AWS_…`).
+2. Inline `[dataset.s3]` keys.
+3. Plain `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`.
+4. The backend's default credential chain (`~/.aws/credentials`, IMDS, etc.).
+
+> When `kind = "delta"` and `location` is an `s3://…` URL, both backends fully materialise the table at startup. There is no incremental scan path — switch to `parquet` if you need on-demand page reads.
 
 ### Equality-index policy (DataFusion only)
 
@@ -98,11 +157,9 @@ startup so that `eq` / `in` predicates resolve in O(1).
 
 Override the config path with `DATASETS_CONFIG=/path/to/file.toml`.
 
----
-
 ## HTTP API
 
-Three routes, both backends:
+Four routes, both backends:
 
 ### `GET /api/datasets`
 
@@ -180,6 +237,35 @@ Response:
 Column names are looked up case-insensitively against the inferred schema
 and quoted automatically, so `Temperature(F)` and similar identifiers work.
 
+### `POST /api/datasets/{name}/reload` *(admin)*
+
+Rebuilds the dataset from its configured `source` and atomically swaps it
+in. Running queries finish against the old snapshot; the next query hits
+the new data. The old in-memory copy is dropped once the last in-flight
+request releases its reference.
+
+Requires `X-Admin-Token: $ADMIN_TOKEN`. **If `ADMIN_TOKEN` is unset the
+endpoint is disabled** — the secure default. The comparison is
+constant-time.
+
+```bash
+curl -s -X POST \
+  -H "X-Admin-Token: $ADMIN_TOKEN" \
+  http://localhost:8080/api/datasets/accidents/reload
+# { "dataset": "accidents", "rows": 7728394, "elapsed_ms": 1842 }
+```
+
+| Status | Body                                          | Meaning                                              |
+|--------|-----------------------------------------------|------------------------------------------------------|
+| `200`  | `{ dataset, rows, elapsed_ms }`               | New data live.                                       |
+| `403`  | `{ "error": "forbidden: …" }`                 | Token missing/wrong, or `ADMIN_TOKEN` not set.       |
+| `404`  | `{ "error": "not found: dataset: …" }`        | No such dataset in `datasets.toml`.                  |
+| `500`  | `{ "error": "internal error: …" }`            | Parquet read failed — old data stays live.           |
+
+Concurrent reloads of the **same** dataset are serialised (per-name mutex);
+reloads of **different** datasets run in parallel. Peak memory roughly
+doubles during a reload because old and new copies coexist briefly.
+
 ---
 
 ## Examples
@@ -234,16 +320,17 @@ src/
 ├── bin/
 │   ├── duckdb.rs              # entrypoint for fast-api-duckdb
 │   └── datafusion.rs          # entrypoint for fast-api-datafusion
+├── admin.rs                   # X-Admin-Token verification (constant-time)
 ├── config.rs                  # datasets.toml parsing + validation
 ├── schema.rs                  # backend-agnostic schema model
 ├── models.rs                  # Predicate / QueryRequest
 ├── errors.rs                  # AppError + actix ResponseError
 ├── duckdb_backend/
-│   ├── db.rs                  # Registry: pool + dataset schemas
+│   ├── db.rs                  # Registry: pool + dataset schemas + reload
 │   ├── repository.rs          # DatasetRepository (SQL builder)
 │   └── handlers.rs            # actix routes
 └── datafusion_backend/
-    ├── store.rs               # Store: RecordBatch + eq-index per dataset
+    ├── store.rs               # Store: RecordBatch + eq-index + reload
     └── handlers.rs            # actix routes
 ```
 
@@ -274,20 +361,28 @@ inner loops.
 
 ## Environment variables
 
-| Variable          | Default          | Purpose                                  |
-|-------------------|------------------|------------------------------------------|
-| `DATASETS_CONFIG` | `datasets.toml`  | Path to the dataset registry file.       |
-| `DB_POOL_SIZE`    | `num_cpus`       | DuckDB connection pool size (DuckDB only).|
-| `RUST_LOG`        | `info`           | Standard `env_logger` filter.            |
+| Variable          | Default          | Purpose                                                                          |
+|-------------------|------------------|----------------------------------------------------------------------------------|
+| `DATASETS_CONFIG` | `datasets.toml`  | Path to the dataset registry file.                                               |
+| `ADMIN_TOKEN`     | *(unset)*        | Enables `POST /api/datasets/{name}/reload`. Unset = admin endpoints disabled.    |
+| `DB_POOL_SIZE`    | `num_cpus`       | DuckDB connection pool size (DuckDB only).                                       |
+| `RUST_LOG`        | `info`           | Standard `env_logger` filter.                                                    |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | *(unset)* | Fallback S3 credentials used by any dataset that doesn't override them. |
+| `AWS_REGION`      | `us-east-1`      | Fallback S3 region.                                                              |
+| `${PREFIX}_AWS_*` | *(unset)*        | Per-dataset overrides for the four `AWS_*` vars above. See "Credential precedence" under `[dataset.s3]`. |
 
-Both binaries bind to `0.0.0.0:8080`.
+Bind address, port, worker count and backend selection live in `[server]`
+in `datasets.toml`, not in env vars.
 
 ---
 
 ## Status / non-goals
 
-- No authentication or rate-limiting — put this behind your own gateway.
-- No write path: parquet sources are read-only and loaded at startup.
+- No authentication or rate-limiting on query routes — put this behind your
+  own gateway. The `reload` admin route is gated by a shared-secret header
+  (`X-Admin-Token`) and disabled unless `ADMIN_TOKEN` is set.
+- No write path: parquet sources are read-only. The only mutation is
+  reloading a dataset from disk via the admin route.
 - No `ORDER BY` / cursor pagination — pagination is plain `OFFSET / LIMIT`,
   so deep pages get expensive (see `H5` in `TEST_Q.md`).
 - DataFusion backend keeps the whole dataset in memory. DuckDB does not.

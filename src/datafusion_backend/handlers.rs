@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use actix_web::{HttpResponse, ResponseError, get, post, web};
+use actix_web::{HttpRequest, HttpResponse, ResponseError, get, post, web};
 
+use crate::admin;
 use crate::datafusion_backend::store::Store;
 use crate::models::QueryRequest;
 
@@ -14,13 +15,12 @@ pub async fn health() -> HttpResponse {
 
 #[get("/api/datasets")]
 pub async fn list_datasets(state: web::Data<Arc<Store>>) -> HttpResponse {
-    let summaries: Vec<_> = state.names().into_iter().map(|n| {
-        let st = state.dataset(n).unwrap();
-        serde_json::json!({
+    let summaries: Vec<_> = state.names().into_iter().filter_map(|n| {
+        state.dataset(&n).ok().map(|st| serde_json::json!({
             "name":    st.schema.name,
             "columns": st.schema.columns.len(),
             "rows":    st.data.num_rows(),
-        })
+        }))
     }).collect();
     HttpResponse::Ok().json(serde_json::json!({ "datasets": summaries }))
 }
@@ -63,6 +63,29 @@ pub async fn query_dataset(
             let body = format!(r#"{{"data":{arr},"page":{page},"page_size":{page_size}}}"#);
             HttpResponse::Ok().content_type("application/json").body(body)
         }
+        Err(e) => e.error_response(),
+    }
+}
+
+/// Admin endpoint: rebuild a dataset from disk and atomically swap it in.
+/// Requires `X-Admin-Token` matching `$ADMIN_TOKEN`. Disabled if the env var
+/// is unset.
+#[post("/api/datasets/{name}/reload")]
+pub async fn reload_dataset(
+    req:   HttpRequest,
+    state: web::Data<Arc<Store>>,
+    path:  web::Path<String>,
+) -> HttpResponse {
+    if let Err(e) = admin::require_admin(&req) {
+        return e.error_response();
+    }
+    let name = path.into_inner();
+    match state.reload(&name).await {
+        Ok(stats) => HttpResponse::Ok().json(serde_json::json!({
+            "dataset":    name,
+            "rows":       stats.rows,
+            "elapsed_ms": stats.elapsed_ms,
+        })),
         Err(e) => e.error_response(),
     }
 }

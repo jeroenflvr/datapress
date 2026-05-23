@@ -1,7 +1,8 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use arc_swap::ArcSwap;
 use arrow::array::{
     Array, ArrayRef, BooleanArray, Float32Array, Float64Array,
     Int8Array, Int16Array, Int32Array, Int64Array,
@@ -13,10 +14,16 @@ use arrow::datatypes::{DataType, Field, Schema};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use serde_json::Value as JsonValue;
 
-use datafusion::datasource::MemTable;
-use datafusion::prelude::SessionContext;
+use datafusion::datasource::{MemTable, TableProvider};
+use datafusion::prelude::{ParquetReadOptions, SessionContext};
 
-use crate::config::{AppConfig, DatasetConfig, IndexConfig, IndexMode};
+use object_store::aws::AmazonS3Builder;
+use url::Url;
+
+use crate::config::{
+    AddressingStyle, AppConfig, DatasetConfig, IndexConfig, IndexMode,
+    ResolvedCreds, S3Config, SourceKind,
+};
 use crate::errors::AppError;
 use crate::models::{Predicate, QueryRequest};
 use crate::schema::{ColumnInfo, DatasetSchema, LogicalType};
@@ -37,36 +44,68 @@ pub struct DatasetState {
 }
 
 /// Multi-dataset registry. Each dataset is registered in the shared
-/// `SessionContext` under its configured name.
+/// `SessionContext` under its configured name. The per-dataset state is
+/// held behind `ArcSwap` so a reload can atomically replace it without
+/// blocking concurrent queries.
 pub struct Store {
     ctx:      SessionContext,
-    datasets: HashMap<String, DatasetState>,
+    /// Original dataset configs, indexed by name. Reload reads the source
+    /// path from here — clients can't redirect a reload at an arbitrary file.
+    configs:  HashMap<String, DatasetConfig>,
+    /// Hot-swappable snapshot of all currently loaded datasets.
+    datasets: ArcSwap<HashMap<String, Arc<DatasetState>>>,
+    /// Per-name reload mutex. Serialises concurrent reloads of the same
+    /// dataset; reloads of different datasets proceed in parallel.
+    reload_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+}
+
+/// Outcome of a successful `reload`.
+pub struct ReloadStats {
+    pub rows:       usize,
+    pub elapsed_ms: u128,
 }
 
 impl Store {
     /// Load every dataset declared in `cfg`.
-    pub fn load(cfg: &AppConfig) -> Result<Self, AppError> {
+    pub async fn load(cfg: &AppConfig) -> Result<Self, AppError> {
+        // One-shot init for the deltalake S3 backend. Safe to call more
+        // than once — the handlers are idempotent.
+        if cfg.datasets.iter().any(|d| d.source.kind == SourceKind::Delta && d.source.is_s3()) {
+            deltalake::aws::register_handlers(None);
+        }
+
         let ctx = SessionContext::new();
         let mut datasets = HashMap::with_capacity(cfg.datasets.len());
+        let mut configs  = HashMap::with_capacity(cfg.datasets.len());
 
         for d in &cfg.datasets {
-            let state = load_dataset(&ctx, d)?;
-            datasets.insert(d.name.clone(), state);
+            let (state, provider) = build_dataset(d, &ctx).await?;
+            ctx.register_table(d.name.as_str(), provider)?;
+            datasets.insert(d.name.clone(), Arc::new(state));
+            configs.insert(d.name.clone(), d.clone());
         }
-        Ok(Self { ctx, datasets })
+        Ok(Self {
+            ctx,
+            configs,
+            datasets: ArcSwap::from_pointee(datasets),
+            reload_locks: Mutex::new(HashMap::new()),
+        })
     }
 
     /// Sorted list of dataset names.
-    pub fn names(&self) -> Vec<&str> {
-        let mut v: Vec<&str> = self.datasets.keys().map(String::as_str).collect();
+    pub fn names(&self) -> Vec<String> {
+        let snap = self.datasets.load();
+        let mut v: Vec<String> = snap.keys().cloned().collect();
         v.sort();
         v
     }
 
-    pub fn dataset(&self, name: &str) -> Result<&DatasetState, AppError> {
+    pub fn dataset(&self, name: &str) -> Result<Arc<DatasetState>, AppError> {
         self.datasets
+            .load()
             .get(name)
-            .ok_or_else(|| AppError::UnknownColumn(format!("unknown dataset: {name}")))
+            .cloned()
+            .ok_or_else(|| AppError::NotFound(format!("dataset: {name}")))
     }
 
     /// JSON for the first row of the dataset, or `null` if empty. Used by
@@ -82,6 +121,52 @@ impl Store {
         let inner = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']'))
             .unwrap_or(trimmed);
         Ok(inner.to_string())
+    }
+
+    /// Rebuild `name` from disk and atomically swap it in. Concurrent queries
+    /// against the same name continue to see the *old* `Arc<DatasetState>`
+    /// until they finish; the old data is dropped once the last reference
+    /// goes away.
+    pub async fn reload(&self, name: &str) -> Result<ReloadStats, AppError> {
+        // 1. Look up the dataset config. Not finding it = 404.
+        let cfg = self
+            .configs
+            .get(name)
+            .ok_or_else(|| AppError::NotFound(format!("dataset: {name}")))?
+            .clone();
+
+        // 2. Per-name lock: only one reload of this dataset at a time.
+        let lock = {
+            let mut locks = self.reload_locks.lock().unwrap();
+            locks
+                .entry(name.to_string())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                .clone()
+        };
+        let _guard = lock.lock().await;
+
+        let started = std::time::Instant::now();
+
+        // 3. Heavy lifting (source read + index build). Parquet/delta
+        // readers are themselves async, so we don't wrap in `web::block`.
+        let (state, provider) = build_dataset(&cfg, &self.ctx).await?;
+        let rows = state.data.num_rows();
+
+        // 4. Atomic swap.
+        //   a) Replace the MemTable inside the SessionContext.
+        //   b) ArcSwap a new snapshot map with the updated Arc<DatasetState>.
+        // In-flight queries already hold the old provider + old Arc; they
+        // run to completion. New queries see the new data.
+        let _ = self.ctx.deregister_table(name)?;
+        self.ctx.register_table(name, provider)?;
+
+        let mut new_map = (**self.datasets.load()).clone();
+        new_map.insert(name.to_string(), Arc::new(state));
+        self.datasets.store(Arc::new(new_map));
+
+        let elapsed_ms = started.elapsed().as_millis();
+        log::info!("reloaded dataset '{name}': {rows} rows in {elapsed_ms} ms");
+        Ok(ReloadStats { rows, elapsed_ms })
     }
 
     /// Run a `QueryRequest` against `name`. Empty predicates → O(1) Arrow
@@ -126,24 +211,27 @@ impl Store {
 // Dataset loading
 // ---------------------------------------------------------------------------
 
-fn load_dataset(ctx: &SessionContext, d: &DatasetConfig) -> Result<DatasetState, AppError> {
-    let files = d.resolve_files()?;
-    let mut all = Vec::new();
-    for f in &files {
-        let file = std::fs::File::open(f)
-            .map_err(|e| AppError::Internal(format!("open {}: {e}", f.display())))?;
-        let reader = ParquetRecordBatchReaderBuilder::try_new(file)?.build()?;
-        for batch in reader {
-            all.push(batch.map_err(|e| AppError::Internal(e.to_string()))?);
-        }
-    }
-    if all.is_empty() {
+async fn build_dataset(
+    d: &DatasetConfig,
+    ctx: &SessionContext,
+) -> Result<(DatasetState, Arc<dyn TableProvider>), AppError> {
+    // Fetch raw RecordBatches from whichever backing store the dataset
+    // is configured to use. All four (parquet, delta) x (local, s3)
+    // combinations converge into one Vec<RecordBatch>; the materialisation
+    // / indexing / partitioning logic below is shared.
+    let raw_batches: Vec<RecordBatch> = match (d.source.kind, d.source.is_s3()) {
+        (SourceKind::Parquet, false) => read_local_parquet(d)?,
+        (SourceKind::Parquet, true)  => read_s3_parquet(d, ctx).await?,
+        (SourceKind::Delta,   false) => read_delta(d, HashMap::new()).await?,
+        (SourceKind::Delta,   true)  => read_delta(d, delta_s3_options(d)?).await?,
+    };
+    if raw_batches.is_empty() {
         return Err(AppError::Internal(format!(
-            "dataset '{}': parquet source is empty", d.name
+            "dataset '{}': source produced no batches", d.name
         )));
     }
 
-    let all       = cast_temporal(all)?;
+    let all       = cast_temporal(raw_batches)?;
     let arrow_sch = all[0].schema();
     let data      = compute::concat_batches(&arrow_sch, all.iter())?;
 
@@ -162,7 +250,7 @@ fn load_dataset(ctx: &SessionContext, d: &DatasetConfig) -> Result<DatasetState,
     // Build the equality index per the per-dataset policy.
     let index = build_eq_index_with_policy(&data, &d.index);
 
-    // Register as a partitioned MemTable under the dataset's name.
+    // Partition for parallel scans by the SQL fallback path.
     let n_parts   = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
     let part_size = (data.num_rows() + n_parts - 1) / n_parts;
     let parts: Vec<Vec<RecordBatch>> = (0..n_parts)
@@ -173,18 +261,158 @@ fn load_dataset(ctx: &SessionContext, d: &DatasetConfig) -> Result<DatasetState,
         })
         .filter(|v| v[0].num_rows() > 0)
         .collect();
-    let provider = MemTable::try_new(data.schema(), parts)?;
-    ctx.register_table(d.name.as_str(), Arc::new(provider))?;
+    let provider: Arc<dyn TableProvider> = Arc::new(MemTable::try_new(data.schema(), parts)?);
 
     let mem_mb: usize = data.columns().iter()
         .map(|c| c.get_buffer_memory_size())
         .sum::<usize>() / 1_048_576;
     log::info!(
-        "dataset '{}': {} rows, {} cols, {} MB, {} indexed cols",
-        d.name, data.num_rows(), schema.columns.len(), mem_mb, index.len()
+        "dataset '{}' [{}]: {} rows, {} cols, {} MB, {} indexed cols",
+        d.name, d.source.kind.as_str(),
+        data.num_rows(), schema.columns.len(), mem_mb, index.len()
     );
 
-    Ok(DatasetState { schema, data, index })
+    Ok((DatasetState { schema, data, index }, provider))
+}
+
+/// Original local-parquet code path — sync file I/O, one batch per row group.
+fn read_local_parquet(d: &DatasetConfig) -> Result<Vec<RecordBatch>, AppError> {
+    let files = d.resolve_local_parquet_files()?;
+    let mut all = Vec::new();
+    for f in &files {
+        let file = std::fs::File::open(f)
+            .map_err(|e| AppError::Internal(format!("open {}: {e}", f.display())))?;
+        let reader = ParquetRecordBatchReaderBuilder::try_new(file)?.build()?;
+        for batch in reader {
+            all.push(batch.map_err(|e| AppError::Internal(e.to_string()))?);
+        }
+    }
+    if all.is_empty() {
+        return Err(AppError::Internal(format!(
+            "dataset '{}': parquet source is empty", d.name
+        )));
+    }
+    Ok(all)
+}
+
+/// Register an `AmazonS3` object store on the SessionContext (so DataFusion's
+/// `read_parquet("s3://…")` can resolve the URL) and stream the whole
+/// dataset back through `DataFrame::collect`.
+async fn read_s3_parquet(
+    d:   &DatasetConfig,
+    ctx: &SessionContext,
+) -> Result<Vec<RecordBatch>, AppError> {
+    register_s3_object_store(d, ctx)?;
+    let df = ctx
+        .read_parquet(d.source.location.clone(), ParquetReadOptions::default())
+        .await?;
+    Ok(df.collect().await?)
+}
+
+/// Open a Delta table (local or S3) and stream every row back as a Vec of
+/// `RecordBatch`. We materialise eagerly so the rest of the backend can
+/// treat all datasets uniformly (single in-memory batch + eq-index).
+async fn read_delta(
+    d:    &DatasetConfig,
+    opts: HashMap<String, String>,
+) -> Result<Vec<RecordBatch>, AppError> {
+    let url = deltalake::ensure_table_uri(&d.source.location)
+        .map_err(|e| AppError::Internal(format!(
+            "dataset '{}': bad delta location '{}': {e}",
+            d.name, d.source.location
+        )))?;
+    let table = deltalake::open_table_with_storage_options(url, opts)
+        .await
+        .map_err(|e| AppError::Internal(format!(
+            "dataset '{}': delta open '{}': {e}",
+            d.name, d.source.location
+        )))?;
+    let provider = table.table_provider().await
+        .map_err(|e| AppError::Internal(format!(
+            "dataset '{}': delta table_provider: {e}", d.name
+        )))?;
+    // Drive a full scan via a throwaway SessionContext so we end up with
+    // an in-memory Vec<RecordBatch> the shared materialise path can use.
+    let scan_ctx = SessionContext::new();
+    let df = scan_ctx.read_table(provider)
+        .map_err(|e| AppError::Internal(format!(
+            "dataset '{}': delta read_table: {e}", d.name
+        )))?;
+    Ok(df.collect().await?)
+}
+
+/// Build the storage-options HashMap that `deltalake::open_table_with_storage_options`
+/// expects for S3 access. Keys mirror the AWS env-var names; deltalake
+/// passes them through to object_store internally.
+fn delta_s3_options(d: &DatasetConfig) -> Result<HashMap<String, String>, AppError> {
+    let creds = d.resolved_creds();
+    let region = d.resolved_region();
+    let s3 = d.s3.clone().unwrap_or_default();
+
+    let mut opts = HashMap::new();
+    opts.insert("AWS_REGION".into(), region);
+    if let Some(ep) = s3.endpoint.as_deref().filter(|s| !s.is_empty()) {
+        opts.insert("AWS_ENDPOINT_URL".into(), ep.to_string());
+    }
+    if s3.allow_http {
+        opts.insert("AWS_ALLOW_HTTP".into(), "true".into());
+    }
+    opts.insert(
+        "AWS_VIRTUAL_HOSTED_STYLE_REQUEST".into(),
+        (s3.addressing_style == AddressingStyle::Virtual).to_string(),
+    );
+    if let Some(k) = creds.access_key_id { opts.insert("AWS_ACCESS_KEY_ID".into(), k); }
+    if let Some(s) = creds.secret_access_key { opts.insert("AWS_SECRET_ACCESS_KEY".into(), s); }
+    if let Some(t) = creds.session_token { opts.insert("AWS_SESSION_TOKEN".into(), t); }
+    // Read-only paths don't need the S3 lock-provider plumbing.
+    opts.insert("AWS_S3_ALLOW_UNSAFE_RENAME".into(), "true".into());
+    Ok(opts)
+}
+
+/// Construct an `AmazonS3` object_store from the dataset's `[dataset.s3]`
+/// block + resolved credentials and register it on `ctx` under
+/// `s3://bucket/`.
+fn register_s3_object_store(d: &DatasetConfig, ctx: &SessionContext) -> Result<(), AppError> {
+    let (bucket, _key) = d.source.s3_bucket()?;
+    let creds  = d.resolved_creds();
+    let region = d.resolved_region();
+    let s3     = d.s3.clone().unwrap_or_default();
+
+    let store = build_s3(bucket, &region, &s3, &creds)
+        .map_err(|e| AppError::Internal(format!(
+            "dataset '{}': build S3 store for '{bucket}': {e}", d.name
+        )))?;
+
+    let url = Url::parse(&format!("s3://{bucket}"))
+        .map_err(|e| AppError::Internal(format!("invalid s3 URL for bucket {bucket}: {e}")))?;
+    ctx.register_object_store(&url, Arc::new(store));
+    Ok(())
+}
+
+fn build_s3(
+    bucket: &str,
+    region: &str,
+    s3:     &S3Config,
+    creds:  &ResolvedCreds,
+) -> Result<object_store::aws::AmazonS3, object_store::Error> {
+    let mut b = AmazonS3Builder::new()
+        .with_bucket_name(bucket)
+        .with_region(region)
+        .with_allow_http(s3.allow_http)
+        .with_virtual_hosted_style_request(s3.addressing_style == AddressingStyle::Virtual);
+    if let Some(ep) = s3.endpoint.as_deref().filter(|s| !s.is_empty()) {
+        b = b.with_endpoint(ep);
+    }
+    if let Some(k) = creds.access_key_id.as_deref() {
+        b = b.with_access_key_id(k);
+    }
+    if let Some(s) = creds.secret_access_key.as_deref() {
+        b = b.with_secret_access_key(s);
+    }
+    if let Some(t) = creds.session_token.as_deref() {
+        b = b.with_token(t);
+    }
+    b.build()
 }
 
 fn arrow_to_logical(dt: &DataType) -> LogicalType {

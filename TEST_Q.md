@@ -13,6 +13,11 @@ Two discovery endpoints are available at all times:
 
 All query traffic goes through `POST /api/datasets/{name}/query`.
 
+A single admin endpoint rebuilds a dataset from disk:
+
+- `POST /api/datasets/{name}/reload` — gated by `X-Admin-Token: $ADMIN_TOKEN`.
+  Disabled when `ADMIN_TOKEN` is unset. See `S4` below.
+
 ---
 
 ## Smoke tests (`curl` + `jq`)
@@ -77,6 +82,38 @@ curl -s -X POST http://localhost:8080/api/datasets/accidents/query \
     "page_size": 10
   }' | jq .
 ```
+
+### S4. Hot-reload the dataset from disk
+
+Rebuilds `accidents` from its configured parquet `source` and atomically
+swaps it in. Useful after the underlying file has been overwritten on disk.
+
+The endpoint requires the `X-Admin-Token` header. Start the backend with
+the matching env var first:
+
+```bash
+ADMIN_TOKEN=dev-secret task run:datafusion
+# or
+ADMIN_TOKEN=dev-secret task run:duckdb
+```
+
+Then:
+
+```bash
+curl -s -X POST \
+  -H "X-Admin-Token: dev-secret" \
+  http://localhost:8080/api/datasets/accidents/reload | jq .
+# { "dataset": "accidents", "rows": 7728394, "elapsed_ms": 1842 }
+```
+
+Expected status codes:
+
+- `403` — header missing/wrong, or `ADMIN_TOKEN` not set on the server
+- `404` — dataset name unknown
+- `500` — parquet read failed (old data continues serving)
+
+While a reload is in flight, point queries against the same dataset keep
+serving the **old** snapshot; the next query after the swap sees new data.
 
 ---
 
