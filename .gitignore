@@ -12,4 +12,3 @@ crates/python/python/datapress/*.abi3.so
 __pycache__/
 *.egg-info/
 .venv/
-crates/python/python/
