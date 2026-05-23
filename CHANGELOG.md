@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.1.1] - 2026-05-23
+
+### CI
+
+- Cleanup ([1eef801](https://github.com/jeroenflvr/fast-api/commit/1eef801020e9c3a1d139c5157387fa6cd31a748c))
+
 ## [0.1.0] - 2026-05-23
 
 ### Bug Fixes
