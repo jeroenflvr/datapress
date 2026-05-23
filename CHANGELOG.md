@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.1.2] - 2026-05-23
+
+### CI
+
+- Fix sccache ([8d1f1d5](https://github.com/jeroenflvr/fast-api/commit/8d1f1d53ef92b8cd4e841fcfe550a4f1969910e3))
+
+### Features
+
+- Add lazy loading for larger than ram data ([d4f8320](https://github.com/jeroenflvr/fast-api/commit/d4f8320cf7946d3ca52a7a4e1e471eb3859a72dd))
+
 ## [0.1.1] - 2026-05-23
 
 ### CI
