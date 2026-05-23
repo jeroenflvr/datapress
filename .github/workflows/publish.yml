@@ -14,72 +14,60 @@ permissions:
 
 jobs:
   # -----------------------------------------------------------------------
-  # Linux: build manylinux + musllinux wheels for x86_64 and aarch64
+  # Linux: build wheels for x86_64 (zig cross) and aarch64 (native runner).
   # -----------------------------------------------------------------------
   linux:
     name: wheels-linux-${{ matrix.target }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        target: [x86_64, aarch64]
+        include:
+          - target: x86_64
+            runner: ubuntu-latest
+          - target: aarch64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wheels-linux-${{ matrix.target }}
       - uses: PyO3/maturin-action@v1
         with:
-          target:        ${{ matrix.target }}
-          manylinux:     auto
-          args:          --release --out dist --zig
+          target:         ${{ matrix.target }}
+          manylinux:      auto
+          args:           --release --out dist
           rust-toolchain: stable
+          sccache:        'true'
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-linux-${{ matrix.target }}
           path: dist
 
   # -----------------------------------------------------------------------
-  # macOS: universal2 wheel covers both arm64 and x86_64
+  # macOS: arm64 only.
   # -----------------------------------------------------------------------
   macos:
-    name: wheels-macos-${{ matrix.target }}
+    name: wheels-macos-aarch64
     runs-on: macos-14
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wheels-macos-aarch64
       - uses: PyO3/maturin-action@v1
         with:
-          target:        ${{ matrix.target }}
-          args:          --release --out dist
+          target:         aarch64
+          args:           --release --out dist
           rust-toolchain: stable
+          sccache:        'true'
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-macos-${{ matrix.target }}
-          path: dist
-
-  # -----------------------------------------------------------------------
-  # Windows: x86_64 only (aarch64 needs a non-trivial duckdb cross build)
-  # -----------------------------------------------------------------------
-  windows:
-    name: wheels-windows-x64
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
-      - uses: PyO3/maturin-action@v1
-        with:
-          target:        x64
-          args:          --release --out dist
-          rust-toolchain: stable
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wheels-windows-x64
+          name: wheels-macos-aarch64
           path: dist
 
   # -----------------------------------------------------------------------
@@ -107,7 +95,7 @@ jobs:
   # -----------------------------------------------------------------------
   publish:
     name: publish-to-pypi
-    needs: [linux, macos, windows, sdist]
+    needs: [linux, macos, sdist]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
