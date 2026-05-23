@@ -136,6 +136,6 @@ tasks:
       - uv tool run --from git-cliff git-cliff --config cliff.toml --tag {{.VERSION}} --output CHANGELOG.md
       # 4. Commit, tag, push.
       - git add Cargo.toml Cargo.lock CHANGELOG.md
-      - git commit -m "chore(release): {{.VERSION}}"
-      - git tag -a {{.VERSION}} -m "Release {{.VERSION}}"
+      - 'git commit -m "chore(release): {{.VERSION}}"'
+      - 'git tag -a {{.VERSION}} -m "Release {{.VERSION}}"'
       - git push --follow-tags
