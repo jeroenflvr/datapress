@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
 ## [0.1.0] - 2026-05-23
 
+### Bug Fixes
+
+- *(python)* Restore python-source files (excluded from .gitignore) ([ae2f48f](https://github.com/jeroenflvr/fast-api/commit/ae2f48f873d012b3c604e54a56d2ca94892460af))
+
 ### CI
 
 - Update taskfile ([8185d1c](https://github.com/jeroenflvr/fast-api/commit/8185d1cce45e94df5a10e51908d3e70db3210550))
