@@ -1,18 +1,17 @@
 version: '3'
 
 # ---------------------------------------------------------------------------
-# Build & run two HTTP servers backed by different query engines:
-#   - fast-api-duckdb       : DuckDB in-memory (main branch original)
-#   - fast-api-datafusion   : Arrow + DataFusion (feat/noduck)
+# DataPress workspace — two Rust binaries (one per engine) plus a Python
+# wheel (`datapress`) that bundles both engines.
 #
-# Usage:
-#   task build:duckdb        # build only the DuckDB binary
-#   task build:datafusion    # build only the DataFusion binary
-#   task build               # build both
-#   task run:duckdb          # build + run DuckDB binary
-#   task run:datafusion      # build + run DataFusion binary
-#   task check               # cargo check both
-#   task clean
+#   task build:duckdb        # build the DuckDB Rust binary
+#   task build:datafusion    # build the DataFusion Rust binary
+#   task build               # build both Rust binaries
+#   task run:duckdb          # run the DuckDB binary
+#   task run:datafusion      # run the DataFusion binary
+#   task check               # cargo check the whole workspace
+#   task py:develop          # build + install the Python wheel into the venv
+#   task py:build            # build a release wheel
 # ---------------------------------------------------------------------------
 
 vars:
@@ -24,59 +23,60 @@ tasks:
     cmds:
       - task --list
 
-  # -------------------------------------------------------------------------
-  # Build
-  # -------------------------------------------------------------------------
   build:duckdb:
     desc: Build the DuckDB-backed binary (release)
     cmds:
-      - cargo build {{.RELEASE}} --bin fast-api-duckdb --features duckdb
+      - cargo build {{.RELEASE}} -p datapress-duckdb --bin datapress-duckdb
 
   build:datafusion:
     desc: Build the Arrow + DataFusion-backed binary (release)
     cmds:
-      - cargo build {{.RELEASE}} --bin fast-api-datafusion --features datafusion
+      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion
 
   build:
-    desc: Build both binaries
+    desc: Build both Rust binaries
     deps: [build:duckdb, build:datafusion]
 
-  # -------------------------------------------------------------------------
-  # Run
-  # -------------------------------------------------------------------------
   run:duckdb:
     desc: Run the DuckDB binary (release)
     deps: [build:duckdb]
     cmds:
-      - RUST_LOG=info ./target/release/fast-api-duckdb
+      - RUST_LOG=info ./target/release/datapress-duckdb
 
   run:datafusion:
     desc: Run the DataFusion binary (release)
     deps: [build:datafusion]
     cmds:
-      - RUST_LOG=info ./target/release/fast-api-datafusion
+      - RUST_LOG=info ./target/release/datapress-datafusion
 
-  # -------------------------------------------------------------------------
-  # Dev helpers
-  # -------------------------------------------------------------------------
   check:
-    desc: Type-check both backends
+    desc: Type-check the entire workspace (all crates, all targets)
     cmds:
-      - cargo check --bin fast-api-duckdb     --features duckdb
-      - cargo check --bin fast-api-datafusion --features datafusion
+      - cargo check --workspace --all-targets
 
   check:duckdb:
     cmds:
-      - cargo check --bin fast-api-duckdb --features duckdb
+      - cargo check -p datapress-duckdb
 
   check:datafusion:
     cmds:
-      - cargo check --bin fast-api-datafusion --features datafusion
+      - cargo check -p datapress-datafusion
 
   fmt:
     cmds:
-      - cargo fmt
+      - cargo fmt --all
 
   clean:
     cmds:
       - cargo clean
+
+  py:develop:
+    desc: Build the `datapress` wheel in dev mode and install into ./.venv
+    cmds:
+      - uv venv --allow-existing
+      - uv tool run --with maturin maturin develop --release --uv
+
+  py:build:
+    desc: Build a release wheel into ./target/wheels/
+    cmds:
+      - uv tool run --with maturin maturin build --release

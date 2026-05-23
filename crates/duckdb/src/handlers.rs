@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use actix_web::{HttpRequest, HttpResponse, ResponseError, get, post, web};
 
-use crate::admin;
-use crate::duckdb_backend::db::{DbPool, Registry};
-use crate::duckdb_backend::repository::DatasetRepository;
-use crate::errors::AppError;
-use crate::models::QueryRequest;
+use datapress_core::admin;
+use crate::db::{DbPool, Registry};
+use crate::repository::DatasetRepository;
+use datapress_core::errors::AppError;
+use datapress_core::models::QueryRequest;
 
 #[get("/health")]
 pub async fn health() -> HttpResponse {

@@ -1,12 +1,15 @@
-# fast-api
+# datapress
 
-A small Rust web service that exposes one or more **Parquet datasets** over a
-JSON HTTP API. The same surface area is implemented twice — once on top of
-**DuckDB**, once on top of **Apache Arrow + DataFusion** — so you can A/B the
-engines under identical workloads.
+A small Rust **Cargo workspace** that exposes one or more **Parquet / Delta
+datasets** over a JSON HTTP API. The same surface area is implemented twice —
+once on top of **DuckDB**, once on top of **Apache Arrow + DataFusion** — so
+you can A/B the engines under identical workloads. A Python wheel
+(`datapress`, built with maturin + PyO3) bundles both engines and lets you
+configure and launch the server from Python.
 
 - Built on [actix-web](https://actix.rs/) 4
-- Datasets declared in a single [`datasets.toml`](datasets.toml)
+- Datasets declared in a single [`datasets.toml`](datasets.toml) (Rust
+  binaries) or programmatically (Python wrapper)
 - Dynamic schema inference at startup (no hard-coded columns)
 - Identical request/response shapes across both backends
 
@@ -27,14 +30,39 @@ task run:duckdb        # or: task run:datafusion
 curl http://localhost:8080/api/datasets
 ```
 
-`Taskfile.yml` wraps the typical `cargo build --release --features …`
-invocations; see [`task --list`](Taskfile.yml) for the full menu.
+`Taskfile.yml` wraps the typical `cargo build --release -p …` invocations;
+see [`task --list`](Taskfile.yml) for the full menu.
+
+### From Python
+
+The same server can be configured and launched from Python via the
+`datapress` wheel (one wheel, both engines bundled):
+
+```python
+import asyncio
+from datapress import DataPress, DataPressConfig, DatasetConfig
+
+async def main():
+    ds = DatasetConfig(
+        name="accidents",
+        source="data/accidents.parquet",
+        format="parquet",   # or "delta"
+        mode="auto",        # index policy: "auto" | "none" | "list"
+    )
+    cfg = DataPressConfig(backend="duckdb", listen="0.0.0.0", port=8000, workers=8)
+    server = DataPress(cfg, datasets=[ds])
+    await server.run()      # blocks until SIGINT
+
+asyncio.run(main())
+```
+
+Build the wheel with `task py:develop` (uses `uv` + `maturin`).
 
 ---
 
 ## The two backends
 
-| Aspect              | `fast-api-duckdb`                              | `fast-api-datafusion`                                |
+| Aspect              | `datapress-duckdb`                             | `datapress-datafusion`                               |
 |---------------------|------------------------------------------------|------------------------------------------------------|
 | Engine              | DuckDB (embedded C++)                          | Arrow compute + DataFusion (pure Rust)               |
 | Storage             | DuckDB in-memory table per dataset             | One contiguous `RecordBatch` per dataset             |
@@ -316,27 +344,37 @@ For a deeper benchmark catalogue (light load + CPU/memory stress tests), see
 ## Project layout
 
 ```
-src/
-├── bin/
-│   ├── duckdb.rs              # entrypoint for fast-api-duckdb
-│   └── datafusion.rs          # entrypoint for fast-api-datafusion
-├── admin.rs                   # X-Admin-Token verification (constant-time)
-├── config.rs                  # datasets.toml parsing + validation
-├── schema.rs                  # backend-agnostic schema model
-├── models.rs                  # Predicate / QueryRequest
-├── errors.rs                  # AppError + actix ResponseError
-├── duckdb_backend/
-│   ├── db.rs                  # Registry: pool + dataset schemas + reload
-│   ├── repository.rs          # DatasetRepository (SQL builder)
-│   └── handlers.rs            # actix routes
-└── datafusion_backend/
-    ├── store.rs               # Store: RecordBatch + eq-index + reload
-    └── handlers.rs            # actix routes
+Cargo.toml                          # workspace manifest
+pyproject.toml                      # maturin / PyO3 build
+crates/
+├── core/                           # datapress-core: config, schema, errors, admin
+│   └── src/
+│       ├── admin.rs                # X-Admin-Token verification (constant-time)
+│       ├── config.rs               # datasets.toml parsing + validation
+│       ├── schema.rs               # backend-agnostic schema model
+│       ├── models.rs               # Predicate / QueryRequest
+│       └── errors.rs               # AppError + actix ResponseError
+├── duckdb/                         # datapress-duckdb
+│   └── src/
+│       ├── lib.rs                  # pub async fn serve(cfg) -> io::Result<()>
+│       ├── db.rs                   # Registry: pool + schemas + reload
+│       ├── repository.rs           # DatasetRepository (SQL builder)
+│       ├── handlers.rs             # actix routes
+│       └── bin/datapress-duckdb.rs # entrypoint binary
+├── datafusion/                     # datapress-datafusion
+│   └── src/
+│       ├── lib.rs                  # pub async fn serve(cfg) -> io::Result<()>
+│       ├── store.rs                # Store: RecordBatch + eq-index + reload
+│       ├── handlers.rs             # actix routes
+│       └── bin/datapress-datafusion.rs
+└── python/                         # datapress (Python wheel, cdylib)
+    └── src/lib.rs                  # PyO3 bindings — DataPress, DataPressConfig, ...
 ```
 
-The shared crate (`config`, `schema`, `models`, `errors`) compiles without
-either feature; each backend lives behind its own Cargo feature so building
-one never pulls in the other.
+Core re-exports compile without any backend; each backend crate adds the
+feature flag it needs on `datapress-core`. The Python crate depends on both
+backends, so the wheel can dispatch between them at runtime based on
+`DataPressConfig(backend=...)`.
 
 ---
 
@@ -344,13 +382,17 @@ one never pulls in the other.
 
 ```bash
 # DuckDB only
-cargo build --release --bin fast-api-duckdb     --features duckdb
+cargo build --release -p datapress-duckdb
 
 # DataFusion only
-cargo build --release --bin fast-api-datafusion --features datafusion
+cargo build --release -p datapress-datafusion
 
-# Both
+# Both Rust binaries
 task build
+
+# Python wheel (compiles both backends into one extension)
+task py:develop     # editable install into ./.venv (uses uv + maturin)
+task py:build       # release wheel into ./target/wheels/
 ```
 
 Release builds use LTO + `codegen-units = 1` (see `[profile.release]` in

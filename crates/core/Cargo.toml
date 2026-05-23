@@ -1,0 +1,25 @@
+[package]
+name             = "datapress-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# Backend crates opt in to these via `features = [...]` on their
+# `datapress-core` dep. They pull in the optional deps used by the
+# backend-specific `From` impls in `errors.rs`.
+duckdb     = ["dep:duckdb"]
+datafusion = ["dep:arrow", "dep:parquet", "dep:datafusion"]
+
+[dependencies]
+actix-web.workspace  = true
+serde.workspace      = true
+serde_json.workspace = true
+log.workspace        = true
+toml.workspace       = true
+
+# Optional, feature-gated (see [features] above).
+duckdb     = { workspace = true, optional = true }
+arrow      = { workspace = true, optional = true }
+parquet    = { workspace = true, optional = true }
+datafusion = { workspace = true, optional = true }

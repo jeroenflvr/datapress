@@ -1,9 +1,9 @@
 use duckdb::{Connection, params_from_iter};
 use serde_json::Value as JsonValue;
 
-use crate::errors::AppError;
-use crate::models::{Predicate, QueryRequest};
-use crate::schema::DatasetSchema;
+use datapress_core::errors::AppError;
+use datapress_core::models::{Predicate, QueryRequest};
+use datapress_core::schema::DatasetSchema;
 
 // ---------------------------------------------------------------------------
 // Parameter binding
@@ -49,7 +49,7 @@ fn json_to_param(v: &JsonValue) -> Result<ParamVal, AppError> {
 /// schema columns. Temporal columns are CAST to VARCHAR.
 fn json_obj_pairs<'a, I>(cols: I) -> String
 where
-    I: IntoIterator<Item = &'a crate::schema::ColumnInfo>,
+    I: IntoIterator<Item = &'a datapress_core::schema::ColumnInfo>,
 {
     cols.into_iter()
         .map(|c| {
@@ -112,7 +112,7 @@ impl<'a> DatasetRepository<'a> {
 
     pub fn query(&self, req: &QueryRequest) -> Result<String, AppError> {
         // Resolve projection through the dataset schema.
-        let cols: Vec<&crate::schema::ColumnInfo> = if req.columns.is_empty() {
+        let cols: Vec<&datapress_core::schema::ColumnInfo> = if req.columns.is_empty() {
             self.schema.columns.iter().collect()
         } else {
             req.columns

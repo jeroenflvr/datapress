@@ -3,9 +3,9 @@ use std::sync::{Arc, Condvar, Mutex, RwLock};
 
 use duckdb::Connection;
 
-use crate::config::{AppConfig, DatasetConfig, SourceKind};
-use crate::errors::AppError;
-use crate::schema::{ColumnInfo, DatasetSchema, LogicalType};
+use datapress_core::config::{AppConfig, DatasetConfig, SourceKind};
+use datapress_core::errors::AppError;
+use datapress_core::schema::{ColumnInfo, DatasetSchema, LogicalType};
 
 // ---------------------------------------------------------------------------
 // Connection pool

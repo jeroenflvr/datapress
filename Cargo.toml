@@ -1,27 +1,24 @@
-[package]
-name    = "fast-api"
-version = "0.1.0"
-edition = "2024"
-
-# ---------------------------------------------------------------------------
-# Features select the backend. Each binary requires its own feature, so a
-# `cargo build --bin fast-api-duckdb` never compiles DataFusion (and vice
-# versa) — keeping build times and binary size minimal per backend.
-# ---------------------------------------------------------------------------
-[features]
-default    = []
-duckdb     = ["dep:duckdb"]
-datafusion = [
-    "dep:arrow", "dep:parquet", "dep:datafusion",
-    "dep:rayon", "dep:itoa", "dep:ryu", "dep:arc-swap",
-    "dep:object_store", "dep:url",
-    "dep:deltalake",
+[workspace]
+resolver = "3"
+members  = [
+    "crates/core",
+    "crates/duckdb",
+    "crates/datafusion",
+    "crates/python",
 ]
 
-# ---------------------------------------------------------------------------
-# Always-on dependencies (shared HTTP layer, serde, logging).
-# ---------------------------------------------------------------------------
-[dependencies]
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+# Internal crates (path deps).
+datapress-core       = { path = "crates/core" }
+datapress-duckdb     = { path = "crates/duckdb" }
+datapress-datafusion = { path = "crates/datafusion" }
+
+# Shared third-party deps. Pinning versions here keeps every crate aligned.
 actix-web  = { version = "4.12.1", features = ["compress-gzip", "compress-brotli", "compress-zstd"] }
 tokio      = { version = "1.52.2", features = ["full"] }
 serde      = { version = "1", features = ["derive"] }
@@ -30,38 +27,20 @@ env_logger = "0.11"
 log        = "0.4"
 toml       = "0.8"
 
-# Backend-specific, all optional.
-duckdb     = { version = "1.10503.0", features = ["bundled"], optional = true }
-arrow      = { version = "58", optional = true }
-parquet    = { version = "58", features = ["arrow"], optional = true }
-datafusion = { version = "53", optional = true }
-rayon      = { version = "1", optional = true }
-itoa       = { version = "1", optional = true }
-ryu        = { version = "1", optional = true }
-arc-swap   = { version = "1", optional = true }
+arrow      = "58"
+parquet    = { version = "58", features = ["arrow"] }
+datafusion = "53"
+duckdb     = { version = "1.10503.0", features = ["bundled"] }
+rayon      = "1"
+itoa       = "1"
+ryu        = "1"
+arc-swap   = "1"
+object_store = { version = "0.13", features = ["aws"] }
+url          = "2"
+deltalake    = { version = "0.32", features = ["datafusion", "s3"] }
 
-# DataFusion-side S3 + Delta support.
-# - `object_store` 0.13 is what datafusion 53 / deltalake 0.32 align on.
-# - `url` is used to scope the registered object store per bucket.
-# - `deltalake` is gated on the `datafusion` feature (the only backend that
-#   uses delta-rs directly; the DuckDB backend uses DuckDB's own `delta`
-#   extension and needs no extra Rust crate).
-object_store = { version = "0.13", features = ["aws"], optional = true }
-url          = { version = "2", optional = true }
-deltalake = { version = "0.32", features = ["datafusion", "s3"], optional = true }
-
-# ---------------------------------------------------------------------------
-# Binaries
-# ---------------------------------------------------------------------------
-[[bin]]
-name              = "fast-api-duckdb"
-path              = "src/bin/duckdb.rs"
-required-features = ["duckdb"]
-
-[[bin]]
-name              = "fast-api-datafusion"
-path              = "src/bin/datafusion.rs"
-required-features = ["datafusion"]
+pyo3                = { version = "0.27", features = ["extension-module", "abi3-py39"] }
+pyo3-async-runtimes = { version = "0.27", features = ["tokio-runtime"] }
 
 [profile.release]
 opt-level     = 3

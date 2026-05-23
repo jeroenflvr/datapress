@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use actix_web::{HttpRequest, HttpResponse, ResponseError, get, post, web};
 
-use crate::admin;
-use crate::datafusion_backend::store::Store;
-use crate::models::QueryRequest;
+use datapress_core::admin;
+use crate::store::Store;
+use datapress_core::models::QueryRequest;
 
 #[get("/health")]
 pub async fn health() -> HttpResponse {

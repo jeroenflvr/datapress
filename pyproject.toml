@@ -1,0 +1,19 @@
+[build-system]
+requires      = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name            = "datapress"
+description     = "Fast multi-backend (DuckDB / DataFusion) dataset HTTP server."
+requires-python = ">=3.9"
+dynamic         = ["version"]
+license         = { text = "MIT" }
+
+[tool.maturin]
+# The Cargo package lives in crates/python; the cdylib is named `datapress`.
+manifest-path = "crates/python/Cargo.toml"
+module-name   = "datapress"
+features      = ["pyo3/extension-module"]
+# Bundle the pure-Python __init__.py (re-exports + type hints) alongside
+# the compiled extension.
+python-source = "crates/python/python"

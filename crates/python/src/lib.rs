@@ -1,0 +1,308 @@
+//! `datapress` — Python bindings for the DataPress HTTP server.
+//!
+//! Exposes a small Python API:
+//!
+//! ```python
+//! from datapress import DataPress, DataPressConfig, DatasetConfig, S3Config
+//!
+//! cfg = DataPressConfig(backend="duckdb", listen="0.0.0.0", port=8000, workers=8)
+//! ds  = DatasetConfig(name="accidents", source="data/accidents.parquet")
+//! dp  = DataPress(cfg, datasets=[ds])
+//! await dp.run()   # blocks until SIGINT
+//! ```
+//!
+//! Both backends are compiled into the wheel; selection is runtime via
+//! `DataPressConfig(backend=...)`.
+
+use std::net::IpAddr;
+use std::str::FromStr;
+
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::prelude::*;
+
+use datapress_core::config::{
+    AddressingStyle, AppConfig, Backend, DatasetConfig as CoreDatasetConfig,
+    IndexConfig, IndexMode, S3Config as CoreS3Config, ServerConfig, SourceConfig,
+    SourceKind,
+};
+
+// ---------------------------------------------------------------------------
+// S3Config
+// ---------------------------------------------------------------------------
+
+#[pyclass(name = "S3Config", module = "datapress")]
+#[derive(Clone, Default)]
+pub struct PyS3Config {
+    #[pyo3(get, set)] pub region:            Option<String>,
+    #[pyo3(get, set)] pub endpoint:          Option<String>,
+    /// `"virtual"` (default) or `"path"`.
+    #[pyo3(get, set)] pub addressing_style:  String,
+    #[pyo3(get, set)] pub allow_http:        bool,
+    #[pyo3(get, set)] pub access_key_id:     Option<String>,
+    #[pyo3(get, set)] pub secret_access_key: Option<String>,
+    #[pyo3(get, set)] pub session_token:     Option<String>,
+}
+
+#[pymethods]
+impl PyS3Config {
+    #[new]
+    #[pyo3(signature = (
+        region            = None,
+        endpoint          = None,
+        addressing_style  = "virtual".to_string(),
+        allow_http        = false,
+        access_key_id     = None,
+        secret_access_key = None,
+        session_token     = None,
+    ))]
+    fn new(
+        region:            Option<String>,
+        endpoint:          Option<String>,
+        addressing_style:  String,
+        allow_http:        bool,
+        access_key_id:     Option<String>,
+        secret_access_key: Option<String>,
+        session_token:     Option<String>,
+    ) -> Self {
+        Self {
+            region, endpoint, addressing_style, allow_http,
+            access_key_id, secret_access_key, session_token,
+        }
+    }
+}
+
+impl PyS3Config {
+    fn into_core(self) -> PyResult<CoreS3Config> {
+        let addressing_style = match self.addressing_style.as_str() {
+            "virtual" => AddressingStyle::Virtual,
+            "path"    => AddressingStyle::Path,
+            other     => return Err(PyValueError::new_err(
+                format!("S3Config.addressing_style must be 'virtual' or 'path' (got '{other}')")
+            )),
+        };
+        Ok(CoreS3Config {
+            region:            self.region,
+            endpoint:          self.endpoint,
+            addressing_style,
+            allow_http:        self.allow_http,
+            access_key_id:     self.access_key_id,
+            secret_access_key: self.secret_access_key,
+            session_token:     self.session_token,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DatasetConfig
+// ---------------------------------------------------------------------------
+
+#[pyclass(name = "DatasetConfig", module = "datapress")]
+#[derive(Clone)]
+pub struct PyDatasetConfig {
+    #[pyo3(get, set)] pub name:                  String,
+    #[pyo3(get, set)] pub source:                String,
+    /// `"parquet"` (default) or `"delta"`.
+    #[pyo3(get, set)] pub format:                String,
+    /// `"auto"` (default), `"none"`, or `"list"`.
+    #[pyo3(get, set)] pub mode:                  String,
+    #[pyo3(get, set)] pub description:           Option<String>,
+    #[pyo3(get, set)] pub s3:                    Option<PyS3Config>,
+    #[pyo3(get, set)] pub index_columns:         Option<Vec<String>>,
+    #[pyo3(get, set)] pub index_max_cardinality: Option<usize>,
+}
+
+#[pymethods]
+impl PyDatasetConfig {
+    #[new]
+    #[pyo3(signature = (
+        name,
+        source,
+        format                = "parquet".to_string(),
+        mode                  = "auto".to_string(),
+        description           = None,
+        s3                    = None,
+        index_columns         = None,
+        index_max_cardinality = None,
+    ))]
+    fn new(
+        name:                  String,
+        source:                String,
+        format:                String,
+        mode:                  String,
+        description:           Option<String>,
+        s3:                    Option<PyS3Config>,
+        index_columns:         Option<Vec<String>>,
+        index_max_cardinality: Option<usize>,
+    ) -> Self {
+        Self {
+            name, source, format, mode, description, s3,
+            index_columns, index_max_cardinality,
+        }
+    }
+}
+
+impl PyDatasetConfig {
+    fn into_core(self) -> PyResult<CoreDatasetConfig> {
+        let kind = match self.format.as_str() {
+            "parquet" => SourceKind::Parquet,
+            "delta"   => SourceKind::Delta,
+            other     => return Err(PyValueError::new_err(
+                format!("DatasetConfig.format must be 'parquet' or 'delta' (got '{other}')")
+            )),
+        };
+        let mode = match self.mode.as_str() {
+            "auto" => IndexMode::Auto,
+            "none" => IndexMode::None,
+            "list" => IndexMode::List,
+            other  => return Err(PyValueError::new_err(
+                format!("DatasetConfig.mode must be 'auto', 'none', or 'list' (got '{other}')")
+            )),
+        };
+
+        let mut index = IndexConfig::default();
+        index.mode = mode;
+        if let Some(cols) = self.index_columns {
+            index.columns = cols;
+        }
+        if let Some(n) = self.index_max_cardinality {
+            index.max_cardinality = n;
+        }
+
+        let s3 = self.s3.map(|s| s.into_core()).transpose()?;
+
+        Ok(CoreDatasetConfig {
+            name:   self.name,
+            source: SourceConfig { kind, location: self.source },
+            s3,
+            index,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DataPressConfig
+// ---------------------------------------------------------------------------
+
+#[pyclass(name = "DataPressConfig", module = "datapress")]
+#[derive(Clone)]
+pub struct PyDataPressConfig {
+    /// `"duckdb"` or `"datafusion"`.
+    #[pyo3(get, set)] pub backend: String,
+    #[pyo3(get, set)] pub listen:  String,
+    #[pyo3(get, set)] pub port:    u16,
+    #[pyo3(get, set)] pub workers: Option<usize>,
+}
+
+#[pymethods]
+impl PyDataPressConfig {
+    #[new]
+    #[pyo3(signature = (
+        backend = "duckdb".to_string(),
+        listen  = "127.0.0.1".to_string(),
+        port    = 8000,
+        workers = None,
+    ))]
+    fn new(backend: String, listen: String, port: u16, workers: Option<usize>) -> Self {
+        Self { backend, listen, port, workers }
+    }
+}
+
+impl PyDataPressConfig {
+    fn into_core(self) -> PyResult<ServerConfig> {
+        let backend = match self.backend.as_str() {
+            "duckdb"     => Backend::Duckdb,
+            "datafusion" => Backend::Datafusion,
+            other        => return Err(PyValueError::new_err(
+                format!("DataPressConfig.backend must be 'duckdb' or 'datafusion' (got '{other}')")
+            )),
+        };
+        let listen = IpAddr::from_str(&self.listen).map_err(|e| {
+            PyValueError::new_err(format!("invalid listen address '{}': {e}", self.listen))
+        })?;
+        Ok(ServerConfig {
+            backend,
+            listen,
+            port: self.port,
+            workers: self.workers,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DataPress
+// ---------------------------------------------------------------------------
+
+#[pyclass(name = "DataPress", module = "datapress")]
+pub struct PyDataPress {
+    cfg: AppConfig,
+}
+
+#[pymethods]
+impl PyDataPress {
+    #[new]
+    #[pyo3(signature = (config, datasets))]
+    fn new(config: PyDataPressConfig, datasets: Vec<PyDatasetConfig>) -> PyResult<Self> {
+        let server = config.into_core()?;
+        let datasets = datasets.into_iter()
+            .map(|d| d.into_core())
+            .collect::<PyResult<Vec<_>>>()?;
+        Ok(Self { cfg: AppConfig { server, datasets } })
+    }
+
+    /// Start the HTTP server and block (cooperatively) until SIGINT.
+    ///
+    /// Returns a Python awaitable. The server runs on a dedicated thread
+    /// with its own actix runtime — the caller's event loop is not blocked.
+    fn run<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let cfg = clone_app_config(&self.cfg);
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let (tx, rx) = tokio::sync::oneshot::channel::<std::io::Result<()>>();
+            std::thread::spawn(move || {
+                let result = actix_web::rt::System::new().block_on(async move {
+                    match cfg.server.backend {
+                        Backend::Duckdb     => datapress_duckdb::serve(cfg).await,
+                        Backend::Datafusion => datapress_datafusion::serve(cfg).await,
+                    }
+                });
+                let _ = tx.send(result);
+            });
+            match rx.await {
+                Ok(Ok(()))  => Ok(()),
+                Ok(Err(e))  => Err(PyRuntimeError::new_err(e.to_string())),
+                Err(_)      => Err(PyRuntimeError::new_err("DataPress server thread panicked")),
+            }
+        })
+    }
+}
+
+/// `AppConfig` doesn't derive `Clone` upstream (it holds parsed TOML state).
+/// We reconstruct it field-by-field — every contained type is `Clone`.
+fn clone_app_config(cfg: &AppConfig) -> AppConfig {
+    AppConfig {
+        server: ServerConfig {
+            backend: cfg.server.backend,
+            listen:  cfg.server.listen,
+            port:    cfg.server.port,
+            workers: cfg.server.workers,
+        },
+        datasets: cfg.datasets.clone(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Module entry point
+// ---------------------------------------------------------------------------
+
+#[pymodule]
+fn datapress(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Best-effort init of env_logger so RUST_LOG=info works from Python.
+    let _ = env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("info"),
+    ).try_init();
+
+    m.add_class::<PyS3Config>()?;
+    m.add_class::<PyDatasetConfig>()?;
+    m.add_class::<PyDataPressConfig>()?;
+    m.add_class::<PyDataPress>()?;
+    Ok(())
+}

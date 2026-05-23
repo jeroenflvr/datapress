@@ -1,27 +1,21 @@
+//! `datapress-datafusion` — DataFusion backend for the DataPress HTTP server.
+
+pub mod handlers;
+pub mod store;
+
 use std::sync::Arc;
 
 use actix_web::{App, HttpServer, middleware, web};
 
-use fast_api::config::{AppConfig, Backend};
-use fast_api::datafusion_backend::{handlers, store::Store};
+use datapress_core::config::AppConfig;
+use crate::store::Store;
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-
-    let config_path = std::env::var("DATASETS_CONFIG")
-        .unwrap_or_else(|_| "datasets.toml".to_string());
-    let cfg = AppConfig::load(&config_path).expect("failed to load datasets config");
-
-    if cfg.server.backend != Backend::Datafusion {
-        log::warn!(
-            "datasets.toml has server.backend = '{}', but this binary is the datafusion build \
-             — running as datafusion anyway",
-            cfg.server.backend.as_str(),
-        );
-    }
-
-    let store   = Arc::new(Store::load(&cfg).await.expect("failed to load datasets"));
+/// Build the dataset store, start the actix server, and run until the
+/// process receives SIGINT.
+pub async fn serve(cfg: AppConfig) -> std::io::Result<()> {
+    let store = Arc::new(
+        Store::load(&cfg).await.expect("failed to load datasets"),
+    );
     let addr    = (cfg.server.listen, cfg.server.port);
     let workers = cfg.server.workers;
 

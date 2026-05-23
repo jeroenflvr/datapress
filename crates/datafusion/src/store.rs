@@ -20,13 +20,13 @@ use datafusion::prelude::{ParquetReadOptions, SessionContext};
 use object_store::aws::AmazonS3Builder;
 use url::Url;
 
-use crate::config::{
+use datapress_core::config::{
     AddressingStyle, AppConfig, DatasetConfig, IndexConfig, IndexMode,
     ResolvedCreds, S3Config, SourceKind,
 };
-use crate::errors::AppError;
-use crate::models::{Predicate, QueryRequest};
-use crate::schema::{ColumnInfo, DatasetSchema, LogicalType};
+use datapress_core::errors::AppError;
+use datapress_core::models::{Predicate, QueryRequest};
+use datapress_core::schema::{ColumnInfo, DatasetSchema, LogicalType};
 
 // ---------------------------------------------------------------------------
 // Public types

@@ -1,0 +1,26 @@
+[package]
+name             = "datapress-py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# Python import name: `import datapress`. The Cargo package can't share that
+# name with the umbrella project, so we name the package `datapress-py` but
+# expose the cdylib as `datapress`.
+name       = "datapress"
+crate-type = ["cdylib"]
+
+[dependencies]
+datapress-core       = { workspace = true, features = ["duckdb", "datafusion"] }
+datapress-duckdb.workspace     = true
+datapress-datafusion.workspace = true
+
+pyo3.workspace                = true
+pyo3-async-runtimes.workspace = true
+
+# We start an actix runtime in a dedicated thread inside `DataPress.run()`.
+actix-web.workspace  = true
+tokio.workspace      = true
+log.workspace        = true
+env_logger.workspace = true
