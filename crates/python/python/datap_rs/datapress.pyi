@@ -1,4 +1,4 @@
-"""Type stubs for the `datapress` extension module."""
+"""Type stubs for the `datap_rs.datapress` extension module."""
 
 from collections.abc import Awaitable
 from typing import Optional

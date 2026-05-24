@@ -45,7 +45,7 @@ use datapress_core::config::{
 ///     access_key_id (str | None): Static credential override.
 ///     secret_access_key (str | None): Static credential override.
 ///     session_token (str | None): Temporary STS session token.
-#[pyclass(name = "S3Config", module = "datapress", from_py_object)]
+#[pyclass(name = "S3Config", module = "datap_rs.datapress", from_py_object)]
 #[derive(Clone, Default)]
 pub struct PyS3Config {
     #[pyo3(get, set)] pub region:            Option<String>,
@@ -149,7 +149,7 @@ impl PyS3Config {
 ///         bounded memory — essential for wide (hundreds of columns) or
 ///         multi-file parquet datasets. DataFusion backend, local parquet
 ///         only.
-#[pyclass(name = "DatasetConfig", module = "datapress", from_py_object)]
+#[pyclass(name = "DatasetConfig", module = "datap_rs.datapress", from_py_object)]
 #[derive(Clone)]
 pub struct PyDatasetConfig {
     #[pyo3(get, set)] pub name:                  String,
@@ -285,7 +285,7 @@ impl PyDatasetConfig {
 ///         ``"/datapress"`` when running behind a reverse proxy that passes
 ///         the path through unchanged. Must start with ``/`` and not end
 ///         with ``/``. Empty string (default) = mount at root.
-#[pyclass(name = "DataPressConfig", module = "datapress", from_py_object)]
+#[pyclass(name = "DataPressConfig", module = "datap_rs.datapress", from_py_object)]
 #[derive(Clone)]
 pub struct PyDataPressConfig {
     /// `"duckdb"` or `"datafusion"`.
@@ -384,7 +384,7 @@ impl PyDataPressConfig {
 ///     ...     datasets=[DatasetConfig(name="accidents", source="data/x.parquet")],
 ///     ... )
 ///     >>> asyncio.run(dp.run())
-#[pyclass(name = "DataPress", module = "datapress")]
+#[pyclass(name = "DataPress", module = "datap_rs.datapress")]
 pub struct PyDataPress {
     cfg: AppConfig,
 }
