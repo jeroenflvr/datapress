@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.1.7] - 2026-05-24
+
+### CI
+
+- Still duckdb lib ([b08eb31](https://github.com/jeroenflvr/fast-api/commit/b08eb3136d04adef1d4598100d53af7beb36628f))
+
 ## [0.1.6] - 2026-05-24
 
 ### Bug Fixes
