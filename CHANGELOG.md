@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.1.11] - 2026-05-24
+
+### Miscellaneous
+
+- Rename python project ([cc76cf7](https://github.com/jeroenflvr/fast-api/commit/cc76cf7d00b81183948bc64d873d55f42b7cdea1))
+
 ## [0.1.10] - 2026-05-24
 
 ### Bug Fixes
