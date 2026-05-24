@@ -45,5 +45,8 @@ pyo3-async-runtimes = { version = "0.28.0", features = ["tokio-runtime"] }
 
 [profile.release]
 opt-level     = 3
-lto           = true
-codegen-units = 1
+# Fat LTO + codegen-units = 1 OOM-kills rustc when cross-building the
+# aarch64 wheel under QEMU on GitHub-hosted runners. Thin LTO retains
+# almost all of the runtime benefit at a fraction of the link-time RAM.
+lto           = "thin"
+codegen-units = 16
