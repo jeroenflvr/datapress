@@ -299,15 +299,16 @@ async fn build_dataset(
     ctx: &SessionContext,
 ) -> Result<(DatasetState, Arc<dyn TableProvider>), AppError> {
     // Lazy datasets: register a ListingTable straight against the source
-    // files and skip the materialise / index / partition pipeline below.
-    // Only local parquet is supported for now — lazy on remote or delta
-    // sources is rejected so the user gets a clear config-time error rather
-    // than silently falling through to the eager path.
+    // and skip the materialise / index / partition pipeline below. Delta
+    // is rejected — deltalake reads the transaction log eagerly to know
+    // which parquet files are current, so "lazy delta" doesn't map onto
+    // ListingTable cleanly.
     if d.lazy {
         match (d.source.kind, d.source.is_s3()) {
             (SourceKind::Parquet, false) => return build_lazy_local_parquet(d, ctx).await,
-            _ => return Err(AppError::Internal(format!(
-                "dataset '{}': lazy mode is only supported for local parquet (kind=parquet, no s3)",
+            (SourceKind::Parquet, true)  => return build_lazy_s3_parquet(d, ctx).await,
+            (SourceKind::Delta,   _)     => return Err(AppError::Internal(format!(
+                "dataset '{}': lazy mode is not supported for delta sources",
                 d.name
             ))),
         }
@@ -442,6 +443,70 @@ async fn build_lazy_local_parquet(
     log::info!(
         "dataset '{}' [{}, lazy]: {} files, {} cols (no materialise, no index)",
         d.name, d.source.kind.as_str(), files.len(), schema.columns.len()
+    );
+
+    Ok((
+        DatasetState {
+            schema,
+            data: Vec::new(),
+            arrow_schema: arrow_sch,
+            index: EqIndex::new(),
+            lazy: true,
+        },
+        provider,
+    ))
+}
+
+/// Lazy S3 parquet: register the dataset's S3 object store on `ctx`, then
+/// build a `ListingTable` rooted at the `s3://bucket/prefix/` location.
+/// DataFusion does the directory listing through the registered store and
+/// streams row groups on each query — no local enumeration needed.
+async fn build_lazy_s3_parquet(
+    d:   &DatasetConfig,
+    ctx: &SessionContext,
+) -> Result<(DatasetState, Arc<dyn TableProvider>), AppError> {
+    register_s3_object_store(d, ctx)?;
+
+    let url = ListingTableUrl::parse(&d.source.location)
+        .map_err(|e| AppError::Internal(format!(
+            "dataset '{}': bad s3 url '{}': {e}", d.name, d.source.location
+        )))?;
+
+    let opts = ListingOptions::new(Arc::new(ParquetFormat::default()))
+        .with_file_extension(".parquet");
+
+    let session_state = ctx.state();
+    let resolved_schema = opts
+        .infer_schema(&session_state, &url)
+        .await
+        .map_err(|e| AppError::Internal(format!(
+            "dataset '{}': infer parquet schema on s3: {e}", d.name
+        )))?;
+
+    let cfg = ListingTableConfig::new(url)
+        .with_listing_options(opts)
+        .with_schema(resolved_schema.clone());
+    let table = ListingTable::try_new(cfg)
+        .map_err(|e| AppError::Internal(format!(
+            "dataset '{}': ListingTable::try_new (s3): {e}", d.name
+        )))?;
+    let provider: Arc<dyn TableProvider> = Arc::new(table);
+
+    let arrow_sch = resolved_schema;
+    let columns: Vec<ColumnInfo> = arrow_sch.fields().iter().map(|f| {
+        let dt = f.data_type();
+        ColumnInfo {
+            name:     f.name().clone(),
+            logical:  arrow_to_logical(dt),
+            sql_type: format!("{dt:?}"),
+            nullable: f.is_nullable(),
+        }
+    }).collect();
+    let schema = DatasetSchema::new(&d.name, columns);
+
+    log::info!(
+        "dataset '{}' [{}, lazy, s3]: {} cols (no materialise, no index)",
+        d.name, d.source.kind.as_str(), schema.columns.len()
     );
 
     Ok((

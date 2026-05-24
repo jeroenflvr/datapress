@@ -32,7 +32,7 @@ name = "..."
 | `source`  | yes      | —           | Sub-table: `{ kind = "parquet" \| "delta", location = "..." }`.                                  |
 | `s3`      | no       | absent      | Only meaningful when `source.location` starts with `s3://`. Non-secret connection details.       |
 | `index`   | no       | `mode="auto"` | Equality-index policy. **Important for wide tables — see below.**                              |
-| `lazy`    | no       | `false`     | DataFusion + local parquet only. Skip materialisation; stream from disk on every query.          |
+| `lazy`    | no       | `false`     | DataFusion + parquet only (local or S3). Skip materialisation; stream row groups at query time. |
 
 ## 1. Local parquet — single file
 
@@ -75,17 +75,19 @@ kind     = "parquet"
 location = "data/sales/2024/*/*.parquet"
 ```
 
-## 4. Lazy mode for very large local parquet
+## 4. Lazy mode for very large parquet datasets
 
 When the decompressed Arrow size would not fit in RAM (or the index is
 too expensive to build), enable `lazy = true`. The DataFusion backend
-registers a `ListingTable` and streams row groups at query time;
-column-projection pushdown and parquet row-group skipping happen
-automatically.
+registers a `ListingTable` against the source and streams row groups at
+query time; column-projection pushdown and parquet row-group skipping
+happen automatically.
 
 **Trade-off:** higher per-query latency, no equality index. Always pass
 explicit `columns=[...]` in queries to get the most out of projection
 pushdown.
+
+### Local files
 
 ```toml
 [[dataset]]
@@ -97,8 +99,29 @@ kind     = "parquet"
 location = "data/us_accidents/*.parquet"
 ```
 
-> Lazy mode currently requires `backend = "datafusion"` and local
-> parquet. S3 / delta in lazy mode is rejected at startup.
+### S3 / S3-compatible
+
+Same shape — the `[dataset.s3]` block is honoured exactly as in the eager
+S3 path. DataFusion lists objects under the prefix through the registered
+object store on demand.
+
+```toml
+[[dataset]]
+name = "events"
+lazy = true
+
+[dataset.source]
+kind     = "parquet"
+location = "s3://my-bucket/events/2024/"
+
+[dataset.s3]
+region = "eu-west-1"
+```
+
+> Lazy mode requires `backend = "datafusion"` and `kind = "parquet"`.
+> Lazy delta is rejected at startup (deltalake reads the transaction log
+> eagerly to know which files are current, so it can't map onto
+> `ListingTable` cleanly).
 
 ## 5. Delta table — local
 
