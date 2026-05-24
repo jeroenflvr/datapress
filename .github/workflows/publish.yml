@@ -33,22 +33,30 @@ jobs:
         with:
           shared-key: wheels-linux-${{ matrix.target }}
       - uses: PyO3/maturin-action@v1
-        env:
-          # DuckDB's platform.hpp refuses to compile under the legacy
-          # GCC C++ ABI (_GLIBCXX_USE_CXX11_ABI=0) used by the manylinux
-          # containers unless DUCKDB_PLATFORM is set. libduckdb-sys's
-          # build.rs reads this env var and passes it as a -D define.
-          DUCKDB_PLATFORM: ${{ matrix.target == 'x86_64' && 'linux_amd64_gcc4' || 'linux_arm64_gcc4' }}
         with:
           target:         ${{ matrix.target }}
           manylinux:      auto
           args:           --release --out dist
           rust-toolchain: stable
-          # maturin-action runs the build inside a manylinux docker
-          # container and does NOT auto-forward step-level env vars into
-          # it. We have to pass `-e DUCKDB_PLATFORM` explicitly so
-          # libduckdb-sys's build script sees it.
-          docker-options: -e DUCKDB_PLATFORM
+          # libduckdb-sys's bundled `cc` backend does NOT translate
+          # DUCKDB_PLATFORM into a compiler define — that env var is
+          # only wired up by the upstream Makefile/CMake builds. So we
+          # have to inject -DDUCKDB_EXPLICIT_PLATFORM=... ourselves via
+          # CXXFLAGS, which cc-rs forwards to every c++ invocation.
+          # Runs INSIDE the manylinux container, so no env-forwarding
+          # gymnastics.
+          before-script-linux: |
+            case "${{ matrix.target }}" in
+              x86_64)  PLATFORM=linux_amd64_gcc4 ;;
+              aarch64) PLATFORM=linux_arm64_gcc4 ;;
+              *)       echo "Unknown target ${{ matrix.target }}"; exit 1 ;;
+            esac
+            # The ABI guard in duckdb/common/platform.hpp is just
+            # `#ifndef DUCKDB_EXPLICIT_PLATFORM`, so a value-less define
+            # suffices and side-steps shell/YAML quoting for string literals.
+            export CXXFLAGS="-DDUCKDB_EXPLICIT_PLATFORM ${CXXFLAGS:-}"
+            echo "CXXFLAGS=${CXXFLAGS}"
+            echo "PLATFORM=${PLATFORM}"
           # sccache disabled: wrapping `c++` inside the manylinux container
           # makes the bundled duckdb-sys C++ build fail silently. The
           # Swatinem/rust-cache step above already caches target/ between
