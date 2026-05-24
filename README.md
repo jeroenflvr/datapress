@@ -266,6 +266,32 @@ Response:
 Column names are looked up case-insensitively against the inferred schema
 and quoted automatically, so `Temperature(F)` and similar identifiers work.
 
+### `POST /api/datasets/{name}/count`
+
+Returns the number of rows matching `predicates`. Same predicate shape as
+`/query`; only the `predicates` field is read. Empty body counts every row.
+
+```bash
+curl -s -X POST http://localhost:8080/api/datasets/accidents/count \
+  -H 'Content-Type: application/json' -d '{}'
+# → { "count": 7728394 }
+
+curl -s -X POST http://localhost:8080/api/datasets/accidents/count \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "predicates": [
+      { "col": "State",    "op": "eq",  "val": "TX" },
+      { "col": "Severity", "op": "gte", "val": 3   }
+    ]
+  }'
+# → { "count": 187423 }
+```
+
+On materialised DataFusion datasets the no-predicate path is O(1) (uses the
+resident chunk metadata, no scan); indexable predicates short-circuit
+through the equality index. Otherwise it runs `SELECT COUNT(*) … WHERE …`
+through the engine.
+
 ### `POST /api/datasets/{name}/reload` *(admin)*
 
 Rebuilds the dataset from its configured `source` and atomically swaps it

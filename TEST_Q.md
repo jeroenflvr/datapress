@@ -12,6 +12,8 @@ Two discovery endpoints are available at all times:
 - `GET /api/datasets/{name}/schema` — column metadata + one sample row
 
 All query traffic goes through `POST /api/datasets/{name}/query`.
+Row counts (total or filtered) go through `POST /api/datasets/{name}/count` —
+same predicate body as `/query`, returns `{"count": <int>}`.
 
 A single admin endpoint rebuilds a dataset from disk:
 

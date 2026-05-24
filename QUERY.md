@@ -246,6 +246,53 @@ binary columns always go through SQL.
 
 ---
 
+## Counting rows
+
+```
+POST /api/datasets/{name}/count
+Content-Type: application/json
+```
+
+Same predicate shape as `/query`, but only the `predicates` field is read —
+`columns`, `page`, `page_size` are ignored. An empty body (or `{}`) counts
+every row in the dataset.
+
+Response:
+
+```json
+{ "count": 7728394 }
+```
+
+Examples:
+
+```bash
+# Total row count — O(1) on materialised datasets (no scan).
+curl -s -X POST http://localhost:8000/api/datasets/accidents/count \
+     -H 'content-type: application/json' -d '{}'
+# → {"count":7728394}
+
+# Filtered count — same operators as /query.
+curl -s -X POST http://localhost:8000/api/datasets/accidents/count \
+     -H 'content-type: application/json' \
+     -d '{
+       "predicates": [
+         { "col": "state",    "op": "in",  "val": ["CA","TX"] },
+         { "col": "severity", "op": "gte", "val": 3 }
+       ]
+     }'
+# → {"count":418217}
+```
+
+Execution paths (DataFusion backend):
+
+1. **No predicates** on a materialised dataset → resident `num_rows()`. No scan.
+2. **All `eq` / `in` on indexed columns** → length of the merged row-id
+   list from the equality index. No scan.
+3. **Anything else, or lazy datasets** → `SELECT COUNT(*) FROM … WHERE …`
+   through DataFusion / DuckDB.
+
+---
+
 ## Python — querying from a client
 
 DataPress ships a server, not a Python client. Use any HTTP library —
@@ -273,6 +320,28 @@ resp = httpx.post(
 )
 resp.raise_for_status()
 rows = resp.json()  # list[dict]
+```
+
+Counting from Python is the same shape — POST to `/count` with just
+`predicates`:
+
+```python
+import httpx
+
+total = httpx.post(
+    "http://localhost:8000/api/datasets/accidents/count",
+    json={},
+    timeout=30.0,
+).raise_for_status().json()["count"]
+
+filtered = httpx.post(
+    "http://localhost:8000/api/datasets/accidents/count",
+    json={"predicates": [
+        {"col": "state",    "op": "in",  "val": ["CA", "TX"]},
+        {"col": "severity", "op": "gte", "val": 3},
+    ]},
+    timeout=30.0,
+).raise_for_status().json()["count"]
 ```
 
 To iterate all matching rows without holding them in memory:

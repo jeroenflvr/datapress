@@ -37,6 +37,7 @@ pub async fn serve(cfg: AppConfig) -> std::io::Result<()> {
                     .service(handlers::list_datasets)
                     .service(handlers::get_schema)
                     .service(handlers::query_dataset)
+                    .service(handlers::count_dataset)
                     .service(handlers::reload_dataset),
             )
     });

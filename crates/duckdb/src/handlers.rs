@@ -6,7 +6,7 @@ use datapress_core::admin;
 use crate::db::{DbPool, Registry};
 use crate::repository::DatasetRepository;
 use datapress_core::errors::AppError;
-use datapress_core::models::QueryRequest;
+use datapress_core::models::{CountRequest, QueryRequest};
 
 #[get("/health")]
 pub async fn health() -> HttpResponse {
@@ -88,6 +88,37 @@ pub async fn query_dataset(
             let body = format!(r#"{{"data":{arr},"page":{page},"page_size":{page_size}}}"#);
             HttpResponse::Ok().content_type("application/json").body(body)
         }
+        Ok(Err(e)) => e.error_response(),
+        Err(e) => {
+            log::error!("Thread-pool error: {e}");
+            HttpResponse::InternalServerError()
+                .json(serde_json::json!({ "error": "internal error" }))
+        }
+    }
+}
+
+#[post("/api/datasets/{name}/count")]
+pub async fn count_dataset(
+    reg:  web::Data<Arc<Registry>>,
+    path: web::Path<String>,
+    body: Option<web::Json<CountRequest>>,
+) -> HttpResponse {
+    let name = path.into_inner();
+    let req  = body.map(|b| b.into_inner()).unwrap_or_default();
+
+    let schema = match reg.get(&name) {
+        Ok(s)  => s,
+        Err(e) => return e.error_response(),
+    };
+    let pool = reg.pool.clone();
+
+    let result = web::block(move || -> Result<i64, AppError> {
+        let conn = DbPool::get(&pool);
+        DatasetRepository::new(&conn, &schema).count(&req.predicates)
+    }).await;
+
+    match result {
+        Ok(Ok(n)) => HttpResponse::Ok().json(serde_json::json!({ "count": n })),
         Ok(Err(e)) => e.error_response(),
         Err(e) => {
             log::error!("Thread-pool error: {e}");

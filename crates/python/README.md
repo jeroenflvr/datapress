@@ -157,6 +157,7 @@ Same five routes for both backends.
 | GET    | `/api/datasets`                       | List configured datasets.                  |
 | GET    | `/api/datasets/{name}/schema`         | Inferred columns + sample row.             |
 | POST   | `/api/datasets/{name}/query`          | Filter + paginate.                         |
+| POST   | `/api/datasets/{name}/count`          | Total or filtered row count.               |
 | POST   | `/api/datasets/{name}/reload`         | Atomic dataset reload (requires admin token). |
 
 ### Query body
@@ -193,6 +194,24 @@ Same five routes for both backends.
 | `in`          | non-empty array       | `col IN (v1, v2, …)`          |
 | `is_null`     | omit                  | `col IS NULL`                 |
 | `is_not_null` | omit                  | `col IS NOT NULL`             |
+
+### Count body
+
+Same predicate shape, no projection or pagination:
+
+```json
+{ "predicates": [ { "col": "State", "op": "eq", "val": "TX" } ] }
+```
+
+Response: `{ "count": <int> }`. Empty body (`{}`) counts every row. On
+materialised DataFusion datasets, the no-predicate case is O(1) and indexed
+`eq` / `in` predicates short-circuit through the equality index.
+
+```bash
+curl -X POST http://localhost:8000/api/datasets/accidents/count \
+  -H 'Content-Type: application/json' -d '{}'
+# → { "count": 7728394 }
+```
 
 ### Admin reload
 

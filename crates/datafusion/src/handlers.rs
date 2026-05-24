@@ -4,7 +4,7 @@ use actix_web::{HttpRequest, HttpResponse, ResponseError, get, post, web};
 
 use datapress_core::admin;
 use crate::store::Store;
-use datapress_core::models::QueryRequest;
+use datapress_core::models::{CountRequest, QueryRequest};
 
 #[get("/health")]
 pub async fn health() -> HttpResponse {
@@ -63,6 +63,21 @@ pub async fn query_dataset(
             let body = format!(r#"{{"data":{arr},"page":{page},"page_size":{page_size}}}"#);
             HttpResponse::Ok().content_type("application/json").body(body)
         }
+        Err(e) => e.error_response(),
+    }
+}
+
+#[post("/api/datasets/{name}/count")]
+pub async fn count_dataset(
+    state: web::Data<Arc<Store>>,
+    path:  web::Path<String>,
+    body:  Option<web::Json<CountRequest>>,
+) -> HttpResponse {
+    let name = path.into_inner();
+    let req  = body.map(|b| b.into_inner()).unwrap_or_default();
+
+    match state.count(&name, &req).await {
+        Ok(n) => HttpResponse::Ok().json(serde_json::json!({ "count": n })),
         Err(e) => e.error_response(),
     }
 }

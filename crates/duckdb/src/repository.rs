@@ -143,6 +143,22 @@ impl<'a> DatasetRepository<'a> {
         stream_as_json_array(self.conn, &sql, &bind_vals)
     }
 
+    /// Return the number of rows matching `predicates` (empty = all rows).
+    pub fn count(&self, predicates: &[Predicate]) -> Result<i64, AppError> {
+        let mut conditions: Vec<String>   = Vec::new();
+        let mut bind_vals:  Vec<ParamVal> = Vec::new();
+        for pred in predicates {
+            self.apply_predicate(pred, &mut conditions, &mut bind_vals)?;
+        }
+        let where_clause = build_where(&conditions);
+        let table = DatasetSchema::quote_ident(&self.schema.name);
+        let sql   = format!("SELECT COUNT(*) FROM {table}{where_clause}");
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let n: i64 = stmt.query_row(params_from_iter(bind_vals.iter()), |r| r.get(0))?;
+        Ok(n)
+    }
+
     /// Return a single row at offset 0 (used by `/schema` for a discoverable
     /// sample). Returns `null` when the dataset is empty.
     pub fn sample(&self) -> Result<String, AppError> {

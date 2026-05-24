@@ -24,3 +24,11 @@ pub struct QueryRequest {
 
 fn default_page() -> u64 { 1 }
 fn default_page_size() -> u64 { 100 }
+
+/// Body for `POST /api/datasets/{name}/count`. Predicates are optional —
+/// an empty body (or `{}`) counts every row in the dataset.
+#[derive(Deserialize, Default)]
+pub struct CountRequest {
+    #[serde(default)]
+    pub predicates: Vec<Predicate>,
+}

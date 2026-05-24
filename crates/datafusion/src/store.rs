@@ -32,7 +32,7 @@ use datapress_core::config::{
     ResolvedCreds, S3Config, SourceKind,
 };
 use datapress_core::errors::AppError;
-use datapress_core::models::{Predicate, QueryRequest};
+use datapress_core::models::{CountRequest, Predicate, QueryRequest};
 use datapress_core::schema::{ColumnInfo, DatasetSchema, LogicalType};
 
 // ---------------------------------------------------------------------------
@@ -258,6 +258,35 @@ impl Store {
         }
         let batch = compute::concat_batches(&batches[0].schema(), batches.iter())?;
         serialize(&batch)
+    }
+
+    /// Return the number of rows matching `req.predicates`. With no
+    /// predicates this is a cheap metadata lookup on materialised datasets
+    /// and a `SELECT COUNT(*)` on lazy ones.
+    pub async fn count(&self, name: &str, req: &CountRequest) -> Result<i64, AppError> {
+        let st = self.dataset(name)?;
+
+        if !st.lazy {
+            // No predicates → resident row count, no scan.
+            if req.predicates.is_empty() {
+                return Ok(st.num_rows() as i64);
+            }
+            // Index fast path: same eligibility rules as `query`.
+            if let Some(rows) = try_index(&st.index, &req.predicates) {
+                return Ok(rows.len() as i64);
+            }
+        }
+
+        // Fallback: DataFusion SQL — same predicate translation as `query`.
+        let sql     = build_count_sql(&st.schema, &req.predicates)?;
+        let df      = self.ctx.sql(&sql).await?;
+        let batches = df.collect().await?;
+        let n = batches.first()
+            .and_then(|b| b.column(0).as_any().downcast_ref::<arrow::array::Int64Array>())
+            .filter(|a| a.len() > 0)
+            .map(|a| a.value(0))
+            .unwrap_or(0);
+        Ok(n)
     }
 }
 
@@ -727,6 +756,19 @@ fn build_query_sql(schema: &DatasetSchema, req: &QueryRequest) -> Result<String,
     Ok(format!(
         "SELECT {cols} FROM {table}{where_clause} LIMIT {page_size} OFFSET {offset}"
     ))
+}
+
+fn build_count_sql(schema: &DatasetSchema, predicates: &[Predicate]) -> Result<String, AppError> {
+    let clauses: Vec<String> = predicates.iter()
+        .map(|p| pred_to_sql(schema, p))
+        .collect::<Result<_, _>>()?;
+    let table = DatasetSchema::quote_ident(&schema.name);
+    let where_clause = if clauses.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", clauses.join(" AND "))
+    };
+    Ok(format!("SELECT COUNT(*) FROM {table}{where_clause}"))
 }
 
 fn pred_to_sql(schema: &DatasetSchema, pred: &Predicate) -> Result<String, AppError> {
