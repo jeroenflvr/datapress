@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.1.6] - 2026-05-24
+
+### Bug Fixes
+
+- *(multiple)* Ci platform, utf8view type casting, .. ([1f2a550](https://github.com/jeroenflvr/fast-api/commit/1f2a55016eb6590ba722e669603dedebda299775))
+
 ## [0.1.5] - 2026-05-24
 
 ### CI
