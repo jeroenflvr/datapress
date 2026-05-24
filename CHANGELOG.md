@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.1.5] - 2026-05-24
+
+### CI
+
+- Only build on tag ([b6dbad8](https://github.com/jeroenflvr/fast-api/commit/b6dbad89a2144b9d866de9de7545a029ffb9eb5d))
+
 ## [0.1.4] - 2026-05-24
 
 ### CI
