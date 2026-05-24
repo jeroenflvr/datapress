@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.1.15] - 2026-05-24
+
+### Documentation
+
+- Update readme for order by and limit ([861eded](https://github.com/jeroenflvr/fast-api/commit/861eded1b1bb57a06b12ae2674275cdc7c530fc0))
+- Update readme ([1bbf8ef](https://github.com/jeroenflvr/fast-api/commit/1bbf8ef57b9c7ddfb5b3d5f22dac4d361e465fd8))
+
+### Features
+
+- Add limit and order by ([f202d8c](https://github.com/jeroenflvr/fast-api/commit/f202d8cc5a9edc46aa37963781082ad499a9d78a))
+
 ## [0.1.14] - 2026-05-24
 
 ### Miscellaneous
