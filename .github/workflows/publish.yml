@@ -36,15 +36,19 @@ jobs:
         env:
           # DuckDB's platform.hpp refuses to compile under the legacy
           # GCC C++ ABI (_GLIBCXX_USE_CXX11_ABI=0) used by the manylinux
-          # containers. Setting DUCKDB_PLATFORM bypasses the check.
-          # maturin-action forwards step-level env vars into the docker
-          # container, so this reaches libduckdb-sys's build script.
+          # containers unless DUCKDB_PLATFORM is set. libduckdb-sys's
+          # build.rs reads this env var and passes it as a -D define.
           DUCKDB_PLATFORM: ${{ matrix.target == 'x86_64' && 'linux_amd64_gcc4' || 'linux_arm64_gcc4' }}
         with:
           target:         ${{ matrix.target }}
           manylinux:      auto
           args:           --release --out dist
           rust-toolchain: stable
+          # maturin-action runs the build inside a manylinux docker
+          # container and does NOT auto-forward step-level env vars into
+          # it. We have to pass `-e DUCKDB_PLATFORM` explicitly so
+          # libduckdb-sys's build script sees it.
+          docker-options: -e DUCKDB_PLATFORM
           # sccache disabled: wrapping `c++` inside the manylinux container
           # makes the bundled duckdb-sys C++ build fail silently. The
           # Swatinem/rust-cache step above already caches target/ between

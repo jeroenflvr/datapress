@@ -98,6 +98,21 @@ pub struct DatasetConfig {
     pub s3:     Option<S3Config>,
     #[serde(default)]
     pub index:  IndexConfig,
+    /// Optional column projection applied at load time. When non-empty,
+    /// only the listed columns are read from the parquet/delta source —
+    /// every other column is skipped entirely (no decode, no allocation,
+    /// no resident memory). Empty (default) = read all columns. Names are
+    /// matched case-insensitively against the source schema.
+    #[serde(default)]
+    pub columns: Vec<String>,
+    /// When `true` (default), Utf8 columns that are dictionary-encoded in
+    /// the source parquet are read as Arrow `Dictionary(Int32, Utf8)`
+    /// instead of being expanded to plain Utf8. Massively cheaper in RAM
+    /// for low-cardinality columns. Set to `false` to bypass the override
+    /// — useful as a workaround if you observe null-handling oddities on
+    /// a particular parquet file.
+    #[serde(default = "default_true")]
+    pub dict_encode: bool,
     /// When `true`, the backend should keep the dataset on disk and stream
     /// it at query time instead of materialising it into RAM at startup.
     /// Trades the in-memory hot paths (raw Arrow slice, equality index)
@@ -106,6 +121,8 @@ pub struct DatasetConfig {
     #[serde(default)]
     pub lazy:   bool,
 }
+
+fn default_true() -> bool { true }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SourceConfig {

@@ -19,7 +19,7 @@ pub async fn list_datasets(state: web::Data<Arc<Store>>) -> HttpResponse {
         state.dataset(&n).ok().map(|st| serde_json::json!({
             "name":    st.schema.name,
             "columns": st.schema.columns.len(),
-            "rows":    st.data.num_rows(),
+            "rows":    st.num_rows(),
         }))
     }).collect();
     HttpResponse::Ok().json(serde_json::json!({ "datasets": summaries }))

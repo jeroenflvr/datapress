@@ -134,6 +134,10 @@ impl PyS3Config {
 ///     mode (str): Index mode — ``"auto"`` (default), ``"none"`` or ``"list"``.
 ///     description (str | None): Free-text shown in the listing endpoint.
 ///     s3 (S3Config | None): Required when ``source`` starts with ``s3://``.
+///     columns (list[str] | None): Restrict the dataset to these columns
+///         at load time. Only the listed columns are read from the source
+///         and held in RAM — everything else is skipped. Names are matched
+///         case-insensitively. ``None`` (default) = read all columns.
 ///     index_columns (list[str] | None): Columns to build an index over
 ///         when ``mode="list"``.
 ///     index_max_cardinality (int | None): Upper bound on distinct values
@@ -156,6 +160,11 @@ pub struct PyDatasetConfig {
     #[pyo3(get, set)] pub mode:                  String,
     #[pyo3(get, set)] pub description:           Option<String>,
     #[pyo3(get, set)] pub s3:                    Option<PyS3Config>,
+    #[pyo3(get, set)] pub columns:               Option<Vec<String>>,
+    /// When ``True`` (default), Utf8 columns that are dictionary-encoded in
+    /// the source parquet are read as Arrow ``Dictionary(Int32, Utf8)``.
+    /// Set to ``False`` to bypass the override.
+    #[pyo3(get, set)] pub dict_encode:           bool,
     #[pyo3(get, set)] pub index_columns:         Option<Vec<String>>,
     #[pyo3(get, set)] pub index_max_cardinality: Option<usize>,
     /// Stream from disk instead of materialising into RAM.
@@ -173,6 +182,10 @@ impl PyDatasetConfig {
     ///     mode (str): ``"auto"`` (default), ``"none"`` or ``"list"``.
     ///     description (str | None): Free-text description.
     ///     s3 (S3Config | None): S3 credentials/endpoint, if ``source`` is ``s3://``.
+    ///     columns (list[str] | None): Read only these columns from the source.
+    ///     dict_encode (bool): Keep dictionary-encoded Utf8 columns as Arrow
+    ///         ``Dictionary(Int32, Utf8)``. Defaults to ``True``. Disable as a
+    ///         workaround for null-handling oddities on a specific file.
     ///     index_columns (list[str] | None): Columns to index when ``mode="list"``.
     ///     index_max_cardinality (int | None): Max distinct values per indexed column.
     ///     lazy (bool): Stream from disk instead of loading into RAM.
@@ -185,6 +198,8 @@ impl PyDatasetConfig {
         mode                  = "auto".to_string(),
         description           = None,
         s3                    = None,
+        columns               = None,
+        dict_encode           = true,
         index_columns         = None,
         index_max_cardinality = None,
         lazy                  = false,
@@ -196,13 +211,15 @@ impl PyDatasetConfig {
         mode:                  String,
         description:           Option<String>,
         s3:                    Option<PyS3Config>,
+        columns:               Option<Vec<String>>,
+        dict_encode:           bool,
         index_columns:         Option<Vec<String>>,
         index_max_cardinality: Option<usize>,
         lazy:                  bool,
     ) -> Self {
         Self {
             name, source, format, mode, description, s3,
-            index_columns, index_max_cardinality, lazy,
+            columns, dict_encode, index_columns, index_max_cardinality, lazy,
         }
     }
 }
@@ -237,11 +254,13 @@ impl PyDatasetConfig {
         let s3 = self.s3.map(|s| s.into_core()).transpose()?;
 
         Ok(CoreDatasetConfig {
-            name:   self.name,
-            source: SourceConfig { kind, location: self.source },
+            name:    self.name,
+            source:  SourceConfig { kind, location: self.source },
             s3,
             index,
-            lazy:   self.lazy,
+            columns:     self.columns.unwrap_or_default(),
+            dict_encode: self.dict_encode,
+            lazy:        self.lazy,
         })
     }
 }

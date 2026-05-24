@@ -4,14 +4,17 @@ use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwap;
 use arrow::array::{
-    Array, ArrayRef, BooleanArray, Float32Array, Float64Array,
+    Array, ArrayRef, BooleanArray, Decimal128Array, Decimal256Array,
+    Float32Array, Float64Array,
     Int8Array, Int16Array, Int32Array, Int64Array,
-    LargeStringArray, RecordBatch, Scalar, StringArray, UInt32Array,
+    LargeStringArray, RecordBatch, Scalar, StringArray, StringViewArray,
+    UInt8Array, UInt16Array, UInt32Array, UInt64Array,
 };
 use arrow::compute;
 use arrow::compute::kernels::cmp::{eq, gt, gt_eq, lt, lt_eq, neq};
 use arrow::datatypes::{DataType, Field, Schema};
-use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+use parquet::arrow::arrow_reader::{ArrowReaderOptions, ParquetRecordBatchReaderBuilder};
+use parquet::arrow::ProjectionMask;
 use serde_json::Value as JsonValue;
 
 use datafusion::datasource::{MemTable, TableProvider};
@@ -39,18 +42,33 @@ use datapress_core::schema::{ColumnInfo, DatasetSchema, LogicalType};
 /// Pre-built equality index: lowercase col name → string-encoded value → sorted row ids.
 type EqIndex = HashMap<String, HashMap<String, Vec<u32>>>;
 
-/// Per-dataset state: schema metadata, the resident RecordBatch, and the
+/// Per-dataset state: schema metadata, the resident chunks, and the
 /// equality index built per the dataset's `[dataset.index]` policy.
 ///
-/// When `lazy` is true the dataset is *not* materialised: `data` holds an
-/// empty `RecordBatch` carrying only the schema, `index` is empty, and
-/// every query is dispatched to DataFusion SQL against a registered
-/// `ListingTable`.
+/// `data` is the dataset as a `Vec<RecordBatch>` — exactly the chunks
+/// produced by the underlying reader, after temporal columns are cast to
+/// `Utf8`. We deliberately do **not** call `concat_batches` to fuse them
+/// into one batch: on wide schemas (hundreds of columns) that transiently
+/// allocates a second full copy of the decoded Arrow data, pushing peak
+/// RSS to ~2× the resident size and OOM-killing the process at startup.
+///
+/// When `lazy` is true the dataset is *not* materialised: `data` is empty,
+/// `index` is empty, and every query is dispatched to DataFusion SQL
+/// against a registered `ListingTable`. `arrow_schema` still carries the
+/// inferred schema so discovery endpoints work.
 pub struct DatasetState {
-    pub schema: DatasetSchema,
-    pub data:   RecordBatch,
-    pub index:  EqIndex,
-    pub lazy:   bool,
+    pub schema:       DatasetSchema,
+    pub data:         Vec<RecordBatch>,
+    pub arrow_schema: Arc<Schema>,
+    pub index:        EqIndex,
+    pub lazy:         bool,
+}
+
+impl DatasetState {
+    /// Sum of `num_rows()` across all resident chunks. `0` for lazy datasets.
+    pub fn num_rows(&self) -> usize {
+        self.data.iter().map(|b| b.num_rows()).sum()
+    }
 }
 
 /// Multi-dataset registry. Each dataset is registered in the shared
@@ -139,10 +157,11 @@ impl Store {
             return Ok(inner.to_string());
         }
 
-        if st.data.num_rows() == 0 {
-            return Ok("null".into());
-        }
-        let arr = serialize(&st.data.slice(0, 1))?;
+        let first = match st.data.iter().find(|b| b.num_rows() > 0) {
+            Some(b) => b,
+            None    => return Ok("null".into()),
+        };
+        let arr = serialize(&first.slice(0, 1))?;
         // strip the outer [] to return a single object
         let trimmed = arr.trim();
         let inner = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']'))
@@ -177,7 +196,7 @@ impl Store {
         // 3. Heavy lifting (source read + index build). Parquet/delta
         // readers are themselves async, so we don't wrap in `web::block`.
         let (state, provider) = build_dataset(&cfg, &self.ctx).await?;
-        let rows = state.data.num_rows();
+        let rows = state.num_rows();
 
         // 4. Atomic swap.
         //   a) Replace the MemTable inside the SessionContext.
@@ -209,18 +228,21 @@ impl Store {
 
         // In-memory hot paths only fire when the dataset is materialised.
         if !st.lazy {
-            // No predicates → O(1) raw Arrow slice, no engine overhead.
+            let total = st.num_rows();
+
+            // No predicates → O(1) raw Arrow slice across chunks, no engine overhead.
             if req.predicates.is_empty() {
-                let start = offset.min(st.data.num_rows());
-                let len   = limit.min(st.data.num_rows() - start);
-                return serialize(&project(&st.schema, st.data.slice(start, len), &req.columns)?);
+                let start = offset.min(total);
+                let len   = limit.min(total - start);
+                let page  = slice_global(&st.data, &st.arrow_schema, start, len)?;
+                return serialize(&project(&st.schema, page, &req.columns)?);
             }
 
             // Index fast path: if every predicate is eq/in on an indexed column,
             // resolve via the pre-built equality index — far cheaper than a full
-            // SIMD scan over the entire RecordBatch.
+            // SIMD scan over the entire dataset.
             if let Some(rows) = try_index(&st.index, &req.predicates) {
-                let batch = take_page(&st.data, &rows, offset, limit)?;
+                let batch = take_page(&st.data, &st.arrow_schema, &rows, offset, limit)?;
                 return serialize(&project(&st.schema, batch, &req.columns)?);
             }
         }
@@ -278,9 +300,8 @@ async fn build_dataset(
         )));
     }
 
-    let all       = cast_temporal(raw_batches)?;
-    let arrow_sch = all[0].schema();
-    let data      = compute::concat_batches(&arrow_sch, all.iter())?;
+    let chunks    = raw_batches;
+    let arrow_sch = chunks[0].schema();
 
     // Build DatasetSchema from the Arrow schema.
     let columns: Vec<ColumnInfo> = arrow_sch.fields().iter().map(|f| {
@@ -294,38 +315,52 @@ async fn build_dataset(
     }).collect();
     let schema = DatasetSchema::new(&d.name, columns);
 
-    // Build the equality index per the per-dataset policy.
-    let index = build_eq_index_with_policy(&data, &d.index);
+    // Build the equality index per the per-dataset policy. Operates on the
+    // chunked representation directly so we never have to materialise a
+    // single concatenated batch (which would double peak RSS on wide
+    // schemas — see `DatasetState` docs).
+    let index = build_eq_index_with_policy(&chunks, &d.index);
 
-    // Partition for parallel scans by the SQL fallback path.
-    let n_parts   = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
-    let part_size = (data.num_rows() + n_parts - 1) / n_parts;
-    let parts: Vec<Vec<RecordBatch>> = (0..n_parts)
-        .map(|i| {
-            let start = i * part_size;
-            let len   = part_size.min(data.num_rows().saturating_sub(start));
-            vec![data.slice(start, len)]
-        })
-        .filter(|v| v[0].num_rows() > 0)
-        .collect();
-    let provider: Arc<dyn TableProvider> = Arc::new(MemTable::try_new(data.schema(), parts)?);
+    // Partition for parallel scans by the SQL fallback path. We distribute
+    // the existing batches round-robin across `n_parts` partitions instead
+    // of re-slicing a concatenated batch — `clone()` on a RecordBatch is
+    // an Arc-clone of the column buffers, not a copy.
+    let n_parts = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    let mut parts: Vec<Vec<RecordBatch>> = (0..n_parts).map(|_| Vec::new()).collect();
+    for (i, b) in chunks.iter().enumerate() {
+        if b.num_rows() == 0 { continue; }
+        parts[i % n_parts].push(b.clone());
+    }
+    parts.retain(|p| !p.is_empty());
+    let provider: Arc<dyn TableProvider> = Arc::new(MemTable::try_new(arrow_sch.clone(), parts)?);
 
-    let mem_mb: usize = data.columns().iter()
+    let total_rows: usize = chunks.iter().map(|b| b.num_rows()).sum();
+    let mem_mb: usize = chunks.iter()
+        .flat_map(|b| b.columns().iter())
         .map(|c| c.get_buffer_memory_size())
         .sum::<usize>() / 1_048_576;
     log::info!(
-        "dataset '{}' [{}]: {} rows, {} cols, {} MB, {} indexed cols",
+        "dataset '{}' [{}]: {} rows, {} cols, {} MB, {} chunks, {} indexed cols",
         d.name, d.source.kind.as_str(),
-        data.num_rows(), schema.columns.len(), mem_mb, index.len()
+        total_rows, schema.columns.len(), mem_mb, chunks.len(), index.len()
     );
 
-    Ok((DatasetState { schema, data, index, lazy: false }, provider))
+    Ok((
+        DatasetState {
+            schema,
+            data: chunks,
+            arrow_schema: arrow_sch,
+            index,
+            lazy: false,
+        },
+        provider,
+    ))
 }
 
 /// Build a lazy state + `ListingTable` provider for a local parquet dataset.
 /// The dataset is never read into RAM; DataFusion streams row groups on
-/// each query. The returned `DatasetState.data` is an empty `RecordBatch`
-/// carrying only the schema (used by the `*Schema` endpoint).
+/// each query. The returned `DatasetState.data` is an empty `Vec` —
+/// `arrow_schema` still carries the inferred Arrow schema for discovery.
 async fn build_lazy_local_parquet(
     d:   &DatasetConfig,
     ctx: &SessionContext,
@@ -375,30 +410,118 @@ async fn build_lazy_local_parquet(
     }).collect();
     let schema = DatasetSchema::new(&d.name, columns);
 
-    // Empty RecordBatch carrying just the schema — keeps the existing
-    // `DatasetState.data` invariant (“something we can hand to serialize”)
-    // intact for code that only inspects the schema.
-    let empty = RecordBatch::new_empty(arrow_sch.clone());
-
     log::info!(
         "dataset '{}' [{}, lazy]: {} files, {} cols (no materialise, no index)",
         d.name, d.source.kind.as_str(), files.len(), schema.columns.len()
     );
 
     Ok((
-        DatasetState { schema, data: empty, index: EqIndex::new(), lazy: true },
+        DatasetState {
+            schema,
+            data: Vec::new(),
+            arrow_schema: arrow_sch,
+            index: EqIndex::new(),
+            lazy: true,
+        },
         provider,
     ))
 }
 
-/// Original local-parquet code path — sync file I/O, one batch per row group.
+/// Original local-parquet code path — sync file I/O. We set a large reader
+/// batch size so wide schemas (hundreds of columns) don't pay per-array
+/// metadata overhead on thousands of small (default 1024-row) batches.
+///
+/// Two memory-saving knobs are applied here:
+///
+/// * **Column projection** — if `d.columns` is non-empty, only those
+///   columns are decoded; everything else is skipped at the parquet reader
+///   level (no Arrow array is ever allocated for the dropped columns).
+/// * **Dictionary preservation** — Utf8 columns whose parquet column chunks
+///   carry a dictionary page are materialised as Arrow
+///   `Dictionary(Int32, Utf8)` instead of plain `Utf8`. Low-cardinality
+///   string columns (state, country, severity, …) stay represented as
+///   `n_unique` string slots plus an Int32 index per row instead of
+///   `n_rows` independent strings — typically 10×–50× smaller for
+///   real-world data.
 fn read_local_parquet(d: &DatasetConfig) -> Result<Vec<RecordBatch>, AppError> {
     let files = d.resolve_local_parquet_files()?;
     let mut all = Vec::new();
+    let wanted: Option<std::collections::HashSet<String>> = if d.columns.is_empty() {
+        None
+    } else {
+        Some(d.columns.iter().map(|c| c.to_lowercase()).collect())
+    };
+
     for f in &files {
         let file = std::fs::File::open(f)
             .map_err(|e| AppError::Internal(format!("open {}: {e}", f.display())))?;
-        let reader = ParquetRecordBatchReaderBuilder::try_new(file)?.build()?;
+
+        // First pass: peek the parquet metadata + default Arrow schema so we
+        // can (a) decide a column projection and (b) override Utf8 columns
+        // that are dictionary-encoded in the file so the reader materialises
+        // them as Arrow Dictionary arrays instead of expanding to plain Utf8.
+        let probe = ParquetRecordBatchReaderBuilder::try_new(file.try_clone()
+            .map_err(|e| AppError::Internal(format!("dup fd {}: {e}", f.display())))?)?;
+        let parquet_schema = probe.parquet_schema().clone();
+        let arrow_schema   = probe.schema().clone();
+        let metadata       = probe.metadata().clone();
+        drop(probe);
+
+        // Column projection (top-level / leaf indices for flat schemas).
+        let projection = if let Some(w) = &wanted {
+            let indices: Vec<usize> = arrow_schema.fields().iter().enumerate()
+                .filter(|(_, fld)| w.contains(&fld.name().to_lowercase()))
+                .map(|(i, _)| i)
+                .collect();
+            if indices.is_empty() {
+                return Err(AppError::Internal(format!(
+                    "dataset '{}': no columns from `columns = {:?}` match parquet schema for {}",
+                    d.name, d.columns, f.display()
+                )));
+            }
+            ProjectionMask::roots(&parquet_schema, indices)
+        } else {
+            ProjectionMask::all()
+        };
+
+        // Dictionary override: any Utf8 column whose first row group carries
+        // a dictionary page is re-typed to Dictionary(Int32, Utf8). The
+        // override schema must still describe every column in the parquet
+        // file (projection is applied separately). Skipped entirely when
+        // the dataset has `dict_encode = false` — escape hatch for cases
+        // where the override interacts badly with null propagation in the
+        // downstream engine.
+        let mut new_fields: Vec<Field> = arrow_schema.fields().iter()
+            .map(|f| f.as_ref().clone()).collect();
+        if d.dict_encode {
+            if let Some(rg0) = metadata.row_groups().first() {
+                for (i, fld) in arrow_schema.fields().iter().enumerate() {
+                    if !matches!(fld.data_type(),
+                        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) {
+                        continue;
+                    }
+                    if let Some(col) = rg0.columns().get(i) {
+                        if col.dictionary_page_offset().is_some() {
+                            new_fields[i] = Field::new(
+                                fld.name(),
+                                DataType::Dictionary(
+                                    Box::new(DataType::Int32),
+                                    Box::new(DataType::Utf8),
+                                ),
+                                fld.is_nullable(),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        let forced_schema = Arc::new(Schema::new(new_fields));
+
+        let opts = ArrowReaderOptions::new().with_schema(forced_schema);
+        let reader = ParquetRecordBatchReaderBuilder::try_new_with_options(file, opts)?
+            .with_batch_size(65_536)
+            .with_projection(projection)
+            .build()?;
         for batch in reader {
             all.push(batch.map_err(|e| AppError::Internal(e.to_string()))?);
         }
@@ -539,8 +662,13 @@ fn arrow_to_logical(dt: &DataType) -> LogicalType {
                 => LogicalType::Int,
         DataType::Float16 | DataType::Float32 | DataType::Float64
                 => LogicalType::Float,
-        DataType::Utf8 | DataType::LargeUtf8
+        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
                 => LogicalType::Utf8,
+        // Dictionary-encoded strings are reported as plain strings — clients
+        // (and the rest of the backend) shouldn't have to care that we keep
+        // a compressed representation in memory.
+        DataType::Dictionary(_, v) if matches!(v.as_ref(),
+            DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) => LogicalType::Utf8,
         DataType::Date32 | DataType::Date64
             | DataType::Time32(_) | DataType::Time64(_)
             | DataType::Timestamp(_, _)
@@ -721,24 +849,106 @@ fn try_index(index: &EqIndex, predicates: &[Predicate]) -> Option<Vec<u32>> {
     result
 }
 
-fn take_page(data: &RecordBatch, rows: &[u32], offset: usize, limit: usize)
-    -> Result<RecordBatch, AppError>
-{
-    let start = offset.min(rows.len());
-    let len   = limit.min(rows.len() - start);
-    let idx   = UInt32Array::from(rows[start..start + len].to_vec());
-    let cols: Vec<ArrayRef> = data.columns().iter()
-        .map(|c| arrow::compute::take(c.as_ref(), &idx, None::<arrow::compute::TakeOptions>)
-                 .map_err(AppError::from))
-        .collect::<Result<_, _>>()?;
-    RecordBatch::try_new(data.schema(), cols).map_err(AppError::from)
+/// Return rows `[offset, offset+limit)` from a chunked dataset by slicing
+/// the underlying batches (zero-copy) and concatenating the (small) page.
+fn slice_global(
+    chunks: &[RecordBatch],
+    schema: &Arc<Schema>,
+    offset: usize,
+    limit:  usize,
+) -> Result<RecordBatch, AppError> {
+    if limit == 0 || chunks.is_empty() {
+        return Ok(RecordBatch::new_empty(schema.clone()));
+    }
+    let mut out = Vec::new();
+    let mut to_skip   = offset;
+    let mut remaining = limit;
+    for b in chunks {
+        if remaining == 0 { break; }
+        let n = b.num_rows();
+        if to_skip >= n { to_skip -= n; continue; }
+        let take = remaining.min(n - to_skip);
+        out.push(b.slice(to_skip, take));
+        to_skip = 0;
+        remaining -= take;
+    }
+    if out.is_empty() {
+        return Ok(RecordBatch::new_empty(schema.clone()));
+    }
+    compute::concat_batches(schema, out.iter()).map_err(AppError::from)
 }
 
-/// Build the equality index per the dataset's policy.
-fn build_eq_index_with_policy(data: &RecordBatch, cfg: &IndexConfig) -> EqIndex {
+/// Materialise the page `rows[offset..offset+limit]` from a chunked dataset.
+/// Row ids are global (across the concatenation of all chunks). We map each
+/// requested row to its (chunk, local-index), `take` per chunk, then stitch
+/// the per-chunk results back together preserving the original row order.
+fn take_page(
+    chunks: &[RecordBatch],
+    schema: &Arc<Schema>,
+    rows:   &[u32],
+    offset: usize,
+    limit:  usize,
+) -> Result<RecordBatch, AppError> {
+    let start = offset.min(rows.len());
+    let len   = limit.min(rows.len() - start);
+    if len == 0 || chunks.is_empty() {
+        return Ok(RecordBatch::new_empty(schema.clone()));
+    }
+
+    // Prefix-sum table: `offsets[i]` is the first global row id of chunk `i`,
+    // and `offsets.last()` is the total row count.
+    let mut offsets: Vec<u32> = Vec::with_capacity(chunks.len() + 1);
+    let mut acc: u32 = 0;
+    offsets.push(0);
+    for b in chunks {
+        acc = acc.checked_add(b.num_rows() as u32).expect("row count exceeds u32::MAX");
+        offsets.push(acc);
+    }
+
+    // Bucket each global row id into the chunk that contains it, remembering
+    // the original output position so we can restore page order at the end.
+    let mut buckets: Vec<Vec<(u32, u32)>> = (0..chunks.len()).map(|_| Vec::new()).collect();
+    for (out_pos, &gid) in rows[start..start + len].iter().enumerate() {
+        let bi    = offsets.partition_point(|&x| x <= gid).saturating_sub(1);
+        let local = gid - offsets[bi];
+        buckets[bi].push((out_pos as u32, local));
+    }
+
+    // Per-chunk take, recording the destination index for each emitted row.
+    let mut takens: Vec<RecordBatch> = Vec::new();
+    let mut dest:   Vec<u32>         = Vec::with_capacity(len);
+    for (bi, bucket) in buckets.iter().enumerate() {
+        if bucket.is_empty() { continue; }
+        let idx = UInt32Array::from(bucket.iter().map(|(_, l)| *l).collect::<Vec<u32>>());
+        let cols: Vec<ArrayRef> = chunks[bi].columns().iter()
+            .map(|c| arrow::compute::take(c.as_ref(), &idx, None::<arrow::compute::TakeOptions>)
+                     .map_err(AppError::from))
+            .collect::<Result<_, _>>()?;
+        takens.push(RecordBatch::try_new(chunks[bi].schema(), cols)?);
+        dest.extend(bucket.iter().map(|(out_pos, _)| *out_pos));
+    }
+
+    // Stitch per-chunk results then permute to restore the requested order.
+    let stitched = compute::concat_batches(schema, takens.iter())?;
+    let mut inv = vec![0u32; len];
+    for (i, &d) in dest.iter().enumerate() {
+        inv[d as usize] = i as u32;
+    }
+    let perm = UInt32Array::from(inv);
+    let cols: Vec<ArrayRef> = stitched.columns().iter()
+        .map(|c| arrow::compute::take(c.as_ref(), &perm, None::<arrow::compute::TakeOptions>)
+                 .map_err(AppError::from))
+        .collect::<Result<_, _>>()?;
+    RecordBatch::try_new(stitched.schema(), cols).map_err(AppError::from)
+}
+
+/// Build the equality index per the dataset's policy, against the chunked
+/// representation. Row ids are global across the concatenation of all
+/// chunks (so they remain compatible with `take_page` / `slice_global`).
+fn build_eq_index_with_policy(chunks: &[RecordBatch], cfg: &IndexConfig) -> EqIndex {
     use rayon::prelude::*;
 
-    if cfg.mode == IndexMode::None {
+    if cfg.mode == IndexMode::None || chunks.is_empty() {
         return EqIndex::new();
     }
 
@@ -749,43 +959,101 @@ fn build_eq_index_with_policy(data: &RecordBatch, cfg: &IndexConfig) -> EqIndex 
     };
 
     let max_card = if cfg.mode == IndexMode::Auto { Some(cfg.max_cardinality) } else { None };
-    let n = data.num_rows();
 
-    data.schema().fields().par_iter().enumerate()
+    // Per-chunk starting global row id.
+    let mut batch_offsets: Vec<u32> = Vec::with_capacity(chunks.len());
+    let mut acc: u32 = 0;
+    for b in chunks {
+        batch_offsets.push(acc);
+        acc = acc.checked_add(b.num_rows() as u32).expect("row count exceeds u32::MAX");
+    }
+
+    let schema = chunks[0].schema();
+
+    schema.fields().par_iter().enumerate()
         .filter_map(|(ci, field)| {
             let col_lower = field.name().to_lowercase();
             if let Some(a) = &allow {
                 if !a.contains_key(&col_lower) { return None; }
             }
-            let col = data.column(ci);
+
+            // Only build for index-friendly types; skip everything else
+            // up-front so we don't pay the per-chunk dispatch cost.
+            let dtype = field.data_type();
+            let dict_utf8 = matches!(dtype,
+                DataType::Dictionary(k, v)
+                    if matches!(k.as_ref(), DataType::Int32)
+                    && matches!(v.as_ref(), DataType::Utf8));
+            match dtype {
+                DataType::Utf8 | DataType::Utf8View
+                | DataType::Boolean
+                | DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {}
+                _ if dict_utf8 => {}
+                _ => return None,
+            }
+
             let mut map: HashMap<String, Vec<u32>> = HashMap::new();
 
-            macro_rules! index_col {
-                ($arr_ty:ty) => {{
-                    let arr = col.as_any().downcast_ref::<$arr_ty>()?;
-                    for row in 0..n {
+            for (bi, batch) in chunks.iter().enumerate() {
+                let base = batch_offsets[bi];
+                let col  = batch.column(ci);
+
+                macro_rules! index_col {
+                    ($arr_ty:ty) => {{
+                        let arr = col.as_any().downcast_ref::<$arr_ty>()?;
+                        for row in 0..arr.len() {
+                            if arr.is_null(row) { continue; }
+                            let key = arr.value(row).to_string();
+                            let gid = base + row as u32;
+                            if let Some(v) = map.get_mut(&key) {
+                                v.push(gid);
+                            } else {
+                                if let Some(mc) = max_card {
+                                    if map.len() >= mc { return None; }
+                                }
+                                map.insert(key, vec![gid]);
+                            }
+                        }
+                    }};
+                }
+
+                if dict_utf8 {
+                    // Dictionary(Int32, Utf8): iterate keys + look up the
+                    // string value from the (small) dictionary. We allocate
+                    // the key string only when the value is new — repeated
+                    // values reuse the existing HashMap entry by hash, but
+                    // `HashMap::get_mut` still needs the key, so we use a
+                    // borrowed lookup via `get` first to avoid the alloc.
+                    let arr = col.as_any()
+                        .downcast_ref::<arrow::array::DictionaryArray<arrow::datatypes::Int32Type>>()?;
+                    let keys   = arr.keys();
+                    let values = arr.values().as_any().downcast_ref::<StringArray>()?;
+                    for row in 0..arr.len() {
                         if arr.is_null(row) { continue; }
-                        let key = arr.value(row).to_string();
-                        if let Some(v) = map.get_mut(&key) {
-                            v.push(row as u32);
+                        let k = keys.value(row) as usize;
+                        let s = values.value(k);
+                        let gid = base + row as u32;
+                        if let Some(v) = map.get_mut(s) {
+                            v.push(gid);
                         } else {
                             if let Some(mc) = max_card {
                                 if map.len() >= mc { return None; }
                             }
-                            map.insert(key, vec![row as u32]);
+                            map.insert(s.to_string(), vec![gid]);
                         }
                     }
-                }};
-            }
-
-            match field.data_type() {
-                DataType::Utf8    => index_col!(StringArray),
-                DataType::Boolean => index_col!(BooleanArray),
-                DataType::Int8    => index_col!(Int8Array),
-                DataType::Int16   => index_col!(Int16Array),
-                DataType::Int32   => index_col!(Int32Array),
-                DataType::Int64   => index_col!(Int64Array),
-                _ => return None,
+                } else {
+                    match dtype {
+                        DataType::Utf8     => index_col!(StringArray),
+                        DataType::Utf8View => index_col!(StringViewArray),
+                        DataType::Boolean  => index_col!(BooleanArray),
+                        DataType::Int8     => index_col!(Int8Array),
+                        DataType::Int16    => index_col!(Int16Array),
+                        DataType::Int32    => index_col!(Int32Array),
+                        DataType::Int64    => index_col!(Int64Array),
+                        _ => unreachable!(),
+                    }
+                }
             }
 
             Some((col_lower, map))
@@ -794,35 +1062,57 @@ fn build_eq_index_with_policy(data: &RecordBatch, cfg: &IndexConfig) -> EqIndex 
 }
 
 // ---------------------------------------------------------------------------
-// Startup: cast temporal columns to Utf8 (one-time cost)
+// Serialise-time temporal cast: convert Timestamp/Date/Time columns to Utf8
+// on the page batch right before JSON encoding. We deliberately do **not**
+// pay this cost at load time — a `Date32` is 4 bytes per row, its ISO-8601
+// rendering is ~10–24 bytes per row, and a wide dataset full of temporal
+// columns would balloon resident RAM. The cast is applied per page (≤ 1000
+// rows after pagination), so the per-query overhead is negligible.
 // ---------------------------------------------------------------------------
 
-fn cast_temporal(batches: Vec<RecordBatch>) -> Result<Vec<RecordBatch>, AppError> {
-    let schema = batches[0].schema();
-    let ts: Vec<usize> = schema.fields().iter().enumerate()
-        .filter_map(|(i, f)| match f.data_type() {
-            DataType::Timestamp(_, _) | DataType::Date32 | DataType::Date64 => Some(i),
-            _ => None,
-        })
+/// Returns true for Arrow types that `write_value` can render directly. Any
+/// type returning false is pre-cast to Utf8 in [`cast_for_serialize`] so the
+/// JSON output is faithful rather than silently `null`.
+fn writable_inline(dt: &DataType) -> bool {
+    match dt {
+        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
+        | DataType::Boolean
+        | DataType::Int8  | DataType::Int16  | DataType::Int32  | DataType::Int64
+        | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64
+        | DataType::Float32 | DataType::Float64
+        | DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => true,
+        DataType::Dictionary(k, v)
+            if matches!(k.as_ref(), DataType::Int32)
+                && matches!(v.as_ref(), DataType::Utf8) => true,
+        _ => false,
+    }
+}
+
+/// Cast any column whose dtype isn't directly writable by `write_value` to
+/// `Utf8`, on the bounded page batch. Covers temporals (Timestamp/Date/Time)
+/// — kept native in resident memory to save RAM — and also any exotic dtype
+/// (Float16, Binary, List, Struct, Decimal-with-unsupported-precision, …)
+/// so the JSON serializer never falls back to writing literal `null`.
+fn cast_for_serialize(batch: &RecordBatch) -> Result<RecordBatch, AppError> {
+    let schema = batch.schema();
+    let to_cast: Vec<usize> = schema.fields().iter().enumerate()
+        .filter_map(|(i, f)| if writable_inline(f.data_type()) { None } else { Some(i) })
         .collect();
-    if ts.is_empty() {
-        return Ok(batches);
+    if to_cast.is_empty() {
+        return Ok(batch.clone());
     }
     let new_fields: Vec<Field> = schema.fields().iter().enumerate()
-        .map(|(i, f)| if ts.contains(&i) { Field::new(f.name(), DataType::Utf8, f.is_nullable()) }
-                      else               { f.as_ref().clone() })
+        .map(|(i, f)| if to_cast.contains(&i) {
+            Field::new(f.name(), DataType::Utf8, f.is_nullable())
+        } else { f.as_ref().clone() })
         .collect();
     let new_schema = Arc::new(Schema::new(new_fields));
-    batches.into_iter()
-        .map(|b| {
-            let cols: Vec<ArrayRef> = b.columns().iter().enumerate()
-                .map(|(i, c)| if ts.contains(&i) {
-                    compute::cast(c.as_ref(), &DataType::Utf8).map_err(AppError::from)
-                } else { Ok(c.clone()) })
-                .collect::<Result<_, _>>()?;
-            RecordBatch::try_new(new_schema.clone(), cols).map_err(AppError::from)
-        })
-        .collect()
+    let cols: Vec<ArrayRef> = batch.columns().iter().enumerate()
+        .map(|(i, c)| if to_cast.contains(&i) {
+            compute::cast(c.as_ref(), &DataType::Utf8).map_err(AppError::from)
+        } else { Ok(c.clone()) })
+        .collect::<Result<_, _>>()?;
+    RecordBatch::try_new(new_schema, cols).map_err(AppError::from)
 }
 
 // ---------------------------------------------------------------------------
@@ -892,6 +1182,11 @@ fn cmp_scalar(col: &ArrayRef, op: CmpOp, val: &JsonValue) -> Result<BooleanArray
 // ---------------------------------------------------------------------------
 
 pub fn serialize(batch: &RecordBatch) -> Result<String, AppError> {
+    // Temporal columns are kept native in resident memory (compact). Cast
+    // them — plus any other dtype `write_value` can't render directly — to
+    // Utf8 here, on the bounded page batch, so the JSON output is faithful
+    // without paying the load-time RAM cost.
+    let batch  = cast_for_serialize(batch)?;
     let schema = batch.schema();
     let n_cols = schema.fields().len();
     let n_rows = batch.num_rows();
@@ -934,14 +1229,40 @@ fn write_value(buf: &mut Vec<u8>, col: &dyn Array, row: usize) {
             write_str(buf, col.as_any().downcast_ref::<StringArray>().unwrap().value(row)),
         DataType::LargeUtf8 =>
             write_str(buf, col.as_any().downcast_ref::<LargeStringArray>().unwrap().value(row)),
+        DataType::Utf8View =>
+            write_str(buf, col.as_any().downcast_ref::<StringViewArray>().unwrap().value(row)),
+        DataType::Dictionary(key, value)
+            if matches!(key.as_ref(), DataType::Int32)
+                && matches!(value.as_ref(), DataType::Utf8) =>
+        {
+            let dict = col.as_any()
+                .downcast_ref::<arrow::array::DictionaryArray<arrow::datatypes::Int32Type>>()
+                .unwrap();
+            let keys   = dict.keys();
+            let values = dict.values().as_any().downcast_ref::<StringArray>().unwrap();
+            let k = keys.value(row) as usize;
+            write_str(buf, values.value(k));
+        }
         DataType::Boolean => {
             let v = col.as_any().downcast_ref::<BooleanArray>().unwrap().value(row);
             buf.extend_from_slice(if v { b"true" } else { b"false" });
         }
-        DataType::Int8   => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<Int8Array>() .unwrap().value(row)).as_bytes()); }
-        DataType::Int16  => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<Int16Array>().unwrap().value(row)).as_bytes()); }
-        DataType::Int32  => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<Int32Array>().unwrap().value(row)).as_bytes()); }
-        DataType::Int64  => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<Int64Array>().unwrap().value(row)).as_bytes()); }
+        DataType::Int8   => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<Int8Array>()  .unwrap().value(row)).as_bytes()); }
+        DataType::Int16  => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<Int16Array>() .unwrap().value(row)).as_bytes()); }
+        DataType::Int32  => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<Int32Array>() .unwrap().value(row)).as_bytes()); }
+        DataType::Int64  => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<Int64Array>() .unwrap().value(row)).as_bytes()); }
+        DataType::UInt8  => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<UInt8Array>() .unwrap().value(row)).as_bytes()); }
+        DataType::UInt16 => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<UInt16Array>().unwrap().value(row)).as_bytes()); }
+        DataType::UInt32 => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<UInt32Array>().unwrap().value(row)).as_bytes()); }
+        DataType::UInt64 => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<UInt64Array>().unwrap().value(row)).as_bytes()); }
+        DataType::Decimal128(_, _) => {
+            let arr = col.as_any().downcast_ref::<Decimal128Array>().unwrap();
+            write_str(buf, &arr.value_as_string(row));
+        }
+        DataType::Decimal256(_, _) => {
+            let arr = col.as_any().downcast_ref::<Decimal256Array>().unwrap();
+            write_str(buf, &arr.value_as_string(row));
+        }
         DataType::Float32 => {
             let v = col.as_any().downcast_ref::<Float32Array>().unwrap().value(row);
             if v.is_finite() { let mut b = ryu::Buffer::new(); buf.extend_from_slice(b.format_finite(v).as_bytes()); }
@@ -952,7 +1273,11 @@ fn write_value(buf: &mut Vec<u8>, col: &dyn Array, row: usize) {
             if v.is_finite() { let mut b = ryu::Buffer::new(); buf.extend_from_slice(b.format_finite(v).as_bytes()); }
             else { buf.extend_from_slice(b"null"); }
         }
-        _ => buf.extend_from_slice(b"null"),
+        // Any dtype not handled above must have been pre-cast to Utf8 by
+        // `cast_for_serialize`. Hitting this arm is a bug — surface it as a
+        // visible JSON string rather than a silent null so it can't be
+        // mistaken for a real NULL value.
+        other => write_str(buf, &format!("<unsupported dtype: {other:?}>")),
     }
 }
 
