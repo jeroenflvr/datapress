@@ -1,10 +1,10 @@
-# datapress
+# datap-rs
 
-A small Rust **Cargo workspace** that exposes one or more **Parquet / Delta
+A Rust **Cargo workspace** that exposes one or more **Parquet / Delta
 datasets** over a JSON HTTP API. The same surface area is implemented twice —
 once on top of **DuckDB**, once on top of **Apache Arrow + DataFusion** — so
 you can A/B the engines under identical workloads. A Python wheel
-(`datapress`, built with maturin + PyO3) bundles both engines and lets you
+(`datap-rs`, built with maturin + PyO3) bundles both engines and lets you
 configure and launch the server from Python.
 
 - Built on [actix-web](https://actix.rs/) 4
@@ -16,6 +16,9 @@ configure and launch the server from Python.
 ---
 
 ## Quick start
+
+For testing, we're using this [kaggle US accidents 2016-2023](https://www.kaggle.com/datasets/sobhanmoosavi/us-accidents) dataset.
+
 
 ```bash
 # 1. Put a parquet file somewhere (or point the config at an existing one).
