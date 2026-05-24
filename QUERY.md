@@ -1,6 +1,6 @@
 # Querying datasets
 
-DataPress exposes one query endpoint per dataset:
+`datap-rs` exposes one query endpoint per dataset:
 
 ```
 POST /api/datasets/{name}/query
@@ -295,7 +295,7 @@ Execution paths (DataFusion backend):
 
 ## Python — querying from a client
 
-DataPress ships a server, not a Python client. Use any HTTP library —
+`datap-rs` ships a server, not a Python client. Use any HTTP library —
 `httpx`, `requests`, `aiohttp`. The body is plain JSON:
 
 ```python

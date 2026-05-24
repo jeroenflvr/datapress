@@ -5,9 +5,9 @@ edition.workspace = true
 license.workspace = true
 
 [lib]
-# Python import name: `import datapress`. The Cargo package can't share that
-# name with the umbrella project, so we name the package `datapress-py` but
-# expose the cdylib as `datapress`.
+# Python submodule name: `datap_rs.datapress`. The cdylib basename must
+# match the rightmost path component of `module-name` in pyproject.toml,
+# so the .so file ends up at `datap_rs/datapress.abi3.so` inside the wheel.
 name       = "datapress"
 crate-type = ["cdylib"]
 

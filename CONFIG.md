@@ -382,7 +382,7 @@ Every field above has a counterpart on `dp.DatasetConfig`. The runtime
 honours both shapes identically.
 
 ```python
-import datapress as dp
+from datap_rs import datapress as dp
 
 cfg = dp.AppConfig(
     server=dp.ServerConfig(backend="datafusion", port=8080),

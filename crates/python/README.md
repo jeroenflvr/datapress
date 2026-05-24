@@ -1,11 +1,21 @@
-# datapress
+# datap-rs
+
+```
+██████╗  █████╗ ████████╗ █████╗ ██████╗       ██████╗ ███████╗
+██╔══██╗██╔══██╗╚══██╔══╝██╔══██╗██╔══██╗      ██╔══██╗██╔════╝
+██║  ██║███████║   ██║   ███████║██████╔╝█████╗██████╔╝███████╗
+██║  ██║██╔══██║   ██║   ██╔══██║██╔═══╝ ╚════╝██╔══██╗╚════██║
+██████╔╝██║  ██║   ██║   ██║  ██║██║           ██║  ██║███████║
+╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝           ╚═╝  ╚═╝╚══════╝
+```
+                                                               
 
 [![PyPI](https://img.shields.io/pypi/v/datapress.svg)](https://pypi.org/project/datapress/)
 [![Python](https://img.shields.io/pypi/pyversions/datapress.svg)](https://pypi.org/project/datapress/)
 
 **A fast multi-backend dataset HTTP server, built in Rust and driven from Python.**
 
-`datapress` exposes one or more **Parquet** or **Delta** datasets over a small
+`datap-rs` (datapress) exposes one or more **Parquet** or **Delta** datasets over a small
 JSON HTTP API. It ships with two pluggable engines bundled into a single
 wheel — pick one at runtime:
 
@@ -21,9 +31,9 @@ real workload.
 ## Install
 
 ```bash
-pip install datapress
+pip install datap-rs
 # or
-uv pip install datapress
+uv pip install datap-rs
 ```
 
 Wheels are published for macOS (arm64/x86_64), Linux (x86_64/aarch64) and
@@ -33,9 +43,12 @@ Windows (x86_64) against CPython 3.9+ (abi3).
 
 ## Quick start
 
+For testing, we're using this [kaggle US accidents 2016-2023](https://www.kaggle.com/datasets/sobhanmoosavi/us-accidents) dataset.
+
+
 ```python
 import asyncio
-from datapress import DataPress, DataPressConfig, DatasetConfig
+from datap_rs.datapress import DataPress, DataPressConfig, DatasetConfig
 
 async def main() -> None:
     ds = DatasetConfig(
@@ -93,7 +106,7 @@ Hover any of them in your IDE for full kwarg docs.
 ### S3 / S3-compatible sources
 
 ```python
-from datapress import DataPress, DataPressConfig, DatasetConfig, S3Config
+from datap_rs.datapress import DataPress, DataPressConfig, DatasetConfig, S3Config
 
 s3 = S3Config(
     region="us-east-1",
@@ -230,6 +243,18 @@ curl -X POST -H "X-Admin-Token: supersecret" \
   http://localhost:8000/api/datasets/accidents/reload
 # → { "dataset": "accidents", "rows": 7728394, "elapsed_ms": 1842 }
 ```
+
+**Double-buffered, zero-downtime swap.** Reload builds the new dataset
+off to the side (parquet decode + equality-index build happen on a
+worker thread against the *old* snapshot still being served), then a
+single `ArcSwap::store` flips the pointer in the shared map. In-flight
+queries finish against the old `Arc`; the next request sees the new
+data. The old buffers are dropped lazily once the last reader releases
+its reference — no locks, no GC pause, no "loading…" window. If the
+rebuild fails the swap simply doesn't happen and the old snapshot stays
+live. Per-dataset reloads are serialised by an async mutex; reloads of
+different datasets run in parallel. Peak RSS roughly doubles for the
+dataset being reloaded while both buffers are resident.
 
 ---
 

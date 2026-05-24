@@ -13,6 +13,7 @@ use crate::store::Store;
 /// Build the dataset store, start the actix server, and run until the
 /// process receives SIGINT.
 pub async fn serve(cfg: AppConfig) -> std::io::Result<()> {
+    datapress_core::banner::print();
     let store = Arc::new(
         Store::load(&cfg).await.expect("failed to load datasets"),
     );

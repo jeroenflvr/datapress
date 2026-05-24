@@ -40,7 +40,7 @@ The same server can be configured and launched from Python via the
 
 ```python
 import asyncio
-from datapress import DataPress, DataPressConfig, DatasetConfig
+from datap_rs.datapress import DataPress, DataPressConfig, DatasetConfig
 
 async def main():
     ds = DatasetConfig(
@@ -321,7 +321,36 @@ Concurrent reloads of the **same** dataset are serialised (per-name mutex);
 reloads of **different** datasets run in parallel. Peak memory roughly
 doubles during a reload because old and new copies coexist briefly.
 
+#### How it works — double-buffered, lock-free swap
+
+Hot-reload uses a classic **double-buffering** pattern. There is never a
+"loading…" window where queries fail or block:
+
+1. **Build off to the side.** The reload handler re-reads the dataset's
+   `source` and constructs a brand-new `DatasetState` (parquet/Delta
+   decode, equality-index build, partitioning) entirely off the hot path.
+   Live queries keep hitting the current snapshot the whole time.
+2. **Atomic pointer swap.** When the new state is ready, a single
+   `ArcSwap::store` replaces the pointer in the shared dataset map. This
+   is a single atomic word-write — no readers are paused, no locks held.
+3. **Old copy retires lazily.** Queries that grabbed the old `Arc` before
+   the swap keep using it; once the last in-flight request releases its
+   reference, the old `Arc`'s strong count hits zero and the buffers are
+   freed. No GC pause, no stop-the-world.
+4. **Per-name serialisation.** A small per-dataset async mutex prevents two
+   concurrent reloads of the *same* dataset from both rebuilding — they
+   queue. Reloads of *different* datasets run fully in parallel.
+5. **Failure is safe.** If the rebuild errors out (bad parquet, S3 timeout,
+   …), the swap never happens. The old snapshot stays live and the
+   handler returns `500` with the underlying error. Clients never observe
+   a partially-loaded dataset.
+
+Trade-off: peak RSS roughly doubles for the dataset being reloaded while
+both buffers are resident. Reloads of different datasets don't compound
+this — only the one being rebuilt is held twice.
+
 ---
+
 
 ## Examples
 

@@ -1,6 +1,6 @@
 import asyncio
 
-from datapress import DataPress, DataPressConfig, DatasetConfig
+from datap_rs.datapress import DataPress, DataPressConfig, DatasetConfig
 
 
 dataset_config = DatasetConfig(

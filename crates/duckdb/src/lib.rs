@@ -16,6 +16,7 @@ use datapress_core::config::AppConfig;
 ///
 /// Returns when the server has cleanly stopped.
 pub async fn serve(cfg: AppConfig) -> std::io::Result<()> {
+    datapress_core::banner::print();
     let registry = Arc::new(
         db::load_registry(&cfg).expect("failed to register datasets"),
     );
