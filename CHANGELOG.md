@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.1.12] - 2026-05-24
+
+### Documentation
+
+- Update doc, banner, version ([8067330](https://github.com/jeroenflvr/fast-api/commit/806733048ed8142fe216fc3c6d1a4d3061f565f4))
+
 ## [0.1.11] - 2026-05-24
 
 ### Miscellaneous
