@@ -89,6 +89,30 @@ jobs:
           path: dist
 
   # -----------------------------------------------------------------------
+  # Windows: x86_64 only (aarch64 needs a non-trivial duckdb cross build).
+  # -----------------------------------------------------------------------
+  windows:
+    name: wheels-windows-x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wheels-windows-x64
+      - uses: PyO3/maturin-action@v1
+        with:
+          target:         x64
+          args:           --release --out dist
+          rust-toolchain: stable
+          sccache:        'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-x64
+          path: dist
+
+  # -----------------------------------------------------------------------
   # Source distribution
   # -----------------------------------------------------------------------
   sdist:
@@ -113,7 +137,7 @@ jobs:
   # -----------------------------------------------------------------------
   publish:
     name: publish-to-pypi
-    needs: [linux, macos, sdist]
+    needs: [linux, macos, windows, sdist]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
