@@ -2422,7 +2422,7 @@ dependencies = [
 
 [[package]]
 name = "datapress-core"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "actix-web",
  "arrow",
@@ -2438,7 +2438,7 @@ dependencies = [
 
 [[package]]
 name = "datapress-datafusion"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "actix-web",
  "arc-swap",
@@ -2461,7 +2461,7 @@ dependencies = [
 
 [[package]]
 name = "datapress-duckdb"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "actix-web",
  "datapress-core",
@@ -2475,7 +2475,7 @@ dependencies = [
 
 [[package]]
 name = "datapress-py"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "actix-web",
  "datapress-core",
