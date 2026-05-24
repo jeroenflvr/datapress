@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.1.14] - 2026-05-24
+
+### Miscellaneous
+
+- Show endpoints per dataset at startup ([67e765d](https://github.com/jeroenflvr/fast-api/commit/67e765ddcbbce525cd834ae71129321a75f44666))
+
 ## [0.1.13] - 2026-05-24
 
 ### Features
