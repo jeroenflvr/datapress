@@ -38,15 +38,21 @@ jobs:
           manylinux:      auto
           args:           --release --out dist
           rust-toolchain: stable
-          # DuckDB refuses to build under the legacy GCC C++ ABI
-          # (_GLIBCXX_USE_CXX11_ABI=0) which the manylinux cross-build
-          # images set by default. The actual guard in
-          # duckdb/common/platform.hpp checks _GLIBCXX_USE_CXX11_ABI==0,
-          # NOT the DUCKDB_EXPLICIT_PLATFORM macro that the error
-          # message misleadingly suggests. manylinux2014 ships GCC 10,
-          # so the CXX11 ABI is fully supported — just flip the flag.
+          # The rust-cross manylinux2014 images ship GCC 4.8 (CentOS 7
+          # base), which trips DuckDB's `__GNUC__ < 5` ABI guard in
+          # platform.hpp regardless of _GLIBCXX_USE_CXX11_ABI. The only
+          # source-level bypass is defining DUCKDB_CUSTOM_PLATFORM,
+          # which makes DuckDBPlatform() early-return before the
+          # #error. The error message's "DUCKDB_EXPLICIT_PLATFORM"
+          # hint is a lie — that macro is only honored by upstream
+          # Makefile/CMake, not the bundled cc-rs build.
           before-script-linux: |
-            export CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=1 ${CXXFLAGS:-}"
+            case "${{ matrix.target }}" in
+              x86_64)  PLATFORM=linux_amd64_gcc4 ;;
+              aarch64) PLATFORM=linux_arm64_gcc4 ;;
+              *)       echo "Unknown target ${{ matrix.target }}"; exit 1 ;;
+            esac
+            export CXXFLAGS="-DDUCKDB_CUSTOM_PLATFORM=${PLATFORM} ${CXXFLAGS:-}"
             echo "CXXFLAGS=${CXXFLAGS}"
           # sccache disabled: wrapping `c++` inside the manylinux container
           # makes the bundled duckdb-sys C++ build fail silently. The
