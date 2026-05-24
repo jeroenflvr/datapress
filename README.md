@@ -228,6 +228,11 @@ columns are returned as strings.
     { "col": "State",    "op": "eq",  "val": "TX" },
     { "col": "Severity", "op": "gte", "val": 3   }
   ],
+  "order_by": [
+    { "col": "Severity", "dir": "desc" },
+    { "col": "ID" }
+  ],
+  "limit":     1000,
   "page":      1,
   "page_size": 50
 }
@@ -245,6 +250,8 @@ Response:
 |--------------|---------------------|---------|----------------------------------------|
 | `columns`    | `string[]`          | `[]`    | Empty = all columns.                   |
 | `predicates` | `Predicate[]`       | `[]`    | ANDed together.                        |
+| `order_by`   | `OrderBy[]`         | `[]`    | `{ col, dir? }`; `dir` is `asc` (default) or `desc`, case-insensitive. Unknown column or direction → `400`. |
+| `limit`      | `int >= 0` or null  | `null`  | Hard cap on total rows across all pages. `null` = unlimited. |
 | `page`       | `int >= 1`          | `1`     | 1-based.                               |
 | `page_size`  | `int 1..=1000`      | `100`   | Clamped to the inclusive range.        |
 
@@ -484,6 +491,8 @@ in `datasets.toml`, not in env vars.
   (`X-Admin-Token`) and disabled unless `ADMIN_TOKEN` is set.
 - No write path: parquet sources are read-only. The only mutation is
   reloading a dataset from disk via the admin route.
-- No `ORDER BY` / cursor pagination — pagination is plain `OFFSET / LIMIT`,
-  so deep pages get expensive (see `H5` in `TEST_Q.md`).
+- No cursor pagination — pagination is plain `OFFSET / LIMIT`, so deep
+  pages get expensive (see `H5` in `TEST_Q.md`). `ORDER BY` is supported via
+  the `order_by` field, but sorted queries always go through the SQL engine
+  (no in-memory fast path).
 - DataFusion backend keeps the whole dataset in memory. DuckDB does not.

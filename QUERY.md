@@ -7,12 +7,14 @@ POST /api/datasets/{name}/query
 Content-Type: application/json
 ```
 
-The body is a JSON object with four optional fields:
+The body is a JSON object with these optional fields:
 
 | Field        | Type            | Default | Meaning                                                                  |
 | ------------ | --------------- | ------- | ------------------------------------------------------------------------ |
 | `columns`    | `list[str]`     | `[]`    | Columns to return. Empty = all columns.                                  |
 | `predicates` | `list[object]`  | `[]`    | Row filters, ANDed together.                                             |
+| `order_by`   | `list[object]`  | `[]`    | Sort keys: `{ "col": str, "dir": "asc"\|"desc" }`. `dir` defaults to `asc`. |
+| `limit`      | `int` or null   | `null`  | Hard cap on total rows across all pages. `null` = unlimited.             |
 | `page`       | `int` (≥ 1)     | `1`     | 1-based page number.                                                     |
 | `page_size`  | `int` (1–1000)  | `100`   | Rows per page. Hard cap is 1000.                                         |
 
@@ -219,6 +221,49 @@ page returns fewer rows than `page_size`.
 `page = 1`.
 
 Page numbers are 1-based — `page=1` returns rows `[0, page_size)`.
+
+---
+
+## 11. Sorting (`order_by`)
+
+Add one or more sort keys. `dir` is optional and defaults to `"asc"`;
+`"desc"` is the only other accepted value (case-insensitive). Unknown
+columns or directions return `400`.
+
+```json
+{
+  "columns":  ["id", "severity", "start_time"],
+  "order_by": [
+    { "col": "severity",   "dir": "desc" },
+    { "col": "start_time" }
+  ],
+  "page_size": 50
+}
+```
+
+Sorted queries always run through the SQL engine — they do not use the
+in-memory Arrow-slice or equality-index fast paths, even when `predicates`
+is empty or hits an indexed column.
+
+---
+
+## 12. Hard row cap (`limit`)
+
+`limit` caps the *total* number of rows returnable across all pages, not
+the page size. Useful for previews / dashboards that should never scan
+beyond N rows regardless of `page` / `page_size`.
+
+```json
+{
+  "order_by": [{ "col": "severity", "dir": "desc" }],
+  "limit":    100,
+  "page_size": 25
+}
+```
+
+With `limit = 100` and `page_size = 25` you get four full pages of 25;
+asking for `page = 5` returns an empty `data` array. Like `order_by`,
+setting `limit` disables the in-memory fast paths.
 
 ---
 

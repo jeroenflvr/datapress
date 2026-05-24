@@ -182,6 +182,8 @@ Same five routes for both backends.
     { "col": "State",    "op": "eq",  "val": "TX" },
     { "col": "Severity", "op": "gte", "val": 3   }
   ],
+  "order_by": [ { "col": "Severity", "dir": "desc" } ],
+  "limit":     1000,
   "page":      1,
   "page_size": 50
 }
@@ -191,6 +193,8 @@ Same five routes for both backends.
 |--------------|-----------------|---------|-----------------------------|
 | `columns`    | `string[]`      | `[]`    | Empty = all columns.        |
 | `predicates` | `Predicate[]`   | `[]`    | ANDed together.             |
+| `order_by`   | `OrderBy[]`     | `[]`    | `{ col, dir? }`; `dir` is `asc` (default) or `desc`. |
+| `limit`      | `int` or null   | `null`  | Hard cap on total rows across pages. |
 | `page`       | `int >= 1`      | `1`     | 1-based.                    |
 | `page_size`  | `int 1..=1000`  | `100`   | Clamped.                    |
 
