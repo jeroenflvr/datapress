@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.1.13] - 2026-05-24
+
+### Features
+
+- Add windows back to build targets for the "winners" ([c6c2537](https://github.com/jeroenflvr/fast-api/commit/c6c2537f69df933ae61c651ecf31dbc0096831f9))
+
+### Refactor
+
+- Move handlers to core ([57c49a0](https://github.com/jeroenflvr/fast-api/commit/57c49a0927d7117942e703958c65fa82f9ead453))
+
 ## [0.1.12] - 2026-05-24
 
 ### Documentation
