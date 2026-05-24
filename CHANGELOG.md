@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.1.10] - 2026-05-24
+
+### Bug Fixes
+
+- You know... ([184c326](https://github.com/jeroenflvr/fast-api/commit/184c32604e8ea9251034dc9031248bdb3a07a953))
+
+### Features
+
+- Add lazy mode for s3 data (parquet) ([2e858a8](https://github.com/jeroenflvr/fast-api/commit/2e858a827979f2c7645d2bdb2569f7703774fe1f))
+- Count, with and without predicate ([212c444](https://github.com/jeroenflvr/fast-api/commit/212c4443bc5f96ff4755f7b333766e73af49025b))
+
 ## [0.1.9] - 2026-05-24
 
 ### CI
