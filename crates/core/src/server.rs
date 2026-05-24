@@ -31,6 +31,8 @@ pub async fn serve(
         workers.map(|w| w.to_string()).unwrap_or_else(|| "auto".into()),
     );
 
+    log_routes(&prefix, backend.as_ref());
+
     let mut server = HttpServer::new(move || {
         let backend = backend.clone();
         let prefix  = prefix.clone();
@@ -51,4 +53,47 @@ pub async fn serve(
         server = server.workers(w);
     }
     server.bind(addr)?.run().await
+}
+
+/// Pretty-print the route table at startup. Two sections:
+///   - general routes (health, dataset listing)
+///   - per-dataset routes (schema / query / count / reload)
+fn log_routes(prefix: &str, backend: &dyn Backend) {
+    // Column widths chosen to fit the longest method + a comfortable
+    // path column. Names are inlined into the per-dataset paths.
+    const METHOD_W: usize = 6;
+
+    let p = prefix; // already validated to start with '/' or be empty
+
+    log::info!("Routes:");
+    log::info!("  general:");
+    for (method, path) in [
+        ("GET",  format!("{p}/health")),
+        ("GET",  format!("{p}/api/datasets")),
+    ] {
+        log::info!("    {:<width$} {}", method, path, width = METHOD_W);
+    }
+
+    let names = backend.names();
+    if names.is_empty() {
+        log::info!("  datasets: (none registered)");
+        return;
+    }
+
+    log::info!("  datasets:");
+    for name in &names {
+        log::info!("    {}", name);
+        for (method, suffix) in [
+            ("GET",  "schema"),
+            ("POST", "query"),
+            ("POST", "count"),
+            ("POST", "reload"),
+        ] {
+            log::info!(
+                "      {:<width$} {p}/api/datasets/{name}/{suffix}",
+                method,
+                width = METHOD_W,
+            );
+        }
+    }
 }
