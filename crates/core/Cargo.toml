@@ -12,12 +12,13 @@ duckdb     = ["dep:duckdb"]
 datafusion = ["dep:arrow", "dep:parquet", "dep:datafusion"]
 
 [dependencies]
-actix-web.workspace  = true
-serde.workspace      = true
-serde_json.workspace = true
-log.workspace        = true
-toml.workspace       = true
-glob.workspace       = true
+actix-web.workspace   = true
+async-trait.workspace = true
+serde.workspace       = true
+serde_json.workspace  = true
+log.workspace         = true
+toml.workspace        = true
+glob.workspace        = true
 
 # Optional, feature-gated (see [features] above).
 duckdb     = { workspace = true, optional = true }

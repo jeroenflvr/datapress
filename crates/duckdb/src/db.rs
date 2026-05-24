@@ -1,11 +1,16 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 
+use async_trait::async_trait;
 use duckdb::Connection;
 
+use datapress_core::backend::{Backend, DatasetSummary, ReloadStats};
 use datapress_core::config::{AppConfig, DatasetConfig, SourceKind};
 use datapress_core::errors::AppError;
+use datapress_core::models::{CountRequest, QueryRequest};
 use datapress_core::schema::{ColumnInfo, DatasetSchema, LogicalType};
+
+use crate::repository::DatasetRepository;
 
 // ---------------------------------------------------------------------------
 // Connection pool
@@ -63,15 +68,15 @@ pub struct Registry {
     /// Hot-swappable schema map. `RwLock` is enough here: reads are very
     /// short (clone an `Arc`); writes happen only on reload.
     datasets:     RwLock<HashMap<String, Arc<DatasetSchema>>>,
+    /// Cached row counts per dataset, kept in lock-step with `datasets`.
+    /// Populated at load and refreshed on reload — DuckDB's `count(*)`
+    /// against a parquet file or native table is metadata-only and very
+    /// cheap, but caching avoids repeating it for every `/api/datasets`
+    /// listing call.
+    row_counts:   RwLock<HashMap<String, i64>>,
     /// Per-name reload mutex. Serialises concurrent reloads of the same
     /// dataset; reloads of different datasets proceed in parallel.
     reload_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
-}
-
-/// Outcome of a successful `reload`.
-pub struct ReloadStats {
-    pub rows:       usize,
-    pub elapsed_ms: u128,
 }
 
 impl Registry {
@@ -96,7 +101,7 @@ impl Registry {
     /// `CREATE OR REPLACE TABLE` runs in a single transaction — in-flight
     /// SELECTs against the old table see snapshot-consistent data through
     /// MVCC, and the next query sees the new table.
-    pub async fn reload(self: &Arc<Self>, name: &str) -> Result<ReloadStats, AppError> {
+    pub async fn reload(&self, name: &str) -> Result<ReloadStats, AppError> {
         let cfg = self
             .configs
             .get(name)
@@ -129,6 +134,10 @@ impl Registry {
             .write()
             .unwrap()
             .insert(name.to_string(), Arc::new(schema));
+        self.row_counts
+            .write()
+            .unwrap()
+            .insert(name.to_string(), rows);
 
         let elapsed_ms = started.elapsed().as_millis();
         log::info!("reloaded dataset '{name}': {rows} rows in {elapsed_ms} ms");
@@ -165,8 +174,9 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
         }
     }
 
-    let mut datasets = HashMap::new();
-    let mut configs  = HashMap::new();
+    let mut datasets   = HashMap::new();
+    let mut configs    = HashMap::new();
+    let mut row_counts = HashMap::new();
 
     for d in &cfg.datasets {
         log::info!(
@@ -174,13 +184,15 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
             d.name, d.source.kind.as_str(), d.source.location
         );
         let schema = register_dataset(&conn, d)?;
+        let rows   = count_rows(&conn, &d.name)?;
         log::info!(
             "  → {} columns ({} rows in-memory)",
             schema.columns.len(),
-            count_rows(&conn, &d.name)?,
+            rows,
         );
         datasets.insert(d.name.clone(), Arc::new(schema));
         configs.insert(d.name.clone(), d.clone());
+        row_counts.insert(d.name.clone(), rows);
     }
 
     let pool = init_pool(conn)?;
@@ -188,6 +200,7 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
         pool,
         configs,
         datasets:     RwLock::new(datasets),
+        row_counts:   RwLock::new(row_counts),
         reload_locks: Mutex::new(HashMap::new()),
     })
 }
@@ -376,3 +389,73 @@ fn init_pool(conn: Connection) -> Result<DbPoolRef, AppError> {
         available: Condvar::new(),
     }))
 }
+
+// ---------------------------------------------------------------------------
+// Backend trait impl — wires the registry into the generic core handlers.
+// ---------------------------------------------------------------------------
+
+#[async_trait]
+impl Backend for Registry {
+    fn names(&self) -> Vec<String> {
+        Registry::names(self)
+    }
+
+    fn summary(&self, name: &str) -> Result<DatasetSummary, AppError> {
+        let schema = self.get(name)?;
+        let rows   = self.row_counts
+            .read()
+            .unwrap()
+            .get(name)
+            .copied()
+            .unwrap_or(0);
+        Ok(DatasetSummary {
+            name:    schema.name.clone(),
+            columns: schema.columns.len(),
+            rows:    rows.max(0) as usize,
+        })
+    }
+
+    fn schema(&self, name: &str) -> Result<Arc<DatasetSchema>, AppError> {
+        self.get(name)
+    }
+
+    async fn sample(&self, name: &str) -> Result<String, AppError> {
+        let schema = self.get(name)?;
+        let pool   = self.pool.clone();
+        actix_web::web::block(move || -> Result<String, AppError> {
+            let conn = DbPool::get(&pool);
+            DatasetRepository::new(&conn, &schema).sample()
+        })
+        .await
+        .map_err(|e| AppError::Internal(format!("join error: {e}")))?
+    }
+
+    async fn query(&self, name: &str, req: &QueryRequest) -> Result<String, AppError> {
+        let schema = self.get(name)?;
+        let pool   = self.pool.clone();
+        let req    = req.clone();
+        actix_web::web::block(move || -> Result<String, AppError> {
+            let conn = DbPool::get(&pool);
+            DatasetRepository::new(&conn, &schema).query(&req)
+        })
+        .await
+        .map_err(|e| AppError::Internal(format!("join error: {e}")))?
+    }
+
+    async fn count(&self, name: &str, req: &CountRequest) -> Result<i64, AppError> {
+        let schema = self.get(name)?;
+        let pool   = self.pool.clone();
+        let preds  = req.predicates.clone();
+        actix_web::web::block(move || -> Result<i64, AppError> {
+            let conn = DbPool::get(&pool);
+            DatasetRepository::new(&conn, &schema).count(&preds)
+        })
+        .await
+        .map_err(|e| AppError::Internal(format!("join error: {e}")))?
+    }
+
+    async fn reload(&self, name: &str) -> Result<ReloadStats, AppError> {
+        Registry::reload(self, name).await
+    }
+}
+

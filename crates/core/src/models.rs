@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct Predicate {
     pub col: String,
     /// eq | neq | gt | gte | lt | lte | like | ilike | in | is_null | is_not_null
@@ -9,7 +9,7 @@ pub struct Predicate {
     pub val: Option<JsonValue>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct QueryRequest {
     /// Columns to return. Empty = all columns.
     #[serde(default)]
@@ -27,7 +27,7 @@ fn default_page_size() -> u64 { 100 }
 
 /// Body for `POST /api/datasets/{name}/count`. Predicates are optional —
 /// an empty body (or `{}`) counts every row in the dataset.
-#[derive(Deserialize, Default)]
+#[derive(Clone, Deserialize, Default)]
 pub struct CountRequest {
     #[serde(default)]
     pub predicates: Vec<Predicate>,

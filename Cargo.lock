@@ -2426,6 +2426,7 @@ version = "0.1.12"
 dependencies = [
  "actix-web",
  "arrow",
+ "async-trait",
  "datafusion",
  "duckdb",
  "glob",
@@ -2443,6 +2444,7 @@ dependencies = [
  "actix-web",
  "arc-swap",
  "arrow",
+ "async-trait",
  "datafusion",
  "datapress-core",
  "deltalake",
@@ -2464,6 +2466,7 @@ name = "datapress-duckdb"
 version = "0.1.12"
 dependencies = [
  "actix-web",
+ "async-trait",
  "datapress-core",
  "duckdb",
  "env_logger",

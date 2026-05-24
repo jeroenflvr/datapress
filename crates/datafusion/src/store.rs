@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwap;
+use async_trait::async_trait;
 use arrow::array::{
     Array, ArrayRef, BooleanArray, Decimal128Array, Decimal256Array,
     Float32Array, Float64Array,
@@ -27,6 +28,7 @@ use datafusion::prelude::{ParquetReadOptions, SessionContext};
 use object_store::aws::AmazonS3Builder;
 use url::Url;
 
+use datapress_core::backend::{Backend, DatasetSummary, ReloadStats};
 use datapress_core::config::{
     AddressingStyle, AppConfig, DatasetConfig, IndexConfig, IndexMode,
     ResolvedCreds, S3Config, SourceKind,
@@ -85,12 +87,6 @@ pub struct Store {
     /// Per-name reload mutex. Serialises concurrent reloads of the same
     /// dataset; reloads of different datasets proceed in parallel.
     reload_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
-}
-
-/// Outcome of a successful `reload`.
-pub struct ReloadStats {
-    pub rows:       usize,
-    pub elapsed_ms: u128,
 }
 
 impl Store {
@@ -283,7 +279,7 @@ impl Store {
         let batches = df.collect().await?;
         let n = batches.first()
             .and_then(|b| b.column(0).as_any().downcast_ref::<arrow::array::Int64Array>())
-            .filter(|a| a.len() > 0)
+            .filter(|a| !a.is_empty())
             .map(|a| a.value(0))
             .unwrap_or(0);
         Ok(n)
@@ -587,25 +583,23 @@ fn read_local_parquet(d: &DatasetConfig) -> Result<Vec<RecordBatch>, AppError> {
         // downstream engine.
         let mut new_fields: Vec<Field> = arrow_schema.fields().iter()
             .map(|f| f.as_ref().clone()).collect();
-        if d.dict_encode {
-            if let Some(rg0) = metadata.row_groups().first() {
-                for (i, fld) in arrow_schema.fields().iter().enumerate() {
-                    if !matches!(fld.data_type(),
-                        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) {
-                        continue;
-                    }
-                    if let Some(col) = rg0.columns().get(i) {
-                        if col.dictionary_page_offset().is_some() {
-                            new_fields[i] = Field::new(
-                                fld.name(),
-                                DataType::Dictionary(
-                                    Box::new(DataType::Int32),
-                                    Box::new(DataType::Utf8),
-                                ),
-                                fld.is_nullable(),
-                            );
-                        }
-                    }
+        if d.dict_encode && let Some(rg0) = metadata.row_groups().first() {
+            for (i, fld) in arrow_schema.fields().iter().enumerate() {
+                if !matches!(fld.data_type(),
+                    DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) {
+                    continue;
+                }
+                if let Some(col) = rg0.columns().get(i)
+                    && col.dictionary_page_offset().is_some()
+                {
+                    new_fields[i] = Field::new(
+                        fld.name(),
+                        DataType::Dictionary(
+                            Box::new(DataType::Int32),
+                            Box::new(DataType::Utf8),
+                        ),
+                        fld.is_nullable(),
+                    );
                 }
             }
         }
@@ -1080,8 +1074,10 @@ fn build_eq_index_with_policy(chunks: &[RecordBatch], cfg: &IndexConfig) -> EqIn
     schema.fields().par_iter().enumerate()
         .filter_map(|(ci, field)| {
             let col_lower = field.name().to_lowercase();
-            if let Some(a) = &allow {
-                if !a.contains_key(&col_lower) { return None; }
+            if let Some(a) = &allow
+                && !a.contains_key(&col_lower)
+            {
+                return None;
             }
 
             // Only build for index-friendly types; skip everything else
@@ -1143,8 +1139,10 @@ fn build_eq_index_with_policy(chunks: &[RecordBatch], cfg: &IndexConfig) -> EqIn
                         if let Some(v) = map.get_mut(s) {
                             v.push(gid);
                         } else {
-                            if let Some(mc) = max_card {
-                                if map.len() >= mc { return None; }
+                            if let Some(mc) = max_card
+                                && map.len() >= mc
+                            {
+                                return None;
                             }
                             map.insert(s.to_string(), vec![gid]);
                         }
@@ -1295,7 +1293,6 @@ pub fn serialize(batch: &RecordBatch) -> Result<String, AppError> {
     // without paying the load-time RAM cost.
     let batch  = cast_for_serialize(batch)?;
     let schema = batch.schema();
-    let n_cols = schema.fields().len();
     let n_rows = batch.num_rows();
 
     let keys: Vec<Vec<u8>> = schema.fields().iter().map(|f| {
@@ -1312,9 +1309,9 @@ pub fn serialize(batch: &RecordBatch) -> Result<String, AppError> {
     for row in 0..n_rows {
         if row > 0 { buf.push(b','); }
         buf.push(b'{');
-        for i in 0..n_cols {
+        for (i, key) in keys.iter().enumerate() {
             if i > 0 { buf.push(b','); }
-            buf.extend_from_slice(&keys[i]);
+            buf.extend_from_slice(key);
             let col = batch.column(i);
             if col.is_null(row) {
                 buf.extend_from_slice(b"null");
@@ -1408,4 +1405,45 @@ fn write_str(buf: &mut Vec<u8>, s: &str) {
         }
     }
     buf.push(b'"');
+}
+
+// ---------------------------------------------------------------------------
+// Backend trait impl — wires the store into the generic core handlers.
+// ---------------------------------------------------------------------------
+
+#[async_trait]
+impl Backend for Store {
+    fn names(&self) -> Vec<String> {
+        Store::names(self)
+    }
+
+    fn summary(&self, name: &str) -> Result<DatasetSummary, AppError> {
+        let st = self.dataset(name)?;
+        Ok(DatasetSummary {
+            name:    st.schema.name.clone(),
+            columns: st.schema.columns.len(),
+            rows:    st.num_rows(),
+        })
+    }
+
+    fn schema(&self, name: &str) -> Result<Arc<DatasetSchema>, AppError> {
+        let st = self.dataset(name)?;
+        Ok(Arc::new(st.schema.clone()))
+    }
+
+    async fn sample(&self, name: &str) -> Result<String, AppError> {
+        Store::sample(self, name).await
+    }
+
+    async fn query(&self, name: &str, req: &QueryRequest) -> Result<String, AppError> {
+        Store::query(self, name, req).await
+    }
+
+    async fn count(&self, name: &str, req: &CountRequest) -> Result<i64, AppError> {
+        Store::count(self, name, req).await
+    }
+
+    async fn reload(&self, name: &str) -> Result<ReloadStats, AppError> {
+        Store::reload(self, name).await
+    }
 }

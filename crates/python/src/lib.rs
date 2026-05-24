@@ -204,6 +204,7 @@ impl PyDatasetConfig {
         index_max_cardinality = None,
         lazy                  = false,
     ))]
+    #[allow(clippy::too_many_arguments)] // mirrors the user-facing Python kwargs surface
     fn new(
         name:                  String,
         source:                String,
@@ -242,8 +243,7 @@ impl PyDatasetConfig {
             )),
         };
 
-        let mut index = IndexConfig::default();
-        index.mode = mode;
+        let mut index = IndexConfig { mode, ..IndexConfig::default() };
         if let Some(cols) = self.index_columns {
             index.columns = cols;
         }
