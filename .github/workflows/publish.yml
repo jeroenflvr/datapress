@@ -1,12 +1,10 @@
 name: Publish datapress to PyPI
 
-# Build wheels on every push to main (smoke test), and on every `v*` tag.
-# Only tag builds upload to PyPI.
+# Build wheels only on `v*` tags (which then publish to PyPI) and on
+# manual dispatch. Branch pushes and PRs no longer trigger a build.
 on:
   push:
-    branches: [main, feat/multi-backend]
-    tags:     ['v*']
-  pull_request:
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
