@@ -222,8 +222,17 @@ impl Store {
         let offset    = ((page - 1) * page_size) as usize;
         let limit     = page_size as usize;
 
-        // In-memory hot paths only fire when the dataset is materialised.
-        if !st.lazy {
+        // In-memory hot paths only fire when:
+        //   - the dataset is materialised,
+        //   - the caller did not ask for ordering,
+        //   - and did not ask for a hard `limit` cap.
+        // Both of the latter two require sorting / capping that the SQL
+        // engine handles uniformly across all data types.
+        let can_fast_path = !st.lazy
+            && req.order_by.is_empty()
+            && req.limit.is_none();
+
+        if can_fast_path {
             let total = st.num_rows();
 
             // No predicates → O(1) raw Arrow slice across chunks, no engine overhead.
@@ -799,8 +808,7 @@ fn build_query_sql(schema: &DatasetSchema, req: &QueryRequest) -> Result<String,
             .join(", ")
     };
 
-    let page_size = req.page_size.clamp(1, 1000);
-    let offset    = (req.page.max(1) - 1) * page_size;
+    let (limit, offset) = req.effective_limit_offset(1000);
 
     let clauses: Vec<String> = req.predicates.iter()
         .map(|p| pred_to_sql(schema, p))
@@ -812,8 +820,12 @@ fn build_query_sql(schema: &DatasetSchema, req: &QueryRequest) -> Result<String,
     } else {
         format!(" WHERE {}", clauses.join(" AND "))
     };
+    let order_clause = match req.order_by_sql(schema)? {
+        Some(s) => format!(" ORDER BY {s}"),
+        None    => String::new(),
+    };
     Ok(format!(
-        "SELECT {cols} FROM {table}{where_clause} LIMIT {page_size} OFFSET {offset}"
+        "SELECT {cols} FROM {table}{where_clause}{order_clause} LIMIT {limit} OFFSET {offset}"
     ))
 }
 

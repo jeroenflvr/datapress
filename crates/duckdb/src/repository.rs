@@ -121,9 +121,7 @@ impl<'a> DatasetRepository<'a> {
                 .collect::<Result<_, _>>()?
         };
 
-        let page      = req.page.max(1);
-        let page_size = req.page_size.clamp(1, 1000);
-        let offset    = (page - 1) * page_size;
+        let (limit, offset) = req.effective_limit_offset(1000);
 
         let mut conditions: Vec<String>   = Vec::new();
         let mut bind_vals:  Vec<ParamVal> = Vec::new();
@@ -133,11 +131,15 @@ impl<'a> DatasetRepository<'a> {
         }
 
         let where_clause = build_where(&conditions);
+        let order_clause = match req.order_by_sql(self.schema)? {
+            Some(s) => format!(" ORDER BY {s}"),
+            None    => String::new(),
+        };
         let pairs        = json_obj_pairs(cols);
         let table        = DatasetSchema::quote_ident(&self.schema.name);
         let sql = format!(
-            "SELECT json_object({pairs}) FROM {table}{where_clause} \
-             LIMIT {page_size} OFFSET {offset}"
+            "SELECT json_object({pairs}) FROM {table}{where_clause}{order_clause} \
+             LIMIT {limit} OFFSET {offset}"
         );
 
         stream_as_json_array(self.conn, &sql, &bind_vals)
