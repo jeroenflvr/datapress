@@ -2,7 +2,7 @@ use duckdb::{Connection, params_from_iter};
 use serde_json::Value as JsonValue;
 
 use datapress_core::errors::AppError;
-use datapress_core::models::{Predicate, QueryRequest};
+use datapress_core::models::{AggOp, AggPlan, Predicate, QueryRequest};
 use datapress_core::schema::DatasetSchema;
 
 // ---------------------------------------------------------------------------
@@ -64,6 +64,35 @@ where
         .join(", ")
 }
 
+/// Build the `'key', expr` pairs for a `json_object(…)` call from a
+/// validated GROUP BY plan: group columns first, then aggregation outputs.
+fn group_json_obj_pairs(schema: &DatasetSchema, plan: &AggPlan) -> String {
+    let mut parts: Vec<String> = Vec::with_capacity(plan.group_cols.len() + plan.aggs.len());
+    for name in &plan.group_cols {
+        let q = DatasetSchema::quote_ident(name);
+        // Group columns inherit the dataset's logical type; temporal cols
+        // need a string cast to land cleanly in JSON.
+        let needs_cast = schema
+            .find(name)
+            .map(|c| c.logical.needs_cast())
+            .unwrap_or(false);
+        if needs_cast {
+            parts.push(format!("'{}', CAST({q} AS VARCHAR)", name.replace('\'', "''")));
+        } else {
+            parts.push(format!("'{}', {q}", name.replace('\'', "''")));
+        }
+    }
+    for a in &plan.aggs {
+        let expr = match (a.op, a.col.as_deref()) {
+            (AggOp::Count, None) => "COUNT(*)".to_string(),
+            (op, Some(c))        => format!("{}({})", op.as_sql(), DatasetSchema::quote_ident(c)),
+            _ => unreachable!(),
+        };
+        parts.push(format!("'{}', {expr}", a.alias.replace('\'', "''")));
+    }
+    parts.join(", ")
+}
+
 fn stream_as_json_array(
     conn: &Connection,
     sql: &str,
@@ -111,14 +140,23 @@ impl<'a> DatasetRepository<'a> {
     }
 
     pub fn query(&self, req: &QueryRequest) -> Result<String, AppError> {
-        // Resolve projection through the dataset schema.
-        let cols: Vec<&datapress_core::schema::ColumnInfo> = if req.columns.is_empty() {
-            self.schema.columns.iter().collect()
+        let agg_plan = req.agg_plan(self.schema)?;
+
+        // SELECT list — either a row-shaped json_object over projected
+        // columns, or a grouped json_object over group cols + aggregations.
+        let pairs = if let Some(plan) = &agg_plan {
+            group_json_obj_pairs(self.schema, plan)
         } else {
-            req.columns
-                .iter()
-                .map(|n| self.schema.find(n))
-                .collect::<Result<_, _>>()?
+            // Resolve projection through the dataset schema.
+            let cols: Vec<&datapress_core::schema::ColumnInfo> = if req.columns.is_empty() {
+                self.schema.columns.iter().collect()
+            } else {
+                req.columns
+                    .iter()
+                    .map(|n| self.schema.find(n))
+                    .collect::<Result<_, _>>()?
+            };
+            json_obj_pairs(cols)
         };
 
         let (limit, offset) = req.effective_limit_offset(1000);
@@ -131,16 +169,47 @@ impl<'a> DatasetRepository<'a> {
         }
 
         let where_clause = build_where(&conditions);
-        let order_clause = match req.order_by_sql(self.schema)? {
+        let group_clause = match &agg_plan {
+            Some(p) => format!(
+                " GROUP BY {}",
+                p.group_cols.iter()
+                    .map(|c| DatasetSchema::quote_ident(c))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ),
+            None => String::new(),
+        };
+        let order_clause = match req.order_by_sql(self.schema, agg_plan.as_ref())? {
             Some(s) => format!(" ORDER BY {s}"),
             None    => String::new(),
         };
-        let pairs        = json_obj_pairs(cols);
-        let table        = DatasetSchema::quote_ident(&self.schema.name);
-        let sql = format!(
-            "SELECT json_object({pairs}) FROM {table}{where_clause}{order_clause} \
-             LIMIT {limit} OFFSET {offset}"
-        );
+        let table = DatasetSchema::quote_ident(&self.schema.name);
+
+        // DISTINCT path: dedup on the raw projected columns inside a
+        // subquery, then format each surviving row as a JSON object. This
+        // avoids running DISTINCT over the (expensive) json_object string
+        // and keeps ORDER BY / LIMIT / OFFSET applied to the deduped set.
+        let sql = if req.distinct && agg_plan.is_none() {
+            let projection: String = if req.columns.is_empty() {
+                "*".into()
+            } else {
+                req.columns.iter()
+                    .map(|n| self.schema.find(n).map(|c| DatasetSchema::quote_ident(&c.name)))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .join(", ")
+            };
+            format!(
+                "SELECT json_object({pairs}) FROM (\
+                    SELECT DISTINCT {projection} FROM {table}{where_clause}{order_clause} \
+                    LIMIT {limit} OFFSET {offset}\
+                 ) sub"
+            )
+        } else {
+            format!(
+                "SELECT json_object({pairs}) FROM {table}{where_clause}{group_clause}{order_clause} \
+                 LIMIT {limit} OFFSET {offset}"
+            )
+        };
 
         stream_as_json_array(self.conn, &sql, &bind_vals)
     }

@@ -230,7 +230,9 @@ impl Store {
         // engine handles uniformly across all data types.
         let can_fast_path = !st.lazy
             && req.order_by.is_empty()
-            && req.limit.is_none();
+            && req.limit.is_none()
+            && req.group_by.is_empty()
+            && !req.distinct;
 
         if can_fast_path {
             let total = st.num_rows();
@@ -799,13 +801,30 @@ fn project(schema: &DatasetSchema, batch: RecordBatch, columns: &[String])
 // ---------------------------------------------------------------------------
 
 fn build_query_sql(schema: &DatasetSchema, req: &QueryRequest) -> Result<String, AppError> {
-    let cols = if req.columns.is_empty() {
-        "*".to_string()
+    let agg_plan = req.agg_plan(schema)?;
+
+    let cols = if let Some(plan) = &agg_plan {
+        // Group cols, then aggregations, each aliased to the JSON output key.
+        let mut parts: Vec<String> = plan.group_cols.iter()
+            .map(|c| DatasetSchema::quote_ident(c))
+            .collect();
+        for a in &plan.aggs {
+            let expr = match (a.op, a.col.as_deref()) {
+                (datapress_core::models::AggOp::Count, None) => "COUNT(*)".to_string(),
+                (op, Some(c)) => format!("{}({})", op.as_sql(), DatasetSchema::quote_ident(c)),
+                _ => unreachable!(),
+            };
+            parts.push(format!("{expr} AS {}", DatasetSchema::quote_ident(&a.alias)));
+        }
+        parts.join(", ")
+    } else if req.columns.is_empty() {
+        if req.distinct { "DISTINCT *".to_string() } else { "*".to_string() }
     } else {
-        req.columns.iter()
+        let list = req.columns.iter()
             .map(|c| schema.find(c).map(|info| DatasetSchema::quote_ident(&info.name)))
             .collect::<Result<Vec<_>, _>>()?
-            .join(", ")
+            .join(", ");
+        if req.distinct { format!("DISTINCT {list}") } else { list }
     };
 
     let (limit, offset) = req.effective_limit_offset(1000);
@@ -820,12 +839,23 @@ fn build_query_sql(schema: &DatasetSchema, req: &QueryRequest) -> Result<String,
     } else {
         format!(" WHERE {}", clauses.join(" AND "))
     };
-    let order_clause = match req.order_by_sql(schema)? {
+    let group_clause = match &agg_plan {
+        Some(p) => format!(
+            " GROUP BY {}",
+            p.group_cols.iter()
+                .map(|c| DatasetSchema::quote_ident(c))
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
+        None => String::new(),
+    };
+    let order_clause = match req.order_by_sql(schema, agg_plan.as_ref())? {
         Some(s) => format!(" ORDER BY {s}"),
         None    => String::new(),
     };
     Ok(format!(
-        "SELECT {cols} FROM {table}{where_clause}{order_clause} LIMIT {limit} OFFSET {offset}"
+        "SELECT {cols} FROM {table}{where_clause}{group_clause}{order_clause} \
+         LIMIT {limit} OFFSET {offset}"
     ))
 }
 

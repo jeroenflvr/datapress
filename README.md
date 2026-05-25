@@ -254,7 +254,10 @@ Response:
 |--------------|---------------------|---------|----------------------------------------|
 | `columns`    | `string[]`          | `[]`    | Empty = all columns.                   |
 | `predicates` | `Predicate[]`       | `[]`    | ANDed together.                        |
-| `order_by`   | `OrderBy[]`         | `[]`    | `{ col, dir? }`; `dir` is `asc` (default) or `desc`, case-insensitive. Unknown column or direction → `400`. |
+| `order_by`   | `OrderBy[]`         | `[]`    | `{ col, dir? }`; `dir` is `asc` (default) or `desc`, case-insensitive. When `group_by` is set, `col` must be a group column or aggregation alias. |
+| `group_by`   | `string[]`          | `[]`    | Columns to group by. When set, `columns` is ignored. Empty `aggregations` implies `[{ op: "count" }]`. |
+| `aggregations` | `Aggregation[]`   | `[]`    | `{ col?, op, alias? }`; `op` is `count\|sum\|avg\|min\|max`. `col` may be omitted only for `count` (= `COUNT(*)`). Requires `group_by`. |
+| `distinct`   | `bool`              | `false` | Dedup the projected columns. Mutually exclusive with `group_by` / `aggregations`. |
 | `limit`      | `int >= 0` or null  | `null`  | Hard cap on total rows across all pages. `null` = unlimited. |
 | `page`       | `int >= 1`          | `1`     | 1-based.                               |
 | `page_size`  | `int 1..=1000`      | `100`   | Clamped to the inclusive range.        |
@@ -279,6 +282,54 @@ Response:
 
 Column names are looked up case-insensitively against the inferred schema
 and quoted automatically, so `Temperature(F)` and similar identifiers work.
+
+#### Grouping / aggregation
+
+When `group_by` is non-empty the SELECT list is derived from the group
+columns plus each aggregation's output alias — the top-level `columns`
+field is ignored. Supported ops: `count`, `sum`, `avg`, `min`, `max`
+(case-insensitive). `col` may be omitted only for `count` (= `COUNT(*)`).
+If `aggregations` is omitted an implicit `COUNT(*) AS count` is added.
+
+```bash
+curl -X POST http://localhost:8080/api/datasets/accidents/query \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "group_by": ["State"],
+    "aggregations": [
+      { "op":  "count" },
+      { "col": "Severity", "op": "avg", "alias": "avg_sev" }
+    ],
+    "order_by": [{ "col": "count", "dir": "desc" }],
+    "page_size": 10
+  }'
+# → { "data": [ { "State": "CA", "count": 1741433, "avg_sev": 2.21 }, ... ], ... }
+```
+
+`aggregations` without `group_by` returns `400`. `order_by` keys must
+reference a group column or an aggregation alias (no arbitrary dataset
+columns — they are not in scope after `GROUP BY`). Grouped queries always
+go through the SQL engine; no in-memory fast path applies.
+
+#### Distinct rows
+
+`distinct: true` deduplicates on the projected columns. Useful for
+building dropdowns / facet lists.
+
+```bash
+curl -X POST http://localhost:8080/api/datasets/accidents/query \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "columns":  ["State"],
+    "distinct": true,
+    "order_by": [{ "col": "State" }],
+    "page_size": 100
+  }'
+# → { "data": [ { "State": "AL" }, { "State": "AR" }, ... ], ... }
+```
+
+Mutually exclusive with `group_by` / `aggregations` (returns `400` if
+combined). Also bypasses the in-memory fast paths.
 
 ### `POST /api/datasets/{name}/count`
 

@@ -14,6 +14,8 @@ The body is a JSON object with these optional fields:
 | `columns`    | `list[str]`     | `[]`    | Columns to return. Empty = all columns.                                  |
 | `predicates` | `list[object]`  | `[]`    | Row filters, ANDed together.                                             |
 | `order_by`   | `list[object]`  | `[]`    | Sort keys: `{ "col": str, "dir": "asc"\|"desc" }`. `dir` defaults to `asc`. |
+| `group_by`     | `list[str]`    | `[]`    | Group-by columns. When set, `columns` is ignored.                        |
+| `aggregations` | `list[object]` | `[]`    | `{ col?, op, alias? }`; ops: `count\|sum\|avg\|min\|max`. Requires `group_by`. |
 | `limit`      | `int` or null   | `null`  | Hard cap on total rows across all pages. `null` = unlimited.             |
 | `page`       | `int` (≥ 1)     | `1`     | 1-based page number.                                                     |
 | `page_size`  | `int` (1–1000)  | `100`   | Rows per page. Hard cap is 1000.                                         |
@@ -264,6 +266,91 @@ beyond N rows regardless of `page` / `page_size`.
 With `limit = 100` and `page_size = 25` you get four full pages of 25;
 asking for `page = 5` returns an empty `data` array. Like `order_by`,
 setting `limit` disables the in-memory fast paths.
+
+---
+
+## 13. Aggregation (`group_by` + `aggregations`)
+
+Group rows by one or more columns and compute aggregates per group. When
+`group_by` is set, `columns` is ignored — the SELECT list is built from
+the group columns plus each aggregation's output alias.
+
+Supported `op` values: `count`, `sum`, `avg`, `min`, `max` (case-insensitive).
+`col` is required for every op except `count`, where it may be omitted to
+mean `COUNT(*)`. `alias` is the JSON output key; when omitted it defaults
+to `count` for `COUNT(*)` and `{op}_{col}` otherwise.
+
+```json
+{
+  "group_by":   ["state"],
+  "aggregations": [
+    { "op": "count" },
+    { "col": "severity", "op": "avg", "alias": "avg_sev" },
+    { "col": "severity", "op": "max" }
+  ],
+  "order_by":  [{ "col": "count", "dir": "desc" }],
+  "page_size": 10
+}
+```
+
+Returns one row per group with keys `state`, `count`, `avg_sev`, `max_severity`.
+
+If `group_by` is set and `aggregations` is empty, an implicit `COUNT(*) AS count`
+is added so each group always has at least one value:
+
+```json
+{ "group_by": ["state"], "order_by": [{ "col": "count", "dir": "desc" }] }
+```
+
+Notes:
+
+* `aggregations` without `group_by` returns `400`.
+* Sort keys in `order_by` must reference a group column or an aggregation
+  alias — not arbitrary dataset columns (they are not in scope after
+  `GROUP BY`).
+* Grouped queries always run through the SQL engine. They do not use the
+  in-memory fast paths.
+
+---
+
+## 14. Distinct rows (`distinct`)
+
+`distinct: true` deduplicates the projected rows. With `columns` set you
+get distinct values over that subset; without `columns` it acts as
+`SELECT DISTINCT *`.
+
+```json
+{
+  "columns":  ["state"],
+  "distinct": true,
+  "order_by": [{ "col": "state" }],
+  "page_size": 100
+}
+```
+
+Combine with predicates / `limit` / pagination as usual:
+
+```json
+{
+  "columns":   ["city", "state"],
+  "predicates": [{ "col": "severity", "op": "gte", "val": 3 }],
+  "distinct":  true,
+  "order_by":  [{ "col": "state" }, { "col": "city" }],
+  "limit":     5000,
+  "page":      1,
+  "page_size": 100
+}
+```
+
+Notes:
+
+* `distinct` is mutually exclusive with `group_by` / `aggregations` —
+  combining them returns `400`. Use `group_by` (with no aggregations) when
+  you also want counts per distinct combination.
+* `distinct` bypasses the in-memory fast paths and always goes through
+  the SQL engine.
+* On DuckDB the dedup happens on the raw column values before each row
+  is formatted as JSON, not on the JSON string itself.
 
 ---
 

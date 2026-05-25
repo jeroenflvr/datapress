@@ -199,6 +199,9 @@ Same five routes for both backends.
 | `columns`    | `string[]`      | `[]`    | Empty = all columns.        |
 | `predicates` | `Predicate[]`   | `[]`    | ANDed together.             |
 | `order_by`   | `OrderBy[]`     | `[]`    | `{ col, dir? }`; `dir` is `asc` (default) or `desc`. |
+| `group_by`     | `string[]`     | `[]`    | Group-by columns; when set, `columns` is ignored. |
+| `aggregations` | `Aggregation[]` | `[]`   | `{ col?, op, alias? }`; ops: `count\|sum\|avg\|min\|max`. Requires `group_by`. |
+| `distinct`   | `bool`          | `false` | Dedup the projected columns. Mutually exclusive with `group_by` / `aggregations`. |
 | `limit`      | `int` or null   | `null`  | Hard cap on total rows across pages. |
 | `page`       | `int >= 1`      | `1`     | 1-based.                    |
 | `page_size`  | `int 1..=1000`  | `100`   | Clamped.                    |
@@ -216,6 +219,37 @@ Same five routes for both backends.
 | `in`          | non-empty array       | `col IN (v1, v2, …)`          |
 | `is_null`     | omit                  | `col IS NULL`                 |
 | `is_not_null` | omit                  | `col IS NOT NULL`             |
+
+### Grouping / aggregation
+
+```bash
+curl -X POST http://localhost:8000/api/datasets/accidents/query \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "group_by": ["State"],
+    "aggregations": [
+      { "op":  "count" },
+      { "col": "Severity", "op": "avg", "alias": "avg_sev" }
+    ],
+    "order_by": [{ "col": "count", "dir": "desc" }],
+    "page_size": 10
+  }'
+```
+
+When `group_by` is non-empty the SELECT list is derived from the group
+columns plus each aggregation's alias; the top-level `columns` field is
+ignored. `aggregations` without `group_by` returns `400`. `order_by` keys
+must be a group column or aggregation alias.
+
+### Distinct
+
+```bash
+curl -X POST http://localhost:8000/api/datasets/accidents/query \
+  -H 'Content-Type: application/json' \
+  -d '{ "columns": ["State"], "distinct": true, "order_by": [{"col":"State"}] }'
+```
+
+Mutually exclusive with `group_by` / `aggregations`.
 
 ### Count body
 
