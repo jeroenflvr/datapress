@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.1.17] - 2026-05-25
+
+### Features
+
+- Add arrow_ipc and hard cap page_size limit of 1M rows ([c7782dd](https://github.com/jeroenflvr/fast-api/commit/c7782dd062915fb9018c6dba59272e8b3890a97c))
+
 ## [0.1.16] - 2026-05-25
 
 ### Documentation
