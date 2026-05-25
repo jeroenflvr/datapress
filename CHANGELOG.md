@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.1.16] - 2026-05-25
+
+### Documentation
+
+- Update readme ([954862d](https://github.com/jeroenflvr/fast-api/commit/954862d1748edb72f0425ffbb9dc3c066941dfae))
+
+### Features
+
+- Enable compression ([918bca1](https://github.com/jeroenflvr/fast-api/commit/918bca1b256988a368850c2d90cfec5e2e74f62d))
+- Add group_by and distinct ([b154a94](https://github.com/jeroenflvr/fast-api/commit/b154a943871656f401c412d9f845b175f5495d5f))
+
 ## [0.1.15] - 2026-05-24
 
 ### Documentation
