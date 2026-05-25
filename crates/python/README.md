@@ -101,7 +101,7 @@ Four classes, no module-level state:
 
 | Class             | Purpose                                                              |
 |-------------------|----------------------------------------------------------------------|
-| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`.     |
+| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`. |
 | `DatasetConfig`   | One dataset: `name`, `source`, `format`, `mode`, optional S3 + index.|
 | `S3Config`        | S3 / S3-compatible credentials and endpoint config.                  |
 | `DataPress`       | Built from a `DataPressConfig` + list of `DatasetConfig`. `await .run()`. |
@@ -144,6 +144,18 @@ DataPressConfig(backend="datafusion", port=8000, prefix="/datapress")
 
 `prefix` must start with `/` and not end with `/`. Empty string (default)
 mounts at the root.
+
+### Response compression
+
+Compression is on by default and negotiated per request via the
+`Accept-Encoding` header (gzip, brotli, zstd). Clients that want raw JSON
+send `Accept-Encoding: identity` or omit the header. Turn it off at the
+server when sitting behind a proxy that already compresses, or to save
+CPU on a trusted LAN:
+
+```python
+DataPressConfig(backend="datafusion", port=8000, compress=False)
+```
 
 ### Equality-index policy (DataFusion only)
 

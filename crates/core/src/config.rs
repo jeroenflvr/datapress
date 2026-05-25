@@ -59,6 +59,11 @@ pub struct ServerConfig {
     /// through unchanged). Must start with `/` and not end with `/`; the
     /// empty string (default) means no prefix.
     pub prefix:  String,
+    /// Negotiate response compression (gzip / brotli / zstd) via the
+    /// `Accept-Encoding` request header. Enabled by default. Disable when
+    /// running behind a proxy that already compresses, or when the extra
+    /// CPU is not worth the bandwidth saving.
+    pub compress: bool,
 }
 
 impl Default for ServerConfig {
@@ -69,6 +74,7 @@ impl Default for ServerConfig {
             port:    8080,
             workers: None,
             prefix:  String::new(),
+            compress: true,
         }
     }
 }

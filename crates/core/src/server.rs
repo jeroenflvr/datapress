@@ -22,13 +22,15 @@ pub async fn serve(
     let addr    = (cfg.server.listen, cfg.server.port);
     let workers = cfg.server.workers;
     let prefix  = cfg.server.prefix.clone();
+    let compress = cfg.server.compress;
 
     log::info!(
-        "Listening on http://{}:{}{} ({} backend, {} workers)",
+        "Listening on http://{}:{}{} ({} backend, {} workers, compression {})",
         cfg.server.listen, cfg.server.port,
         if prefix.is_empty() { "".into() } else { format!("{prefix}/") },
         label,
         workers.map(|w| w.to_string()).unwrap_or_else(|| "auto".into()),
+        if compress { "on" } else { "off" },
     );
 
     log_routes(&prefix, backend.as_ref());
@@ -38,6 +40,7 @@ pub async fn serve(
         let prefix  = prefix.clone();
         App::new()
             .app_data(web::Data::new(backend))
+            .wrap(middleware::Condition::new(compress, middleware::Compress::default()))
             .wrap(middleware::Logger::default())
             .service(
                 web::scope(prefix.as_str())

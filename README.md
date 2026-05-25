@@ -108,6 +108,7 @@ backend = "datafusion"   # "datafusion" (default) | "duckdb"
 listen  = "127.0.0.1"    # default; set to "0.0.0.0" to expose
 port    = 8080
 # workers = 8            # omit for one worker per CPU
+# compress = true        # negotiate gzip/brotli/zstd via Accept-Encoding (default)
 
 [[dataset]]
 name = "accidents"                    # used in the URL: /api/datasets/accidents/...

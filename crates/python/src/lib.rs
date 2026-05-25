@@ -285,6 +285,10 @@ impl PyDatasetConfig {
 ///         ``"/datapress"`` when running behind a reverse proxy that passes
 ///         the path through unchanged. Must start with ``/`` and not end
 ///         with ``/``. Empty string (default) = mount at root.
+///     compress (bool): Enable HTTP response compression negotiated via
+///         the ``Accept-Encoding`` request header (gzip / brotli / zstd).
+///         Default ``True``. Disable when behind a proxy that already
+///         compresses.
 #[pyclass(name = "DataPressConfig", module = "datap_rs.datapress", from_py_object)]
 #[derive(Clone)]
 pub struct PyDataPressConfig {
@@ -296,6 +300,8 @@ pub struct PyDataPressConfig {
     /// Optional URL prefix for all routes — e.g. `"/datapress"` when sitting
     /// behind a reverse proxy that passes the path through unchanged.
     #[pyo3(get, set)] pub prefix:  String,
+    /// Negotiate response compression via `Accept-Encoding`.
+    #[pyo3(get, set)] pub compress: bool,
 }
 
 #[pymethods]
@@ -309,22 +315,26 @@ impl PyDataPressConfig {
     ///     workers (int | None): Worker thread count. ``None`` = one per CPU.
     ///     prefix (str): URL prefix for all routes (e.g. ``"/datapress"``).
     ///         Must start with ``/`` and not end with ``/``. Default ``""``.
+    ///     compress (bool): Enable response compression negotiation.
+    ///         Default ``True``.
     #[new]
     #[pyo3(signature = (
-        backend = "duckdb".to_string(),
-        listen  = "127.0.0.1".to_string(),
-        port    = 8000,
-        workers = None,
-        prefix  = String::new(),
+        backend  = "duckdb".to_string(),
+        listen   = "127.0.0.1".to_string(),
+        port     = 8000,
+        workers  = None,
+        prefix   = String::new(),
+        compress = true,
     ))]
     fn new(
-        backend: String,
-        listen:  String,
-        port:    u16,
-        workers: Option<usize>,
-        prefix:  String,
+        backend:  String,
+        listen:   String,
+        port:     u16,
+        workers:  Option<usize>,
+        prefix:   String,
+        compress: bool,
     ) -> Self {
-        Self { backend, listen, port, workers, prefix }
+        Self { backend, listen, port, workers, prefix, compress }
     }
 }
 
@@ -358,6 +368,7 @@ impl PyDataPressConfig {
             port: self.port,
             workers: self.workers,
             prefix: self.prefix,
+            compress: self.compress,
         })
     }
 }
@@ -453,6 +464,7 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
             port:    cfg.server.port,
             workers: cfg.server.workers,
             prefix:  cfg.server.prefix.clone(),
+            compress: cfg.server.compress,
         },
         datasets: cfg.datasets.clone(),
     }
