@@ -216,7 +216,7 @@ Same five routes for both backends.
 | `distinct`   | `bool`          | `false` | Dedup the projected columns. Mutually exclusive with `group_by` / `aggregations`. |
 | `limit`      | `int` or null   | `null`  | Hard cap on total rows across pages. |
 | `page`       | `int >= 1`      | `1`     | 1-based.                    |
-| `page_size`  | `int 1..=1000`  | `100`   | Clamped.                    |
+| `page_size`  | `int 1..=1_000_000`  | `1000`   | Clamped.                    |
 
 ### Predicate operators
 
@@ -262,6 +262,26 @@ curl -X POST http://localhost:8000/api/datasets/accidents/query \
 ```
 
 Mutually exclusive with `group_by` / `aggregations`.
+
+### Arrow IPC responses
+
+Opt in per-request with the `Accept` header (or `?format=arrow`) to skip
+the JSON envelope and receive an Arrow IPC stream instead:
+
+```python
+import requests, pyarrow.ipc as ipc, polars as pl
+
+r = requests.post(
+    "http://localhost:8000/api/datasets/accidents/query",
+    json={"columns": ["ID","State"], "page_size": 1000},
+    headers={"Accept": "application/vnd.apache.arrow.stream"},
+)
+table = ipc.open_stream(r.content).read_all()   # pyarrow.Table
+df    = pl.from_arrow(table)                    # zero-copy → Polars
+page, page_size = r.headers["X-Page"], r.headers["X-Page-Size"]
+```
+
+DataFusion backend only. DuckDB returns `400`; fall back to JSON.
 
 ### Count body
 

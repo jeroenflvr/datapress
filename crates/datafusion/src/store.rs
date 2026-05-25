@@ -215,10 +215,37 @@ impl Store {
     /// slice. Otherwise → DataFusion SQL on the single registered table.
     /// Lazy datasets skip the in-memory hot paths and always dispatch to SQL.
     pub async fn query(&self, name: &str, req: &QueryRequest) -> Result<String, AppError> {
+        let batch = self.query_batch(name, req).await?;
+        if batch.num_rows() == 0 {
+            return Ok("[]".to_string());
+        }
+        serialize(&batch)
+    }
+
+    /// Same plan as [`Self::query`], but encode the result page as an
+    /// Arrow IPC stream (one schema message + one batch + EOS). Empty
+    /// results still produce a valid, self-describing zero-batch stream.
+    pub async fn query_arrow(&self, name: &str, req: &QueryRequest) -> Result<Vec<u8>, AppError> {
+        let batch  = self.query_batch(name, req).await?;
+        let schema = batch.schema();
+        let mut buf = Vec::with_capacity(8 * 1024);
+        {
+            let mut w = arrow::ipc::writer::StreamWriter::try_new(&mut buf, schema.as_ref())?;
+            if batch.num_rows() > 0 {
+                w.write(&batch)?;
+            }
+            w.finish()?;
+        }
+        Ok(buf)
+    }
+
+    /// Compute the result page as a single `RecordBatch`. Shared between
+    /// the JSON and Arrow IPC encoders.
+    async fn query_batch(&self, name: &str, req: &QueryRequest) -> Result<RecordBatch, AppError> {
         let st = self.dataset(name)?;
 
         let page      = req.page.max(1);
-        let page_size = req.page_size.clamp(1, 1000);
+        let page_size = req.page_size.clamp(1, 1_000_000);
         let offset    = ((page - 1) * page_size) as usize;
         let limit     = page_size as usize;
 
@@ -242,7 +269,7 @@ impl Store {
                 let start = offset.min(total);
                 let len   = limit.min(total - start);
                 let page  = slice_global(&st.data, &st.arrow_schema, start, len)?;
-                return serialize(&project(&st.schema, page, &req.columns)?);
+                return project(&st.schema, page, &req.columns);
             }
 
             // Index fast path: if every predicate is eq/in on an indexed column,
@@ -250,7 +277,7 @@ impl Store {
             // SIMD scan over the entire dataset.
             if let Some(rows) = try_index(&st.index, &req.predicates) {
                 let batch = take_page(&st.data, &st.arrow_schema, &rows, offset, limit)?;
-                return serialize(&project(&st.schema, batch, &req.columns)?);
+                return project(&st.schema, batch, &req.columns);
             }
         }
 
@@ -261,10 +288,16 @@ impl Store {
         let df      = self.ctx.sql(&sql).await?;
         let batches = df.collect().await?;
         if batches.is_empty() || batches.iter().all(|b| b.num_rows() == 0) {
-            return Ok("[]".to_string());
+            // Synthesize an empty batch with the SQL result schema so the
+            // Arrow IPC writer still emits a valid schema message. The
+            // shape matches what `compute::concat_batches` would return.
+            let schema = batches.first()
+                .map(|b| b.schema())
+                .unwrap_or_else(|| Arc::new(arrow::datatypes::Schema::empty()));
+            return Ok(RecordBatch::new_empty(schema));
         }
         let batch = compute::concat_batches(&batches[0].schema(), batches.iter())?;
-        serialize(&batch)
+        Ok(batch)
     }
 
     /// Return the number of rows matching `req.predicates`. With no
@@ -1479,6 +1512,10 @@ impl Backend for Store {
 
     async fn query(&self, name: &str, req: &QueryRequest) -> Result<String, AppError> {
         Store::query(self, name, req).await
+    }
+
+    async fn query_arrow(&self, name: &str, req: &QueryRequest) -> Result<Vec<u8>, AppError> {
+        Store::query_arrow(self, name, req).await
     }
 
     async fn count(&self, name: &str, req: &CountRequest) -> Result<i64, AppError> {

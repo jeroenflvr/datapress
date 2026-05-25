@@ -261,7 +261,7 @@ Response:
 | `distinct`   | `bool`              | `false` | Dedup the projected columns. Mutually exclusive with `group_by` / `aggregations`. |
 | `limit`      | `int >= 0` or null  | `null`  | Hard cap on total rows across all pages. `null` = unlimited. |
 | `page`       | `int >= 1`          | `1`     | 1-based.                               |
-| `page_size`  | `int 1..=1000`      | `100`   | Clamped to the inclusive range.        |
+| `page_size`  | `int 1..=1_000_000`      | `1000`   | Clamped to the inclusive range.        |
 
 #### Predicate shape
 
@@ -283,6 +283,35 @@ Response:
 
 Column names are looked up case-insensitively against the inferred schema
 and quoted automatically, so `Temperature(F)` and similar identifiers work.
+
+#### Response format — JSON or Arrow IPC
+
+By default `/query` returns JSON in the envelope shown above. Clients that
+want zero-overhead columnar transport can opt into an Arrow IPC stream:
+
+```bash
+curl -X POST http://localhost:8080/api/datasets/accidents/query \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/vnd.apache.arrow.stream' \
+  --output result.arrow \
+  -d '{ "predicates": [{ "col": "State", "op": "eq", "val": "TX" }] }'
+```
+
+Or via query string: append `?format=arrow`. Response body is a
+self-describing Arrow IPC **stream** (`application/vnd.apache.arrow.stream`)
+— one schema message + zero-or-more `RecordBatch` messages. Pagination
+moves into response headers (`X-Page`, `X-Page-Size`) since the body is no
+longer JSON. Python:
+
+```python
+import requests, pyarrow.ipc as ipc
+r = requests.post(url, json=req, headers={"Accept": "application/vnd.apache.arrow.stream"})
+table = ipc.open_stream(r.content).read_all()  # → pyarrow.Table
+```
+
+Currently implemented on the **DataFusion** backend only; DuckDB returns
+`400`. The `Compress` middleware still applies — gzip / zstd over the
+binary stream is fine; brotli is usually skipped by clients on binary.
 
 #### Grouping / aggregation
 

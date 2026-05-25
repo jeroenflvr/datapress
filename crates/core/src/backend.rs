@@ -54,6 +54,20 @@ pub trait Backend: Send + Sync + 'static {
     /// added by the handler).
     async fn query(&self, name: &str, req: &QueryRequest) -> Result<String, AppError>;
 
+    /// Execute `req` against `name`, returning the result as an Arrow IPC
+    /// **stream** byte buffer (one schema message + zero or more
+    /// `RecordBatch` messages + EOS). The handler ships this verbatim
+    /// with `Content-Type: application/vnd.apache.arrow.stream`.
+    ///
+    /// Default impl errors with `InvalidValue` — backends that don't
+    /// produce Arrow natively (e.g. DuckDB today) reject the format and
+    /// the handler falls through to JSON. Override on backends where
+    /// batches are already Arrow.
+    async fn query_arrow(&self, _name: &str, _req: &QueryRequest) -> Result<Vec<u8>, AppError> {
+        Err(AppError::InvalidValue(
+            "Arrow IPC response format is not supported by this backend".into()))
+    }
+
     /// Count rows in `name` matching `req.predicates`.
     async fn count(&self, name: &str, req: &CountRequest) -> Result<i64, AppError>;
 

@@ -56,14 +56,29 @@ pub async fn get_schema(
 
 #[post("/api/datasets/{name}/query")]
 pub async fn query_dataset(
+    http:    HttpRequest,
     backend: BackendData,
     path:    web::Path<String>,
     body:    web::Json<QueryRequest>,
 ) -> HttpResponse {
     let name      = path.into_inner();
     let page      = body.page.max(1);
-    let page_size = body.page_size.clamp(1, 1000);
+    let page_size = body.page_size.clamp(1, 1_000_000);
     let req       = body.into_inner();
+
+    // Content negotiation: clients opt into Arrow IPC via the `Accept`
+    // header or `?format=arrow`. Anything else (including no header)
+    // gets the historical JSON envelope.
+    if wants_arrow(&http) {
+        return match backend.query_arrow(&name, &req).await {
+            Ok(bytes) => HttpResponse::Ok()
+                .content_type("application/vnd.apache.arrow.stream")
+                .insert_header(("X-Page", page.to_string()))
+                .insert_header(("X-Page-Size", page_size.to_string()))
+                .body(bytes),
+            Err(e) => e.error_response(),
+        };
+    }
 
     match backend.query(&name, &req).await {
         Ok(arr) => {
@@ -72,6 +87,27 @@ pub async fn query_dataset(
         }
         Err(e) => e.error_response(),
     }
+}
+
+const ARROW_IPC_MIME: &str = "application/vnd.apache.arrow.stream";
+
+/// True if the caller wants Arrow IPC: either `?format=arrow` in the
+/// query string, or `Accept` lists `application/vnd.apache.arrow.stream`.
+/// A bare `Accept: */*` does **not** count — JSON stays the default.
+fn wants_arrow(http: &HttpRequest) -> bool {
+    let qs = http.query_string();
+    if !qs.is_empty()
+        && qs.split('&').any(|kv| matches!(kv.split_once('='), Some(("format", v)) if v.eq_ignore_ascii_case("arrow")))
+    {
+        return true;
+    }
+    http.headers()
+        .get(actix_web::http::header::ACCEPT)
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.split(',').any(|part| {
+            part.split(';').next().unwrap_or("").trim().eq_ignore_ascii_case(ARROW_IPC_MIME)
+        }))
+        .unwrap_or(false)
 }
 
 #[post("/api/datasets/{name}/count")]

@@ -18,7 +18,7 @@ The body is a JSON object with these optional fields:
 | `aggregations` | `list[object]` | `[]`    | `{ col?, op, alias? }`; ops: `count\|sum\|avg\|min\|max`. Requires `group_by`. |
 | `limit`      | `int` or null   | `null`  | Hard cap on total rows across all pages. `null` = unlimited.             |
 | `page`       | `int` (≥ 1)     | `1`     | 1-based page number.                                                     |
-| `page_size`  | `int` (1–1000)  | `100`   | Rows per page. Hard cap is 1000.                                         |
+| `page_size`  | `int` (1–1_000_000)  | `1000`   | Rows per page. Hard cap is 1,000,000.                                         |
 
 The response is a JSON array of row objects. There is no envelope and no
 total-count — pagination is offset/limit only.
@@ -219,7 +219,7 @@ There is **no row count** in the response. To know if more pages exist, ask
 for `page_size + 1` and check whether you got the extra row, or stop when a
 page returns fewer rows than `page_size`.
 
-`page_size` is clamped to `[1, 1000]` server-side. `page < 1` is treated as
+`page_size` is clamped to `[1, 1_000_000]` server-side. `page < 1` is treated as
 `page = 1`.
 
 Page numbers are 1-based — `page=1` returns rows `[0, page_size)`.
@@ -351,6 +351,52 @@ Notes:
   the SQL engine.
 * On DuckDB the dedup happens on the raw column values before each row
   is formatted as JSON, not on the JSON string itself.
+
+---
+
+## 15. Response format — JSON or Arrow IPC
+
+By default `/query` returns the JSON envelope shown throughout this doc.
+Clients that want a columnar binary payload can opt into an Arrow IPC
+stream — useful for moving large result pages into Polars / pandas /
+DuckDB-on-the-client without paying JSON encode/decode.
+
+Two ways to ask:
+
+* HTTP header: `Accept: application/vnd.apache.arrow.stream`
+* Query string: append `?format=arrow` to the URL
+
+The response is then `Content-Type: application/vnd.apache.arrow.stream`
+— a self-describing Arrow IPC **stream** (one schema message + zero or
+more `RecordBatch` messages + EOS). Pagination metadata moves into
+response headers: `X-Page` and `X-Page-Size`.
+
+```bash
+curl -X POST http://localhost:8080/api/datasets/accidents/query \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/vnd.apache.arrow.stream' \
+  --output page.arrow \
+  -d '{ "columns": ["ID","State"], "page_size": 1000 }'
+```
+
+```python
+import requests, pyarrow.ipc as ipc, polars as pl
+r = requests.post(url, json=req,
+                  headers={"Accept": "application/vnd.apache.arrow.stream"})
+table = ipc.open_stream(r.content).read_all()   # pyarrow.Table
+df    = pl.from_arrow(table)                    # zero-copy → Polars
+```
+
+Notes:
+
+* Currently implemented on the **DataFusion** backend only. DuckDB
+  returns `400 invalid value: Arrow IPC response format is not supported
+  by this backend` — falls back to JSON on the client side trivially.
+* Empty results still produce a valid stream (schema only, no batches).
+* `Compress` middleware applies normally; gzip / zstd over the binary
+  payload still wins on wide / repetitive columns.
+* `count`, `schema`, and the dataset-listing endpoints are unaffected —
+  they remain JSON.
 
 ---
 

@@ -159,7 +159,7 @@ impl<'a> DatasetRepository<'a> {
             json_obj_pairs(cols)
         };
 
-        let (limit, offset) = req.effective_limit_offset(1000);
+        let (limit, offset) = req.effective_limit_offset(1_000_000);
 
         let mut conditions: Vec<String>   = Vec::new();
         let mut bind_vals:  Vec<ParamVal> = Vec::new();

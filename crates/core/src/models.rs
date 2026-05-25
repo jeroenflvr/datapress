@@ -252,7 +252,7 @@ impl QueryRequest {
 }
 
 fn default_page() -> u64 { 1 }
-fn default_page_size() -> u64 { 100 }
+fn default_page_size() -> u64 { 1000 }
 
 /// Body for `POST /api/datasets/{name}/count`. Predicates are optional —
 /// an empty body (or `{}`) counts every row in the dataset.
