@@ -289,6 +289,11 @@ impl PyDatasetConfig {
 ///         the ``Accept-Encoding`` request header (gzip / brotli / zstd).
 ///         Default ``True``. Disable when behind a proxy that already
 ///         compresses.
+///     max_body_bytes (int): Maximum accepted JSON request body, in bytes.
+///         Larger bodies are rejected with ``413``. Default ``1_048_576``
+///         (1 MiB).
+///     request_timeout_ms (int): Per-request handler timeout, in
+///         milliseconds. ``0`` disables the timeout. Default ``30_000``.
 #[pyclass(name = "DataPressConfig", module = "datap_rs.datapress", from_py_object)]
 #[derive(Clone)]
 pub struct PyDataPressConfig {
@@ -302,6 +307,10 @@ pub struct PyDataPressConfig {
     #[pyo3(get, set)] pub prefix:  String,
     /// Negotiate response compression via `Accept-Encoding`.
     #[pyo3(get, set)] pub compress: bool,
+    /// Max accepted request body, in bytes.
+    #[pyo3(get, set)] pub max_body_bytes:     usize,
+    /// Per-request handler timeout, in ms. `0` = disabled.
+    #[pyo3(get, set)] pub request_timeout_ms: u64,
 }
 
 #[pymethods]
@@ -317,24 +326,36 @@ impl PyDataPressConfig {
     ///         Must start with ``/`` and not end with ``/``. Default ``""``.
     ///     compress (bool): Enable response compression negotiation.
     ///         Default ``True``.
+    ///     max_body_bytes (int): Max accepted JSON body, in bytes.
+    ///         Default ``1_048_576``.
+    ///     request_timeout_ms (int): Per-request handler timeout, in ms.
+    ///         ``0`` disables. Default ``30_000``.
     #[new]
     #[pyo3(signature = (
-        backend  = "duckdb".to_string(),
-        listen   = "127.0.0.1".to_string(),
-        port     = 8000,
-        workers  = None,
-        prefix   = String::new(),
-        compress = true,
+        backend            = "duckdb".to_string(),
+        listen             = "127.0.0.1".to_string(),
+        port               = 8000,
+        workers            = None,
+        prefix             = String::new(),
+        compress           = true,
+        max_body_bytes     = 1_048_576,
+        request_timeout_ms = 30_000,
     ))]
+    #[allow(clippy::too_many_arguments)] // user-facing kwargs surface
     fn new(
-        backend:  String,
-        listen:   String,
-        port:     u16,
-        workers:  Option<usize>,
-        prefix:   String,
-        compress: bool,
+        backend:            String,
+        listen:             String,
+        port:               u16,
+        workers:            Option<usize>,
+        prefix:             String,
+        compress:           bool,
+        max_body_bytes:     usize,
+        request_timeout_ms: u64,
     ) -> Self {
-        Self { backend, listen, port, workers, prefix, compress }
+        Self {
+            backend, listen, port, workers, prefix, compress,
+            max_body_bytes, request_timeout_ms,
+        }
     }
 }
 
@@ -369,6 +390,8 @@ impl PyDataPressConfig {
             workers: self.workers,
             prefix: self.prefix,
             compress: self.compress,
+            max_body_bytes:     self.max_body_bytes,
+            request_timeout_ms: self.request_timeout_ms,
         })
     }
 }
@@ -465,6 +488,8 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
             workers: cfg.server.workers,
             prefix:  cfg.server.prefix.clone(),
             compress: cfg.server.compress,
+            max_body_bytes:     cfg.server.max_body_bytes,
+            request_timeout_ms: cfg.server.request_timeout_ms,
         },
         datasets: cfg.datasets.clone(),
     }

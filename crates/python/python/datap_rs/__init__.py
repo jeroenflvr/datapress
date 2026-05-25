@@ -16,6 +16,7 @@ convenience::
 
 from . import datapress
 from .datapress import DataPress, DataPressConfig, DatasetConfig, S3Config
+from .client import DataPressClient, DataPressHTTPError
 
 __all__ = [
     "datapress",
@@ -23,4 +24,6 @@ __all__ = [
     "DataPressConfig",
     "DatasetConfig",
     "S3Config",
+    "DataPressClient",
+    "DataPressHTTPError",
 ]

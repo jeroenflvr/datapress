@@ -57,6 +57,8 @@ class DatasetConfig:
     mode: str
     description: Optional[str]
     s3: Optional[S3Config]
+    columns: Optional[list[str]]
+    dict_encode: bool
     index_columns: Optional[list[str]]
     index_max_cardinality: Optional[int]
     lazy: bool
@@ -69,6 +71,8 @@ class DatasetConfig:
         mode: str = "auto",
         description: Optional[str] = None,
         s3: Optional[S3Config] = None,
+        columns: Optional[list[str]] = None,
+        dict_encode: bool = True,
         index_columns: Optional[list[str]] = None,
         index_max_cardinality: Optional[int] = None,
         lazy: bool = False,
@@ -83,15 +87,15 @@ class DatasetConfig:
             mode: Index mode — ``"auto"`` (default), ``"none"`` or ``"list"``.
             description: Free-text shown in the listing endpoint.
             s3: Required when ``source`` starts with ``s3://``.
+            columns: Read only these columns from the source. ``None``
+                (default) = read all columns.
+            dict_encode: Keep dictionary-encoded Utf8 columns as Arrow
+                ``Dictionary(Int32, Utf8)``. Defaults to ``True``.
             index_columns: Columns to build an index over when ``mode="list"``.
             index_max_cardinality: Upper bound on distinct values per
                 indexed column.
-            lazy: When ``True`` the dataset is **not** materialised into
-                RAM at startup. Queries stream from disk via DataFusion's
-                ``ListingTable``, with column-projection and predicate
-                pushdown. Essential for wide (hundreds of columns) or
-                multi-file parquet datasets. DataFusion backend, local
-                parquet only. Defaults to ``False``.
+            lazy: Stream from disk instead of loading into RAM.
+                DataFusion backend / local parquet only. Defaults to ``False``.
         """
         ...
 
@@ -107,6 +111,9 @@ class DataPressConfig:
     port: int
     workers: Optional[int]
     prefix: str
+    compress: bool
+    max_body_bytes: int
+    request_timeout_ms: int
 
     def __init__(
         self,
@@ -115,6 +122,9 @@ class DataPressConfig:
         port: int = 8000,
         workers: Optional[int] = None,
         prefix: str = "",
+        compress: bool = True,
+        max_body_bytes: int = 1_048_576,
+        request_timeout_ms: int = 30_000,
     ) -> None:
         """Build a :class:`DataPressConfig`.
 
@@ -130,6 +140,12 @@ class DataPressConfig:
                 ``"/datapress"`` when running behind a reverse proxy that
                 passes the path through unchanged. Must start with ``/``
                 and not end with ``/``. Empty string (default) = root.
+            compress: Enable response compression negotiated via
+                ``Accept-Encoding`` (gzip / brotli / zstd). Default ``True``.
+            max_body_bytes: Maximum accepted JSON request body, in bytes.
+                Larger bodies are rejected with ``413``. Default ``1_048_576``.
+            request_timeout_ms: Per-request handler timeout, in ms.
+                ``0`` disables the timeout. Default ``30_000``.
         """
         ...
 

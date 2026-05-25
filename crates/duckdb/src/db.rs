@@ -442,6 +442,18 @@ impl Backend for Registry {
         .map_err(|e| AppError::Internal(format!("join error: {e}")))?
     }
 
+    async fn query_arrow(&self, name: &str, req: &QueryRequest) -> Result<Vec<u8>, AppError> {
+        let schema = self.get(name)?;
+        let pool   = self.pool.clone();
+        let req    = req.clone();
+        actix_web::web::block(move || -> Result<Vec<u8>, AppError> {
+            let conn = DbPool::get(&pool);
+            DatasetRepository::new(&conn, &schema).query_arrow_bytes(&req)
+        })
+        .await
+        .map_err(|e| AppError::Internal(format!("join error: {e}")))?
+    }
+
     async fn count(&self, name: &str, req: &CountRequest) -> Result<i64, AppError> {
         let schema = self.get(name)?;
         let pool   = self.pool.clone();

@@ -64,6 +64,15 @@ pub struct ServerConfig {
     /// running behind a proxy that already compresses, or when the extra
     /// CPU is not worth the bandwidth saving.
     pub compress: bool,
+    /// Maximum accepted JSON request body size, in bytes. Larger bodies
+    /// are rejected with `413 Payload Too Large` before any handler runs.
+    /// Default `1 MiB`. Most query bodies are well under 10 KiB; this is
+    /// a DoS guard, not a tuning knob.
+    pub max_body_bytes: usize,
+    /// Per-request handler timeout, in milliseconds. If a handler hasn't
+    /// produced a response within this budget the request is aborted with
+    /// `504 Gateway Timeout`. Default `30_000` (30 s). Set `0` to disable.
+    pub request_timeout_ms: u64,
 }
 
 impl Default for ServerConfig {
@@ -75,6 +84,8 @@ impl Default for ServerConfig {
             workers: None,
             prefix:  String::new(),
             compress: true,
+            max_body_bytes:     1024 * 1024,
+            request_timeout_ms: 30_000,
         }
     }
 }

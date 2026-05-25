@@ -1,6 +1,10 @@
 use duckdb::{Connection, params_from_iter};
 use serde_json::Value as JsonValue;
 
+use arrow::array::RecordBatch;
+use arrow::datatypes::Schema;
+use arrow::ipc::writer::StreamWriter;
+
 use datapress_core::errors::AppError;
 use datapress_core::models::{AggOp, AggPlan, Predicate, QueryRequest};
 use datapress_core::schema::DatasetSchema;
@@ -89,6 +93,25 @@ fn group_json_obj_pairs(schema: &DatasetSchema, plan: &AggPlan) -> String {
             _ => unreachable!(),
         };
         parts.push(format!("'{}', {expr}", a.alias.replace('\'', "''")));
+    }
+    parts.join(", ")
+}
+
+/// Build a raw SELECT list (no `json_object`) for an aggregation plan:
+/// `group_col1, group_col2, …, <agg_expr> AS <alias>, …`. Used by the
+/// Arrow IPC path so the client gets typed columns.
+fn agg_select_list(plan: &AggPlan) -> String {
+    let mut parts: Vec<String> = Vec::with_capacity(plan.group_cols.len() + plan.aggs.len());
+    for name in &plan.group_cols {
+        parts.push(DatasetSchema::quote_ident(name));
+    }
+    for a in &plan.aggs {
+        let expr = match (a.op, a.col.as_deref()) {
+            (AggOp::Count, None) => "COUNT(*)".to_string(),
+            (op, Some(c))        => format!("{}({})", op.as_sql(), DatasetSchema::quote_ident(c)),
+            _ => unreachable!(),
+        };
+        parts.push(format!("{expr} AS {}", DatasetSchema::quote_ident(&a.alias)));
     }
     parts.join(", ")
 }
@@ -212,6 +235,84 @@ impl<'a> DatasetRepository<'a> {
         };
 
         stream_as_json_array(self.conn, &sql, &bind_vals)
+    }
+
+    /// Same shape as [`query`], but returns the result as an Arrow IPC
+    /// stream byte buffer. The projection emits **raw typed columns**
+    /// instead of `json_object(...)` rows, so the client receives proper
+    /// Arrow arrays rather than a string column of JSON.
+    pub fn query_arrow_bytes(&self, req: &QueryRequest) -> Result<Vec<u8>, AppError> {
+        let agg_plan = req.agg_plan(self.schema)?;
+
+        // Build the SELECT list — column refs for the row path, or
+        // `<expr> AS <alias>` items for the aggregation path.
+        let projection: String = if let Some(plan) = &agg_plan {
+            agg_select_list(plan)
+        } else if req.columns.is_empty() {
+            "*".into()
+        } else {
+            req.columns
+                .iter()
+                .map(|n| self.schema.find(n).map(|c| DatasetSchema::quote_ident(&c.name)))
+                .collect::<Result<Vec<_>, _>>()?
+                .join(", ")
+        };
+
+        let (limit, offset) = req.effective_limit_offset(1_000_000);
+
+        let mut conditions: Vec<String>   = Vec::new();
+        let mut bind_vals:  Vec<ParamVal> = Vec::new();
+        for pred in &req.predicates {
+            self.apply_predicate(pred, &mut conditions, &mut bind_vals)?;
+        }
+
+        let where_clause = build_where(&conditions);
+        let group_clause = match &agg_plan {
+            Some(p) => format!(
+                " GROUP BY {}",
+                p.group_cols.iter()
+                    .map(|c| DatasetSchema::quote_ident(c))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ),
+            None => String::new(),
+        };
+        let order_clause = match req.order_by_sql(self.schema, agg_plan.as_ref())? {
+            Some(s) => format!(" ORDER BY {s}"),
+            None    => String::new(),
+        };
+        let table = DatasetSchema::quote_ident(&self.schema.name);
+
+        let sql = if req.distinct && agg_plan.is_none() {
+            format!(
+                "SELECT DISTINCT {projection} FROM {table}{where_clause}{order_clause} \
+                 LIMIT {limit} OFFSET {offset}"
+            )
+        } else {
+            format!(
+                "SELECT {projection} FROM {table}{where_clause}{group_clause}{order_clause} \
+                 LIMIT {limit} OFFSET {offset}"
+            )
+        };
+
+        let mut stmt   = self.conn.prepare(&sql)?;
+        let arrow_iter = stmt.query_arrow(params_from_iter(bind_vals.iter()))?;
+        let schema: Schema = (*arrow_iter.get_schema()).clone();
+        let batches: Vec<RecordBatch> = arrow_iter.collect();
+
+        // Encode: one schema message + N batches + EOS.
+        let mut buf = Vec::with_capacity(64 * 1024);
+        {
+            let mut w = StreamWriter::try_new(&mut buf, &schema)
+                .map_err(|e| AppError::Internal(format!("arrow ipc init: {e}")))?;
+            for b in &batches {
+                w.write(b)
+                    .map_err(|e| AppError::Internal(format!("arrow ipc write: {e}")))?;
+            }
+            w.finish()
+                .map_err(|e| AppError::Internal(format!("arrow ipc finish: {e}")))?;
+        }
+        Ok(buf)
     }
 
     /// Return the number of rows matching `predicates` (empty = all rows).

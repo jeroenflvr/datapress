@@ -7,6 +7,10 @@ from .datapress import (
     DatasetConfig as DatasetConfig,
     S3Config as S3Config,
 )
+from .client import (
+    DataPressClient as DataPressClient,
+    DataPressHTTPError as DataPressHTTPError,
+)
 
 __all__ = [
     "datapress",
@@ -14,4 +18,6 @@ __all__ = [
     "DataPressConfig",
     "DatasetConfig",
     "S3Config",
+    "DataPressClient",
+    "DataPressHTTPError",
 ]

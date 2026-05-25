@@ -389,10 +389,9 @@ df    = pl.from_arrow(table)                    # zero-copy → Polars
 
 Notes:
 
-* Currently implemented on the **DataFusion** backend only. DuckDB
-  returns `400 invalid value: Arrow IPC response format is not supported
-  by this backend` — falls back to JSON on the client side trivially.
-* Empty results still produce a valid stream (schema only, no batches).
+* Supported on both backends. DuckDB streams batches out via
+  `query_arrow`; DataFusion via the native Arrow plan. Empty results
+  still produce a valid stream (schema only, no batches).
 * `Compress` middleware applies normally; gzip / zstd over the binary
   payload still wins on wide / repetitive columns.
 * `count`, `schema`, and the dataset-listing endpoints are unaffected —

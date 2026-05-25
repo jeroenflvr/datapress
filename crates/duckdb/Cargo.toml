@@ -16,6 +16,7 @@ log.workspace         = true
 env_logger.workspace  = true
 
 duckdb.workspace = true
+arrow.workspace  = true
 
 [[bin]]
 name = "datapress-duckdb"

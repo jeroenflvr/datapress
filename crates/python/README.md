@@ -101,10 +101,11 @@ Four classes, no module-level state:
 
 | Class             | Purpose                                                              |
 |-------------------|----------------------------------------------------------------------|
-| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`. |
+| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `request_timeout_ms`. |
 | `DatasetConfig`   | One dataset: `name`, `source`, `format`, `mode`, optional S3 + index.|
 | `S3Config`        | S3 / S3-compatible credentials and endpoint config.                  |
 | `DataPress`       | Built from a `DataPressConfig` + list of `DatasetConfig`. `await .run()`. |
+| `DataPressClient` | Sync HTTP client for talking to a running server (stdlib + lazy pyarrow). |
 
 Hover any of them in your IDE for full kwarg docs.
 
@@ -156,6 +157,48 @@ CPU on a trusted LAN:
 ```python
 DataPressConfig(backend="datafusion", port=8000, compress=False)
 ```
+
+### Request limits & timeouts
+
+Two server-side guardrails are on by default:
+
+```python
+DataPressConfig(
+    backend="datafusion",
+    port=8000,
+    max_body_bytes=1_048_576,    # 413 above this; default 1 MiB
+    request_timeout_ms=30_000,   # 504 above this; 0 disables; default 30s
+)
+```
+
+Bodies larger than `max_body_bytes` are rejected with `413 Payload Too
+Large`. Handlers that take longer than `request_timeout_ms` are cancelled
+and the client sees `504 Gateway Timeout`. Set the timeout to `0` to
+disable it entirely (useful behind a proxy that already enforces one).
+
+### Client
+
+A small sync client is bundled for talking to a running server:
+
+```python
+from datap_rs import DataPressClient
+
+c = DataPressClient("http://127.0.0.1:8000")
+c.healthz()                                  # -> {"status": "ok"}
+c.readyz()                                   # -> {"status": "ready", ...}
+c.datasets()                                 # -> ["accidents", ...]
+c.schema("accidents")                        # -> dict
+c.count("accidents")                         # -> int
+table = c.query("accidents", {               # -> pyarrow.Table
+    "columns":   ["State", "Severity"],
+    "page_size": 10_000,
+})
+```
+
+`query()` requests Arrow IPC and returns a `pyarrow.Table` (pyarrow is
+imported lazily). For the JSON envelope verbatim, use `query_json()`.
+On non-2xx responses a `DataPressHTTPError` is raised with `.status`,
+`.body` and `.payload`.
 
 ### Equality-index policy (DataFusion only)
 

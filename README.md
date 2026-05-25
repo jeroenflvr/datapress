@@ -109,6 +109,8 @@ listen  = "127.0.0.1"    # default; set to "0.0.0.0" to expose
 port    = 8080
 # workers = 8            # omit for one worker per CPU
 # compress = true        # negotiate gzip/brotli/zstd via Accept-Encoding (default)
+# max_body_bytes     = 1048576  # 413 above this; default 1 MiB
+# request_timeout_ms = 30000    # 504 above this; 0 disables; default 30s
 
 [[dataset]]
 name = "accidents"                    # used in the URL: /api/datasets/accidents/...
@@ -133,6 +135,18 @@ name = "accidents"                    # used in the URL: /api/datasets/accidents
 | `port`    | `8080`        |                                                                                                |
 | `workers` | *(unset)*     | Actix worker threads. Unset = one per CPU.                                                     |
 | `prefix`  | `""`          | URL path prefix mounted in front of every route (e.g. `"/datapress"`) — useful behind a reverse proxy that passes the path through unchanged. Must start with `/` and not end with `/`. |
+| `compress`           | `true`     | Negotiate response compression via `Accept-Encoding` (gzip / brotli / zstd). Disable when sitting behind a proxy that compresses for you. |
+| `max_body_bytes`     | `1048576`  | Maximum accepted JSON request body, in bytes. Bigger bodies are rejected with `413 Payload Too Large`. |
+| `request_timeout_ms` | `30000`    | Per-request handler timeout, in milliseconds. Long-running handlers are cancelled and the client gets `504 Gateway Timeout`. `0` disables the timeout. |
+
+The server also exposes two unprefixed probes for orchestrators:
+
+| Route      | Status                                                          |
+|------------|-----------------------------------------------------------------|
+| `/healthz` | Liveness — always `200 {"status":"ok"}` while the process runs. |
+| `/readyz`  | Readiness — `200 {"status":"ready", …}` once at least one dataset is registered; `503` during startup. |
+
+These routes are always mounted at the bare host root, regardless of `prefix`.
 
 ### Source
 

@@ -22,6 +22,30 @@ pub async fn health() -> HttpResponse {
         .body(r#"{"status":"ok"}"#)
 }
 
+/// Liveness probe. Mounted outside the configured `prefix` at a fixed
+/// path so orchestrators don't need to know how the server is exposed.
+#[get("/healthz")]
+pub async fn healthz() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .body(r#"{"status":"ok"}"#)
+}
+
+/// Readiness probe. Returns `200` once at least one dataset is registered
+/// (i.e. the registry finished loading at startup), `503` otherwise.
+#[get("/readyz")]
+pub async fn readyz(backend: BackendData) -> HttpResponse {
+    let names = backend.names();
+    if names.is_empty() {
+        HttpResponse::ServiceUnavailable()
+            .content_type("application/json")
+            .body(r#"{"status":"not ready","reason":"no datasets registered"}"#)
+    } else {
+        let body = format!(r#"{{"status":"ready","datasets":{}}}"#, names.len());
+        HttpResponse::Ok().content_type("application/json").body(body)
+    }
+}
+
 #[get("/api/datasets")]
 pub async fn list_datasets(backend: BackendData) -> HttpResponse {
     let summaries: Vec<_> = backend

@@ -2434,6 +2434,7 @@ dependencies = [
  "parquet",
  "serde",
  "serde_json",
+ "tokio",
  "toml",
 ]
 
@@ -2466,6 +2467,7 @@ name = "datapress-duckdb"
 version = "0.1.17"
 dependencies = [
  "actix-web",
+ "arrow",
  "async-trait",
  "datapress-core",
  "duckdb",
