@@ -10,8 +10,13 @@
 ```
                                                                
 
-[![PyPI](https://img.shields.io/pypi/v/datapress.svg)](https://pypi.org/project/datapress/)
-[![Python](https://img.shields.io/pypi/pyversions/datapress.svg)](https://pypi.org/project/datapress/)
+[![PyPI](https://img.shields.io/pypi/v/datap-rs.svg)](https://pypi.org/project/datap-rs/)
+[![Python](https://img.shields.io/pypi/pyversions/datap-rs.svg)](https://pypi.org/project/datap-rs/)![PyPI - Downloads](https://img.shields.io/pypi/dm/datap-rs)![Rust](https://img.shields.io/badge/built%20with-Rust-orange?logo=rust)
+![DuckDB](https://img.shields.io/badge/backend-DuckDB-yellow?logo=duckdb)
+![DataFusion](https://img.shields.io/badge/backend-DataFusion-blue)
+
+
+
 
 **A fast multi-backend dataset HTTP server, built in Rust and driven from Python.**
 

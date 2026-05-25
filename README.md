@@ -1,3 +1,7 @@
+![Rust](https://img.shields.io/badge/built%20with-Rust-orange?logo=rust)
+![DuckDB](https://img.shields.io/badge/backend-DuckDB-yellow?logo=duckdb)
+![DataFusion](https://img.shields.io/badge/backend-DataFusion-blue?logo=apache)![actix](https://img.shields.io/badge/backend-actix-orange?logo=actix)
+
 # datap-rs
 
 A Rust **Cargo workspace** that exposes one or more **Parquet / Delta
