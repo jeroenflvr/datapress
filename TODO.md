@@ -90,11 +90,31 @@ client's perspective.
 
 ### Testing & CI
 
-- Integration tests for handlers, the full predicate matrix, Arrow IPC
-  round-trip, error paths.
+- Done: handler integration tests, DuckDB end-to-end with the full
+  predicate matrix, Arrow IPC round-trip, and `.github/workflows/ci.yml`
+  (clippy + workspace test). `cargo fmt --check` left out of CI because
+  the codebase relies on hand-aligned formatting that conflicts with
+  rustfmt's default rules — pick this up when a `rustfmt.toml` is in.
 - Criterion benchmarks committed so perf claims are reproducible.
-- CI matrix: `clippy` + `fmt` + `test` + `cargo audit` + semver checks.
+- `cargo audit` + semver checks in CI.
 - Fuzz target for the DSL parser.
+
+### DuckDB GROUP BY: `ORDER BY <alias>` rejection (regression risk)
+
+The DuckDB JSON path emits `SELECT json_object('city', "city", 'total',
+SUM("score"), …) FROM … GROUP BY "city" ORDER BY "total"` — but
+`"total"` is only a key inside `json_object`, never exposed to the
+outer SQL scope, so DuckDB rejects the `ORDER BY`. Either:
+
+- wrap the projection in a subquery so the aliases are visible to
+  `ORDER BY`, or
+- rewrite `ORDER BY <alias>` to the corresponding aggregation
+  expression at plan time.
+
+The integration test
+`crates/duckdb/tests/end_to_end.rs::group_by_with_default_count_and_named_aggs`
+currently asserts the aggregation values without an `ORDER BY` to
+work around this.
 
 ### Python wrapper polish
 

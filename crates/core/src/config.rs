@@ -504,3 +504,172 @@ impl DatasetConfig {
             .unwrap_or_else(|| "us-east-1".to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_defaults() {
+        let s = ServerConfig::default();
+        assert_eq!(s.backend, Backend::Datafusion);
+        assert_eq!(s.port, 8080);
+        assert!(s.compress);
+        assert_eq!(s.max_body_bytes, 1024 * 1024);
+        assert_eq!(s.request_timeout_ms, 30_000);
+        assert_eq!(s.prefix, "");
+        assert!(s.listen.is_loopback());
+    }
+
+    #[test]
+    fn server_overrides_from_toml() {
+        let toml = r#"
+            [server]
+            backend = "duckdb"
+            port = 9000
+            prefix = "/datapress"
+            compress = false
+            max_body_bytes = 4096
+            request_timeout_ms = 0
+            [[dataset]]
+            name = "x"
+            source.kind = "parquet"
+            source.location = "/tmp/missing.parquet"
+        "#;
+        let cfg: AppConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.server.backend, Backend::Duckdb);
+        assert_eq!(cfg.server.port, 9000);
+        assert_eq!(cfg.server.prefix, "/datapress");
+        assert!(!cfg.server.compress);
+        assert_eq!(cfg.server.max_body_bytes, 4096);
+        assert_eq!(cfg.server.request_timeout_ms, 0);
+        assert_eq!(cfg.datasets.len(), 1);
+        assert_eq!(cfg.datasets[0].name, "x");
+        assert!(cfg.datasets[0].dict_encode); // default
+    }
+
+    #[test]
+    fn validate_rejects_bad_prefix() {
+        let bad = ["no-leading-slash", "/trailing/"];
+        for p in bad {
+            let cfg = AppConfig {
+                server: ServerConfig { prefix: p.to_string(), ..Default::default() },
+                datasets: vec![],
+            };
+            assert!(cfg.validate().is_err(), "prefix {p:?} should fail");
+        }
+    }
+
+    #[test]
+    fn validate_rejects_no_datasets() {
+        let cfg = AppConfig {
+            server: ServerConfig::default(),
+            datasets: vec![],
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(matches!(err, AppError::Internal(m) if m.contains("[[dataset]]")));
+    }
+
+    #[test]
+    fn validate_rejects_bad_dataset_name() {
+        let cfg: AppConfig = toml::from_str(r#"
+            [[dataset]]
+            name = "bad name!"
+            source.kind = "parquet"
+            source.location = "/tmp/whatever"
+        "#).unwrap();
+        let err = cfg.validate().unwrap_err();
+        assert!(matches!(err, AppError::Internal(m) if m.contains("alphanumeric")));
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_names() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!(
+            "dp-dup-test-{}", std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("a.parquet");
+        std::fs::File::create(&f).unwrap().write_all(b"x").unwrap();
+        let path = f.to_str().unwrap();
+
+        let cfg: AppConfig = toml::from_str(&format!(r#"
+            [[dataset]]
+            name = "a"
+            source.kind = "parquet"
+            source.location = "{path}"
+            [[dataset]]
+            name = "a"
+            source.kind = "parquet"
+            source.location = "{path}"
+        "#)).unwrap();
+        let err = cfg.validate().expect_err("expected error");
+        assert!(matches!(err, AppError::Internal(m) if m.contains("duplicate")));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn s3_bucket_parsing() {
+        let mk = |loc: &str| SourceConfig { kind: SourceKind::Parquet, location: loc.into() };
+        let s1 = mk("s3://bucket/path/key");
+        assert_eq!(s1.s3_bucket().unwrap(), ("bucket", "path/key"));
+        let s2 = mk("s3://only-bucket");
+        assert_eq!(s2.s3_bucket().unwrap(), ("only-bucket", ""));
+        assert!(mk("s3:///nokey").s3_bucket().is_err());
+        assert!(mk("/local/path").s3_bucket().is_err());
+    }
+
+    #[test]
+    fn env_prefix_sanitises_name() {
+        let mk = |name: &str| DatasetConfig {
+            name: name.into(),
+            source: SourceConfig { kind: SourceKind::Parquet, location: "x".into() },
+            s3: None,
+            index: IndexConfig::default(),
+            columns: vec![],
+            dict_encode: true,
+            lazy: false,
+        };
+        assert_eq!(mk("accidents").env_prefix(),  "ACCIDENTS");
+        assert_eq!(mk("sales.eu-1").env_prefix(), "SALES_EU_1");
+        assert_eq!(mk("a_b.c-d").env_prefix(),    "A_B_C_D");
+    }
+
+    #[test]
+    fn resolve_local_parquet_single_file_and_dir() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!(
+            "dp-cfg-test-{}", std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("a.parquet");
+        let mut fh = std::fs::File::create(&f).unwrap();
+        fh.write_all(b"not really parquet").unwrap();
+
+        let mk = |loc: &str| DatasetConfig {
+            name: "ds".into(),
+            source: SourceConfig { kind: SourceKind::Parquet, location: loc.into() },
+            s3: None,
+            index: IndexConfig::default(),
+            columns: vec![],
+            dict_encode: true,
+            lazy: false,
+        };
+
+        // Direct file.
+        let files = mk(f.to_str().unwrap()).resolve_local_parquet_files().unwrap();
+        assert_eq!(files, vec![f.clone()]);
+
+        // Directory.
+        let files = mk(dir.to_str().unwrap()).resolve_local_parquet_files().unwrap();
+        assert_eq!(files, vec![f.clone()]);
+
+        // Missing path.
+        assert!(mk("/no/such/place.parquet").resolve_local_parquet_files().is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

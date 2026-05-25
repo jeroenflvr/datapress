@@ -18,6 +18,9 @@ env_logger.workspace  = true
 duckdb.workspace = true
 arrow.workspace  = true
 
+[dev-dependencies]
+tempfile = "3"
+
 [[bin]]
 name = "datapress-duckdb"
 path = "src/bin/datapress-duckdb.rs"

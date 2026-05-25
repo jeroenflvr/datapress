@@ -26,3 +26,7 @@ duckdb     = { workspace = true, optional = true }
 arrow      = { workspace = true, optional = true }
 parquet    = { workspace = true, optional = true }
 datafusion = { workspace = true, optional = true }
+
+[dev-dependencies]
+arrow = { workspace = true }
+actix-rt = "2"

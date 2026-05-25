@@ -71,3 +71,47 @@ impl DatasetSchema {
         format!("\"{}\"", name.replace('"', "\"\""))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn s() -> DatasetSchema {
+        DatasetSchema::new("ds", vec![
+            ColumnInfo { name: "Id".into(),    logical: LogicalType::Int,      sql_type: "BIGINT".into(),    nullable: false },
+            ColumnInfo { name: "When".into(),  logical: LogicalType::Temporal, sql_type: "TIMESTAMP".into(), nullable: true  },
+        ])
+    }
+
+    #[test]
+    fn quote_ident_plain() {
+        assert_eq!(DatasetSchema::quote_ident("foo"), "\"foo\"");
+    }
+
+    #[test]
+    fn quote_ident_escapes_inner_quote() {
+        assert_eq!(DatasetSchema::quote_ident("a\"b"), "\"a\"\"b\"");
+    }
+
+    #[test]
+    fn find_case_insensitive_returns_canonical_name() {
+        let sch = s();
+        let c = sch.find("ID").expect("found");
+        assert_eq!(c.name, "Id");
+    }
+
+    #[test]
+    fn find_unknown_column() {
+        let sch = s();
+        let err = sch.find("nope").unwrap_err();
+        assert!(matches!(err, AppError::UnknownColumn(_)));
+    }
+
+    #[test]
+    fn needs_cast_only_temporal() {
+        assert!(LogicalType::Temporal.needs_cast());
+        for t in [LogicalType::Bool, LogicalType::Int, LogicalType::Float, LogicalType::Utf8, LogicalType::Other] {
+            assert!(!t.needs_cast());
+        }
+    }
+}

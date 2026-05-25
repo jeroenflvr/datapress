@@ -261,3 +261,225 @@ pub struct CountRequest {
     #[serde(default)]
     pub predicates: Vec<Predicate>,
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::{ColumnInfo, DatasetSchema, LogicalType};
+
+    fn schema() -> DatasetSchema {
+        DatasetSchema::new("t", vec![
+            ColumnInfo { name: "id".into(),     logical: LogicalType::Int,     sql_type: "BIGINT".into(),   nullable: false },
+            ColumnInfo { name: "name".into(),   logical: LogicalType::Utf8,    sql_type: "VARCHAR".into(),  nullable: true  },
+            ColumnInfo { name: "score".into(),  logical: LogicalType::Float,   sql_type: "DOUBLE".into(),   nullable: true  },
+            ColumnInfo { name: "Mixed".into(),  logical: LogicalType::Utf8,    sql_type: "VARCHAR".into(),  nullable: true  },
+        ])
+    }
+
+    fn empty_req() -> QueryRequest {
+        QueryRequest {
+            columns: vec![],
+            predicates: vec![],
+            group_by: vec![],
+            aggregations: vec![],
+            distinct: false,
+            order_by: vec![],
+            limit: None,
+            page: 1,
+            page_size: 1000,
+        }
+    }
+
+    // ---- agg_plan -----------------------------------------------------------
+
+    #[test]
+    fn agg_plan_none_when_no_group_by() {
+        let r = empty_req();
+        assert!(r.agg_plan(&schema()).unwrap().is_none());
+    }
+
+    #[test]
+    fn agg_plan_rejects_aggs_without_group_by() {
+        let mut r = empty_req();
+        r.aggregations = vec![Aggregation { col: Some("score".into()), op: "sum".into(), alias: None }];
+        let err = r.agg_plan(&schema()).err().expect("expected error");
+        assert!(matches!(err, AppError::InvalidValue(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn agg_plan_implicit_count_star() {
+        let mut r = empty_req();
+        r.group_by = vec!["name".into()];
+        let plan = r.agg_plan(&schema()).unwrap().unwrap();
+        assert_eq!(plan.group_cols, vec!["name"]);
+        assert_eq!(plan.aggs.len(), 1);
+        assert_eq!(plan.aggs[0].alias, "count");
+        assert!(plan.aggs[0].col.is_none());
+        assert!(matches!(plan.aggs[0].op, AggOp::Count));
+    }
+
+    #[test]
+    fn agg_plan_default_alias_format() {
+        let mut r = empty_req();
+        r.group_by = vec!["name".into()];
+        r.aggregations = vec![
+            Aggregation { col: Some("score".into()), op: "Sum".into(),  alias: None },
+            Aggregation { col: Some("Mixed".into()), op: "MAX".into(),  alias: Some("hi".into()) },
+        ];
+        let plan = r.agg_plan(&schema()).unwrap().unwrap();
+        assert_eq!(plan.aggs[0].alias, "sum_score");
+        assert_eq!(plan.aggs[1].alias, "hi");
+        // Canonical column name is preserved from the schema (case fix).
+        assert_eq!(plan.aggs[1].col.as_deref(), Some("Mixed"));
+    }
+
+    #[test]
+    fn agg_plan_unknown_op() {
+        let mut r = empty_req();
+        r.group_by = vec!["name".into()];
+        r.aggregations = vec![Aggregation { col: Some("score".into()), op: "median".into(), alias: None }];
+        let err = r.agg_plan(&schema()).err().expect("expected error");
+        assert!(matches!(err, AppError::InvalidValue(m) if m.contains("median")));
+    }
+
+    #[test]
+    fn agg_plan_non_count_requires_col() {
+        let mut r = empty_req();
+        r.group_by = vec!["name".into()];
+        r.aggregations = vec![Aggregation { col: None, op: "avg".into(), alias: None }];
+        let err = r.agg_plan(&schema()).err().expect("expected error");
+        assert!(matches!(err, AppError::InvalidValue(m) if m.contains("avg")));
+    }
+
+    #[test]
+    fn agg_plan_unknown_group_col() {
+        let mut r = empty_req();
+        r.group_by = vec!["nope".into()];
+        let err = r.agg_plan(&schema()).err().expect("expected error");
+        assert!(matches!(err, AppError::UnknownColumn(_)));
+    }
+
+    #[test]
+    fn agg_plan_distinct_conflicts_with_group_by() {
+        let mut r = empty_req();
+        r.distinct = true;
+        r.group_by = vec!["name".into()];
+        let err = r.agg_plan(&schema()).err().expect("expected error");
+        assert!(matches!(err, AppError::InvalidValue(_)));
+    }
+
+    // ---- order_by_sql -------------------------------------------------------
+
+    #[test]
+    fn order_by_none_when_empty() {
+        let r = empty_req();
+        assert!(r.order_by_sql(&schema(), None).unwrap().is_none());
+    }
+
+    #[test]
+    fn order_by_default_asc_and_quoting() {
+        let mut r = empty_req();
+        r.order_by = vec![OrderBy { col: "ID".into(), dir: None }];
+        let sql = r.order_by_sql(&schema(), None).unwrap().unwrap();
+        // Canonical name from schema preserved + quoted.
+        assert_eq!(sql, "\"id\" ASC");
+    }
+
+    #[test]
+    fn order_by_desc_case_insensitive() {
+        let mut r = empty_req();
+        r.order_by = vec![OrderBy { col: "name".into(), dir: Some("DESC".into()) }];
+        let sql = r.order_by_sql(&schema(), None).unwrap().unwrap();
+        assert_eq!(sql, "\"name\" DESC");
+    }
+
+    #[test]
+    fn order_by_bad_direction() {
+        let mut r = empty_req();
+        r.order_by = vec![OrderBy { col: "id".into(), dir: Some("backwards".into()) }];
+        let err = r.order_by_sql(&schema(), None).unwrap_err();
+        assert!(matches!(err, AppError::InvalidValue(m) if m.contains("backwards")));
+    }
+
+    #[test]
+    fn order_by_unknown_col_no_plan() {
+        let mut r = empty_req();
+        r.order_by = vec![OrderBy { col: "missing".into(), dir: None }];
+        let err = r.order_by_sql(&schema(), None).unwrap_err();
+        assert!(matches!(err, AppError::UnknownColumn(_)));
+    }
+
+    #[test]
+    fn order_by_with_plan_restricts_to_outputs() {
+        let mut r = empty_req();
+        r.group_by = vec!["name".into()];
+        r.aggregations = vec![Aggregation { col: Some("score".into()), op: "sum".into(), alias: Some("total".into()) }];
+        let plan = r.agg_plan(&schema()).unwrap().unwrap();
+
+        // Allowed: group col + alias.
+        r.order_by = vec![
+            OrderBy { col: "name".into(),  dir: Some("asc".into())  },
+            OrderBy { col: "TOTAL".into(), dir: Some("desc".into()) },
+        ];
+        let sql = r.order_by_sql(&schema(), Some(&plan)).unwrap().unwrap();
+        assert_eq!(sql, "\"name\" ASC, \"total\" DESC");
+
+        // Not allowed: raw schema column that isn't in the group/agg output.
+        r.order_by = vec![OrderBy { col: "id".into(), dir: None }];
+        let err = r.order_by_sql(&schema(), Some(&plan)).unwrap_err();
+        assert!(matches!(err, AppError::UnknownColumn(_)));
+    }
+
+    // ---- effective_limit_offset --------------------------------------------
+
+    #[test]
+    fn limit_offset_first_page_default() {
+        let r = empty_req();
+        assert_eq!(r.effective_limit_offset(1000), (1000, 0));
+    }
+
+    #[test]
+    fn limit_offset_pagination() {
+        let mut r = empty_req();
+        r.page = 3;
+        r.page_size = 50;
+        assert_eq!(r.effective_limit_offset(1000), (50, 100));
+    }
+
+    #[test]
+    fn limit_offset_caps_page_size_to_max() {
+        let mut r = empty_req();
+        r.page_size = 10_000;
+        assert_eq!(r.effective_limit_offset(1000), (1000, 0));
+    }
+
+    #[test]
+    fn limit_offset_page_zero_treated_as_one() {
+        let mut r = empty_req();
+        r.page = 0;
+        r.page_size = 10;
+        assert_eq!(r.effective_limit_offset(1000), (10, 0));
+    }
+
+    #[test]
+    fn limit_offset_top_level_cap_truncates_last_page() {
+        let mut r = empty_req();
+        r.page = 2;
+        r.page_size = 50;
+        r.limit = Some(75); // offset 50, only 25 rows remain under cap.
+        assert_eq!(r.effective_limit_offset(1000), (25, 50));
+    }
+
+    #[test]
+    fn limit_offset_top_level_cap_exhausted_returns_zero() {
+        let mut r = empty_req();
+        r.page = 3;
+        r.page_size = 50;
+        r.limit = Some(75); // offset 100 >= 75 -> empty page.
+        assert_eq!(r.effective_limit_offset(1000), (0, 100));
+    }
+}

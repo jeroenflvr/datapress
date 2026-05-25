@@ -89,6 +89,7 @@ version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92589714878ca59a7626ea19734f0e07a6a875197eec751bb5d3f99e64998c63"
 dependencies = [
+ "actix-macros",
  "futures-core",
  "tokio",
 ]
@@ -2424,6 +2425,7 @@ dependencies = [
 name = "datapress-core"
 version = "0.1.17"
 dependencies = [
+ "actix-rt",
  "actix-web",
  "arrow",
  "async-trait",
@@ -2475,6 +2477,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 

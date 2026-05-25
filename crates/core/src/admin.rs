@@ -63,3 +63,25 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     }
     diff == 0
 }
+
+#[cfg(test)]
+mod tests {
+    use super::constant_time_eq;
+
+    #[test]
+    fn ct_eq_equal() {
+        assert!(constant_time_eq(b"hunter2", b"hunter2"));
+        assert!(constant_time_eq(b"", b""));
+    }
+
+    #[test]
+    fn ct_eq_different_content() {
+        assert!(!constant_time_eq(b"hunter2", b"hunter3"));
+    }
+
+    #[test]
+    fn ct_eq_different_length() {
+        assert!(!constant_time_eq(b"abc", b"abcd"));
+        assert!(!constant_time_eq(b"abcd", b"abc"));
+    }
+}
