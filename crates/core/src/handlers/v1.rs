@@ -1,52 +1,51 @@
-//! Generic actix-web handlers shared by every backend.
+//! Version 1 of the dataset HTTP API.
 //!
-//! These wire up the HTTP surface against the [`Backend`] trait, so adding
-//! a new backend is just a matter of implementing the trait and calling
-//! [`crate::server::serve`].
+//! Routes (relative to whichever scope the caller mounts this module
+//! under — typically `/api/v1`):
+//!
+//! | Method | Path                              | Description                          |
+//! |--------|-----------------------------------|--------------------------------------|
+//! | GET    | `/datasets`                       | List datasets with summaries         |
+//! | GET    | `/datasets/{name}/schema`         | Full schema + sample row             |
+//! | POST   | `/datasets/{name}/query`          | Query (JSON or Arrow IPC)            |
+//! | POST   | `/datasets/{name}/count`          | Count matching rows                  |
+//! | POST   | `/datasets/{name}/reload`         | Rebuild dataset (admin-only)         |
+//!
+//! Handlers are plain `async fn` (not route-macro structs) so the same
+//! version can be mounted under multiple scopes — see
+//! [`crate::server::serve`] for the canonical `/api/v1` mount and the
+//! legacy `/api` alias.
 
-use std::sync::Arc;
-
-use actix_web::{HttpRequest, HttpResponse, ResponseError, get, post, web};
+use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 
 use crate::admin;
-use crate::backend::Backend;
+use crate::handlers::{ARROW_IPC_MIME, BackendData, wants_arrow};
 use crate::models::{CountRequest, QueryRequest};
 
-/// Convenience alias — every handler extracts the backend through this.
-pub type BackendData = web::Data<Arc<dyn Backend>>;
-
-#[get("/health")]
-pub async fn health() -> HttpResponse {
-    HttpResponse::Ok()
-        .content_type("application/json")
-        .body(r#"{"status":"ok"}"#)
+/// Register every v1 route on the provided actix [`web::ServiceConfig`].
+///
+/// Call this inside a [`web::scope`] — usually `/api/v1` — so paths come
+/// out as `/api/v1/datasets/...`.
+pub fn configure(cfg: &mut web::ServiceConfig) {
+    cfg.route("/datasets",                web::get().to(list_datasets))
+        .route("/datasets/{name}/schema", web::get().to(get_schema))
+        .route("/datasets/{name}/query",  web::post().to(query_dataset))
+        .route("/datasets/{name}/count",  web::post().to(count_dataset))
+        .route("/datasets/{name}/reload", web::post().to(reload_dataset));
 }
 
-/// Liveness probe. Mounted outside the configured `prefix` at a fixed
-/// path so orchestrators don't need to know how the server is exposed.
-#[get("/healthz")]
-pub async fn healthz() -> HttpResponse {
-    HttpResponse::Ok()
-        .content_type("application/json")
-        .body(r#"{"status":"ok"}"#)
-}
+/// Route table for log_routes-style introspection. Each entry is
+/// `(method, path-suffix)` relative to the version's mount scope.
+pub const ROUTES: &[(&str, &str)] = &[
+    ("GET",  "/datasets"),
+    ("GET",  "/datasets/{name}/schema"),
+    ("POST", "/datasets/{name}/query"),
+    ("POST", "/datasets/{name}/count"),
+    ("POST", "/datasets/{name}/reload"),
+];
 
-/// Readiness probe. Returns `200` once at least one dataset is registered
-/// (i.e. the registry finished loading at startup), `503` otherwise.
-#[get("/readyz")]
-pub async fn readyz(backend: BackendData) -> HttpResponse {
-    let names = backend.names();
-    if names.is_empty() {
-        HttpResponse::ServiceUnavailable()
-            .content_type("application/json")
-            .body(r#"{"status":"not ready","reason":"no datasets registered"}"#)
-    } else {
-        let body = format!(r#"{{"status":"ready","datasets":{}}}"#, names.len());
-        HttpResponse::Ok().content_type("application/json").body(body)
-    }
-}
+// ---------------------------------------------------------------- handlers --
 
-#[get("/api/datasets")]
 pub async fn list_datasets(backend: BackendData) -> HttpResponse {
     let summaries: Vec<_> = backend
         .names()
@@ -56,7 +55,6 @@ pub async fn list_datasets(backend: BackendData) -> HttpResponse {
     HttpResponse::Ok().json(serde_json::json!({ "datasets": summaries }))
 }
 
-#[get("/api/datasets/{name}/schema")]
 pub async fn get_schema(
     backend: BackendData,
     path:    web::Path<String>,
@@ -78,7 +76,6 @@ pub async fn get_schema(
     HttpResponse::Ok().content_type("application/json").body(body)
 }
 
-#[post("/api/datasets/{name}/query")]
 pub async fn query_dataset(
     http:    HttpRequest,
     backend: BackendData,
@@ -96,7 +93,7 @@ pub async fn query_dataset(
     if wants_arrow(&http) {
         return match backend.query_arrow(&name, &req).await {
             Ok(bytes) => HttpResponse::Ok()
-                .content_type("application/vnd.apache.arrow.stream")
+                .content_type(ARROW_IPC_MIME)
                 .insert_header(("X-Page", page.to_string()))
                 .insert_header(("X-Page-Size", page_size.to_string()))
                 .body(bytes),
@@ -113,28 +110,6 @@ pub async fn query_dataset(
     }
 }
 
-const ARROW_IPC_MIME: &str = "application/vnd.apache.arrow.stream";
-
-/// True if the caller wants Arrow IPC: either `?format=arrow` in the
-/// query string, or `Accept` lists `application/vnd.apache.arrow.stream`.
-/// A bare `Accept: */*` does **not** count — JSON stays the default.
-fn wants_arrow(http: &HttpRequest) -> bool {
-    let qs = http.query_string();
-    if !qs.is_empty()
-        && qs.split('&').any(|kv| matches!(kv.split_once('='), Some(("format", v)) if v.eq_ignore_ascii_case("arrow")))
-    {
-        return true;
-    }
-    http.headers()
-        .get(actix_web::http::header::ACCEPT)
-        .and_then(|h| h.to_str().ok())
-        .map(|s| s.split(',').any(|part| {
-            part.split(';').next().unwrap_or("").trim().eq_ignore_ascii_case(ARROW_IPC_MIME)
-        }))
-        .unwrap_or(false)
-}
-
-#[post("/api/datasets/{name}/count")]
 pub async fn count_dataset(
     backend: BackendData,
     path:    web::Path<String>,
@@ -152,7 +127,6 @@ pub async fn count_dataset(
 /// Admin endpoint: rebuild a dataset from disk and atomically swap it in.
 /// Requires `X-Admin-Token` matching `$ADMIN_TOKEN`. Disabled if the env
 /// var is unset.
-#[post("/api/datasets/{name}/reload")]
 pub async fn reload_dataset(
     req:     HttpRequest,
     backend: BackendData,

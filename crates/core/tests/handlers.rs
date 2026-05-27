@@ -129,11 +129,10 @@ fn mount(backend: Arc<dyn Backend>) -> App<
         .service(handlers::healthz)
         .service(handlers::readyz)
         .service(handlers::health)
-        .service(handlers::list_datasets)
-        .service(handlers::get_schema)
-        .service(handlers::query_dataset)
-        .service(handlers::count_dataset)
-        .service(handlers::reload_dataset)
+        // Canonical versioned scope.
+        .service(web::scope("/api/v1").configure(handlers::v1::configure))
+        // Legacy alias kept for back-compat (tested below).
+        .service(web::scope("/api").configure(handlers::v1::configure))
 }
 
 // ----------------------------------------------------------------- tests --
@@ -294,4 +293,68 @@ async fn arbitrary_accept_does_not_force_arrow() {
     let resp = test::call_service(&app, req).await;
     let ct = resp.headers().get("content-type").unwrap().to_str().unwrap();
     assert!(ct.starts_with("application/json"));
+}
+
+// ------------------------------------------------------------- v1 routing --
+//
+// Every route above is also reachable under the canonical `/api/v1/...`
+// scope. The existing tests target the legacy `/api/...` alias so we
+// keep regression coverage on both mount points.
+
+#[actix_web::test]
+async fn v1_list_datasets() {
+    let app  = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+    let req  = test::TestRequest::get().uri("/api/v1/datasets").to_request();
+    let body: Value = test::call_and_read_body_json(&app, req).await;
+    assert_eq!(body["datasets"][0]["name"], "people");
+}
+
+#[actix_web::test]
+async fn v1_schema() {
+    let app  = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+    let req  = test::TestRequest::get()
+        .uri("/api/v1/datasets/people/schema").to_request();
+    let body: Value = test::call_and_read_body_json(&app, req).await;
+    assert_eq!(body["name"], "people");
+}
+
+#[actix_web::test]
+async fn v1_query_json_and_arrow() {
+    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+
+    // JSON envelope.
+    let req = test::TestRequest::post()
+        .uri("/api/v1/datasets/people/query")
+        .set_json(serde_json::json!({}))
+        .to_request();
+    let body: Value = test::call_and_read_body_json(&app, req).await;
+    assert_eq!(body["data"][0]["name"], "Anna");
+
+    // Arrow IPC via query param.
+    let req = test::TestRequest::post()
+        .uri("/api/v1/datasets/people/query?format=arrow")
+        .set_json(serde_json::json!({}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.headers().get("content-type").unwrap(),
+        "application/vnd.apache.arrow.stream",
+    );
+}
+
+#[actix_web::test]
+async fn v1_count_and_reload_guard() {
+    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+
+    let req  = test::TestRequest::post()
+        .uri("/api/v1/datasets/people/count")
+        .set_json(serde_json::json!({}))
+        .to_request();
+    let body: Value = test::call_and_read_body_json(&app, req).await;
+    assert_eq!(body["count"], 5);
+
+    let req  = test::TestRequest::post()
+        .uri("/api/v1/datasets/people/reload").to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }

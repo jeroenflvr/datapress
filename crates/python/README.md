@@ -101,7 +101,7 @@ Four classes, no module-level state:
 
 | Class             | Purpose                                                              |
 |-------------------|----------------------------------------------------------------------|
-| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `request_timeout_ms`. |
+| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `request_timeout_ms`, `shutdown_timeout_secs`. |
 | `DatasetConfig`   | One dataset: `name`, `source`, `format`, `mode`, optional S3 + index.|
 | `S3Config`        | S3 / S3-compatible credentials and endpoint config.                  |
 | `DataPress`       | Built from a `DataPressConfig` + list of `DatasetConfig`. `await .run()`. |
@@ -168,6 +168,7 @@ DataPressConfig(
     port=8000,
     max_body_bytes=1_048_576,    # 413 above this; default 1 MiB
     request_timeout_ms=30_000,   # 504 above this; 0 disables; default 30s
+    shutdown_timeout_secs=30,    # SIGTERM/SIGINT grace period, in seconds
 )
 ```
 
@@ -175,6 +176,13 @@ Bodies larger than `max_body_bytes` are rejected with `413 Payload Too
 Large`. Handlers that take longer than `request_timeout_ms` are cancelled
 and the client sees `504 Gateway Timeout`. Set the timeout to `0` to
 disable it entirely (useful behind a proxy that already enforces one).
+
+### Graceful shutdown
+
+On `SIGTERM` or `SIGINT` (Ctrl+C) the server stops accepting new
+connections, then waits up to `shutdown_timeout_secs` seconds for
+in-flight requests to finish before stopping workers. Set it lower for
+faster restarts, higher for long-running query handlers.
 
 ### Client
 
@@ -185,7 +193,7 @@ from datap_rs import DataPressClient
 
 c = DataPressClient("http://127.0.0.1:8000")
 c.healthz()                                  # -> {"status": "ok"}
-c.readyz()                                   # -> {"status": "ready", ...}
+c.readyz()                                   # -> {"status": "ready", "datasets": N}
 c.datasets()                                 # -> ["accidents", ...]
 c.schema("accidents")                        # -> dict
 c.count("accidents")                         # -> int

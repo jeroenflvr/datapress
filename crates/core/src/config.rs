@@ -73,6 +73,11 @@ pub struct ServerConfig {
     /// produced a response within this budget the request is aborted with
     /// `504 Gateway Timeout`. Default `30_000` (30 s). Set `0` to disable.
     pub request_timeout_ms: u64,
+    /// Grace period for in-flight requests after the server has received
+    /// `SIGTERM` / `SIGINT`, in seconds. The listening socket is closed
+    /// immediately; existing connections then have up to this many
+    /// seconds to finish before workers are force-stopped. Default `30`.
+    pub shutdown_timeout_secs: u64,
 }
 
 impl Default for ServerConfig {
@@ -86,6 +91,7 @@ impl Default for ServerConfig {
             compress: true,
             max_body_bytes:     1024 * 1024,
             request_timeout_ms: 30_000,
+            shutdown_timeout_secs: 30,
         }
     }
 }

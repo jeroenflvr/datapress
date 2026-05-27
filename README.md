@@ -111,6 +111,7 @@ port    = 8080
 # compress = true        # negotiate gzip/brotli/zstd via Accept-Encoding (default)
 # max_body_bytes     = 1048576  # 413 above this; default 1 MiB
 # request_timeout_ms = 30000    # 504 above this; 0 disables; default 30s
+# shutdown_timeout_secs = 30    # SIGTERM/SIGINT grace period, in seconds
 
 [[dataset]]
 name = "accidents"                    # used in the URL: /api/datasets/accidents/...
@@ -138,15 +139,22 @@ name = "accidents"                    # used in the URL: /api/datasets/accidents
 | `compress`           | `true`     | Negotiate response compression via `Accept-Encoding` (gzip / brotli / zstd). Disable when sitting behind a proxy that compresses for you. |
 | `max_body_bytes`     | `1048576`  | Maximum accepted JSON request body, in bytes. Bigger bodies are rejected with `413 Payload Too Large`. |
 | `request_timeout_ms` | `30000`    | Per-request handler timeout, in milliseconds. Long-running handlers are cancelled and the client gets `504 Gateway Timeout`. `0` disables the timeout. |
+| `shutdown_timeout_secs` | `30`     | Grace period for in-flight requests after the process receives `SIGTERM` / `SIGINT`, in seconds. The listening socket is closed immediately; existing connections then have up to this many seconds to finish before workers are force-stopped. |
 
-The server also exposes two unprefixed probes for orchestrators:
+The server exposes three probe endpoints. `/healthz` and `/readyz` are
+mounted at the bare host root (regardless of `prefix`) so orchestrators
+don't need to know how the service is exposed. `/health` lives under
+`prefix` and is intended for in-app health checks.
 
-| Route      | Status                                                          |
-|------------|-----------------------------------------------------------------|
-| `/healthz` | Liveness — always `200 {"status":"ok"}` while the process runs. |
-| `/readyz`  | Readiness — `200 {"status":"ready", …}` once at least one dataset is registered; `503` during startup. |
+| Route      | Status                                                                 | Body                                                                       |
+|------------|------------------------------------------------------------------------|----------------------------------------------------------------------------|
+| `/healthz` | Liveness — always `200` while the process is running.                  | `{"status":"ok"}`                                                          |
+| `/readyz`  | Readiness — `200` once at least one dataset is registered, `503` otherwise. | `{"status":"ready","datasets":N}` / `{"status":"not ready","reason":"no datasets registered"}` |
+| `{prefix}/health` | App-level liveness — always `200`.                             | `{"status":"ok"}`                                                          |
 
-These routes are always mounted at the bare host root, regardless of `prefix`.
+`/healthz` does not touch the backend, so it stays `200` even while the
+dataset registry is still loading at startup. Use `/readyz` to gate
+traffic until the server is actually able to serve queries.
 
 ### Source
 
@@ -211,6 +219,22 @@ Override the config path with `DATASETS_CONFIG=/path/to/file.toml`.
 ## HTTP API
 
 Four routes, both backends:
+
+### API versioning
+
+The canonical paths live under `/api/v1/...`. The un-versioned
+`/api/...` paths shown in every example below continue to work as a
+**legacy alias** for v1, so existing clients keep running. To upgrade,
+replace `/api/` with `/api/v1/` in your URLs — nothing else changes.
+
+```text
+POST /api/v1/datasets/accidents/query      # canonical (recommended)
+POST /api/datasets/accidents/query         # legacy alias, still v1
+```
+
+When a breaking schema change is introduced, it will ship as `/api/v2`
+in a sibling module ([crates/core/src/handlers/v1.rs](crates/core/src/handlers/v1.rs))
+and v1 will stay mounted alongside it for a deprecation window.
 
 ### `GET /api/datasets`
 

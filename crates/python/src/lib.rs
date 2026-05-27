@@ -294,6 +294,9 @@ impl PyDatasetConfig {
 ///         (1 MiB).
 ///     request_timeout_ms (int): Per-request handler timeout, in
 ///         milliseconds. ``0`` disables the timeout. Default ``30_000``.
+///     shutdown_timeout_secs (int): Grace period for in-flight requests
+///         after the server receives ``SIGTERM`` / ``SIGINT``, in
+///         seconds. Default ``30``.
 #[pyclass(name = "DataPressConfig", module = "datap_rs.datapress", from_py_object)]
 #[derive(Clone)]
 pub struct PyDataPressConfig {
@@ -311,6 +314,8 @@ pub struct PyDataPressConfig {
     #[pyo3(get, set)] pub max_body_bytes:     usize,
     /// Per-request handler timeout, in ms. `0` = disabled.
     #[pyo3(get, set)] pub request_timeout_ms: u64,
+    /// Grace period for in-flight requests on shutdown, in seconds.
+    #[pyo3(get, set)] pub shutdown_timeout_secs: u64,
 }
 
 #[pymethods]
@@ -330,6 +335,9 @@ impl PyDataPressConfig {
     ///         Default ``1_048_576``.
     ///     request_timeout_ms (int): Per-request handler timeout, in ms.
     ///         ``0`` disables. Default ``30_000``.
+    ///     shutdown_timeout_secs (int): Grace period for in-flight
+    ///         requests on ``SIGTERM``/``SIGINT``, in seconds.
+    ///         Default ``30``.
     #[new]
     #[pyo3(signature = (
         backend            = "duckdb".to_string(),
@@ -340,6 +348,7 @@ impl PyDataPressConfig {
         compress           = true,
         max_body_bytes     = 1_048_576,
         request_timeout_ms = 30_000,
+        shutdown_timeout_secs = 30,
     ))]
     #[allow(clippy::too_many_arguments)] // user-facing kwargs surface
     fn new(
@@ -351,10 +360,11 @@ impl PyDataPressConfig {
         compress:           bool,
         max_body_bytes:     usize,
         request_timeout_ms: u64,
+        shutdown_timeout_secs: u64,
     ) -> Self {
         Self {
             backend, listen, port, workers, prefix, compress,
-            max_body_bytes, request_timeout_ms,
+            max_body_bytes, request_timeout_ms, shutdown_timeout_secs,
         }
     }
 }
@@ -392,6 +402,7 @@ impl PyDataPressConfig {
             compress: self.compress,
             max_body_bytes:     self.max_body_bytes,
             request_timeout_ms: self.request_timeout_ms,
+            shutdown_timeout_secs: self.shutdown_timeout_secs,
         })
     }
 }
@@ -490,6 +501,7 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
             compress: cfg.server.compress,
             max_body_bytes:     cfg.server.max_body_bytes,
             request_timeout_ms: cfg.server.request_timeout_ms,
+            shutdown_timeout_secs: cfg.server.shutdown_timeout_secs,
         },
         datasets: cfg.datasets.clone(),
     }

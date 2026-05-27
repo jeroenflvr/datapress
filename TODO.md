@@ -10,8 +10,6 @@ client's perspective.
 - pydantic_settings on the Python side.
 - Add endpoint to reload data (load data into new area, switch pointer,
   delete old area). Requires the dataset to fit twice in memory.
-- Add API versioning `/api/v1/...` and mirror that in the project
-  structure (`handlers/v1`).
 - Allow running behind a reverse proxy with a path prefix
   (e.g. `/fast-api` → `/fast-api/api/datasets/{name}/query`).
 - Python config surface:
