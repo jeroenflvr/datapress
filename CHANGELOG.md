@@ -3,6 +3,22 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.1.18] - 2026-05-27
+
+### Documentation
+
+- Add mkdocs, embedded ([8d3ef25](https://github.com/jeroenflvr/fast-api/commit/8d3ef258f44e3b1a6ca129d72fd06553f7a840d7))
+
+### Features
+
+- Add version endpoint ([fb88a3d](https://github.com/jeroenflvr/fast-api/commit/fb88a3db9b95a222a732b4423386dae288d937d8))
+- Versioned api endpoints ([d803221](https://github.com/jeroenflvr/fast-api/commit/d80322160c035c31dce7360cfa2571b6e137c161))
+- Alignment and doc updates ([07ca7a4](https://github.com/jeroenflvr/fast-api/commit/07ca7a454989176e968f2ab70a8a8ddc661311f0))
+
+### Tests
+
+- Add unit tests ([66eaf87](https://github.com/jeroenflvr/fast-api/commit/66eaf87aa5fa9c447d18d31cfba20ebfb2a078a2))
+
 ## [0.1.17] - 2026-05-25
 
 ### Features
