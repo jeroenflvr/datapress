@@ -14,6 +14,7 @@ use actix_web::{
     Error, HttpResponse,
     body::{BoxBody, EitherBody},
     dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready},
+    error::InternalError,
 };
 
 #[derive(Clone)]
@@ -63,24 +64,30 @@ where
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
         let duration = self.duration;
-        // Stash the HttpRequest so we can synthesise a 504 ServiceResponse
-        // on timeout — the inner future has already consumed `req`.
-        let (http_req, payload) = req.into_parts();
-        let req = ServiceRequest::from_parts(http_req.clone(), payload);
-        let fut = self.service.call(req);
+        // We must NOT clone the inner `HttpRequest` before handing the
+        // `ServiceRequest` off to the next service: actix's routing layer
+        // calls `match_info_mut` (-> `Rc::get_mut().unwrap()`) on the
+        // request, which panics if any other clone of the inner Rc is
+        // still alive. So we capture just the bits we need for logging
+        // by value, and on timeout return an `InternalError` carrying a
+        // pre-built 504 response — actix renders it without ever needing
+        // the original request.
+        let method = req.method().clone();
+        let path   = req.path().to_owned();
+        let fut    = self.service.call(req);
         Box::pin(async move {
             match tokio::time::timeout(duration, fut).await {
                 Ok(Ok(resp)) => Ok(resp.map_into_left_body()),
                 Ok(Err(e))   => Err(e),
                 Err(_) => {
                     log::warn!(
-                        "request {} {} exceeded timeout of {} ms",
-                        http_req.method(), http_req.path(), duration.as_millis(),
+                        "request {method} {path} exceeded timeout of {} ms",
+                        duration.as_millis(),
                     );
                     let resp = HttpResponse::GatewayTimeout()
                         .content_type("application/json")
                         .body(r#"{"error":"request timed out"}"#);
-                    Ok(ServiceResponse::new(http_req, resp).map_into_right_body())
+                    Err(InternalError::from_response("", resp).into())
                 }
             }
         })

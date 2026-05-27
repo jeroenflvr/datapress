@@ -126,8 +126,10 @@ fn mount(backend: Arc<dyn Backend>) -> App<
 > {
     App::new()
         .app_data(web::Data::new(backend))
+        .app_data(web::Data::new(handlers::BuildInfo::new("Mock")))
         .service(handlers::healthz)
         .service(handlers::readyz)
+        .service(handlers::version)
         .service(handlers::health)
         // Canonical versioned scope.
         .service(web::scope("/api/v1").configure(handlers::v1::configure))
@@ -162,6 +164,20 @@ async fn readyz_200_with_dataset_count() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["status"], "ready");
     assert_eq!(body["datasets"], 1);
+}
+
+#[actix_web::test]
+async fn version_returns_build_info() {
+    let app  = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+    let req  = test::TestRequest::get().uri("/version").to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["name"],    "datapress-core");
+    assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(body["backend"], "Mock");
+    // `profile` is "debug" under `cargo test` but assert it's set.
+    assert!(body["profile"].is_string());
 }
 
 #[actix_web::test]

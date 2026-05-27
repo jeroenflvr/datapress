@@ -150,11 +150,25 @@ don't need to know how the service is exposed. `/health` lives under
 |------------|------------------------------------------------------------------------|----------------------------------------------------------------------------|
 | `/healthz` | Liveness — always `200` while the process is running.                  | `{"status":"ok"}`                                                          |
 | `/readyz`  | Readiness — `200` once at least one dataset is registered, `503` otherwise. | `{"status":"ready","datasets":N}` / `{"status":"not ready","reason":"no datasets registered"}` |
+| `/version` | Build / version metadata — always `200`.                              | `{"name":"datapress-core","version":"x.y.z","backend":"DuckDB\|DataFusion","profile":"debug\|release", ...}` |
 | `{prefix}/health` | App-level liveness — always `200`.                             | `{"status":"ok"}`                                                          |
 
 `/healthz` does not touch the backend, so it stays `200` even while the
 dataset registry is still loading at startup. Use `/readyz` to gate
 traffic until the server is actually able to serve queries.
+
+`/version` also includes optional fields populated from build-time env
+vars when set: `git_sha` (`DATAPRESS_GIT_SHA`), `build_time`
+(`DATAPRESS_BUILD_TIME`, ISO-8601), and `target`
+(`DATAPRESS_TARGET`, e.g. `aarch64-apple-darwin`). Unset vars are
+omitted from the JSON. Example:
+
+```bash
+DATAPRESS_GIT_SHA=$(git rev-parse --short HEAD) \
+DATAPRESS_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+DATAPRESS_TARGET=$(rustc -vV | awk '/host:/ {print $2}') \
+  cargo build --release -p datapress-duckdb
+```
 
 ### Source
 
@@ -324,32 +338,60 @@ and quoted automatically, so `Temperature(F)` and similar identifiers work.
 
 #### Response format — JSON or Arrow IPC
 
-By default `/query` returns JSON in the envelope shown above. Clients that
-want zero-overhead columnar transport can opt into an Arrow IPC stream:
+`/query` can return its result set in two wire formats. Same body, same
+predicates, same pagination — only the response encoding differs.
+
+| Aspect              | JSON (default)                                       | Arrow IPC stream                                                                 |
+|---------------------|------------------------------------------------------|----------------------------------------------------------------------------------|
+| Content-Type        | `application/json`                                   | `application/vnd.apache.arrow.stream`                                            |
+| How to ask          | nothing — it's the default                           | `Accept: application/vnd.apache.arrow.stream` **or** `?format=arrow` on the URL  |
+| Shape               | Array of row objects (`[{...}, {...}, ...]`)         | Self-describing stream: 1 schema message + N `RecordBatch` messages + EOS        |
+| Layout              | Row-oriented; column names repeated on every row     | Columnar; one contiguous buffer per column per batch                             |
+| Types preserved     | Scalars become JSON (`int`/`float`/`bool`/`string`); temporals stringified to ISO-8601 | Native Arrow types — `Int32`, `Timestamp(ns)`, `Decimal128`, dictionary, etc. retained end-to-end |
+| Page metadata       | In the body (just the rows, no envelope)             | In headers: `X-Page`, `X-Page-Size`                                              |
+| Empty result        | `[]`                                                 | Valid stream with the schema message only, zero batches                          |
+| Compression         | Big win — JSON is text                               | Smaller starting point; gzip/zstd still help on wide / repetitive cols, brotli usually skipped |
+| Client cost         | `json.loads` + per-row dict construction             | `pyarrow.ipc.open_stream(...).read_all()` → zero-copy `pyarrow.Table`            |
+| Best for            | Small responses, browsers, ad-hoc `curl`, dashboards | Bulk data into Polars / pandas / DuckDB-on-the-client, ML feature pipelines      |
+
+**When to pick which.** Use JSON when the consumer is JavaScript, the
+response is small (<~10k rows), or you're poking at the API by hand.
+Use Arrow IPC when you're moving result pages into a dataframe library,
+the schema has non-string types you want preserved, or page sizes are
+large enough that JSON parse time shows up in profiles.
 
 ```bash
-curl -X POST http://localhost:8080/api/datasets/accidents/query \
+# JSON (default)
+curl -X POST http://localhost:8080/api/v1/datasets/accidents/query \
+  -H 'Content-Type: application/json' \
+  -d '{ "predicates": [{ "col": "State", "op": "eq", "val": "TX" }] }'
+
+# Arrow IPC — via Accept header
+curl -X POST http://localhost:8080/api/v1/datasets/accidents/query \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/vnd.apache.arrow.stream' \
   --output result.arrow \
   -d '{ "predicates": [{ "col": "State", "op": "eq", "val": "TX" }] }'
-```
 
-Or via query string: append `?format=arrow`. Response body is a
-self-describing Arrow IPC **stream** (`application/vnd.apache.arrow.stream`)
-— one schema message + zero-or-more `RecordBatch` messages. Pagination
-moves into response headers (`X-Page`, `X-Page-Size`) since the body is no
-longer JSON. Python:
+# Arrow IPC — via query string (handy when you can't set headers)
+curl -X POST 'http://localhost:8080/api/v1/datasets/accidents/query?format=arrow' \
+  -H 'Content-Type: application/json' \
+  --output result.arrow \
+  -d '{ "predicates": [{ "col": "State", "op": "eq", "val": "TX" }] }'
+```
 
 ```python
 import requests, pyarrow.ipc as ipc
 r = requests.post(url, json=req, headers={"Accept": "application/vnd.apache.arrow.stream"})
 table = ipc.open_stream(r.content).read_all()  # → pyarrow.Table
+page  = int(r.headers["X-Page"])
+size  = int(r.headers["X-Page-Size"])
 ```
 
-Currently implemented on the **DataFusion** backend only; DuckDB returns
-`400`. The `Compress` middleware still applies — gzip / zstd over the
-binary stream is fine; brotli is usually skipped by clients on binary.
+Supported on **both** backends — DuckDB streams batches out via its
+native `query_arrow` API, DataFusion uses its Arrow plan directly.
+The `Compress` middleware still applies. `count`, `schema`, and the
+dataset-listing endpoints are JSON-only.
 
 #### Grouping / aggregation
 

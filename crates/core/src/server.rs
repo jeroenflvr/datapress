@@ -47,6 +47,16 @@ pub async fn serve(
 
     log_routes(&prefix, backend.as_ref());
 
+    let build_info = web::Data::new(handlers::BuildInfo::new(
+        // `&'static str` so it fits BuildInfo's compile-time fields.
+        // The match keeps this generic enough for future backends.
+        match label {
+            "DuckDB"     => "DuckDB",
+            "DataFusion" => "DataFusion",
+            _            => "unknown",
+        },
+    ));
+
     let mut server = HttpServer::new(move || {
         let backend  = backend.clone();
         let prefix   = prefix.clone();
@@ -55,6 +65,7 @@ pub async fn serve(
         let timeout  = Timeout::new(Duration::from_millis(timeout_ms.max(1)));
         App::new()
             .app_data(web::Data::new(backend))
+            .app_data(build_info.clone())
             .app_data(json_cfg)
             .app_data(pay_cfg)
             .wrap(middleware::Condition::new(timeout_ms > 0, timeout))
@@ -62,6 +73,7 @@ pub async fn serve(
             .wrap(middleware::Logger::new("%a \"%r\" %s %b bytes %Dms"))
             .service(handlers::healthz)
             .service(handlers::readyz)
+            .service(handlers::version)
             .service(
                 web::scope(prefix.as_str())
                     .service(handlers::health)
@@ -141,6 +153,7 @@ fn log_routes(prefix: &str, backend: &dyn Backend) {
     for (method, path) in [
         ("GET",  "/healthz".to_string()),
         ("GET",  "/readyz".to_string()),
+        ("GET",  "/version".to_string()),
         ("GET",  format!("{p}/health")),
     ] {
         log::info!("    {:<width$} {}", method, path, width = METHOD_W);

@@ -44,14 +44,10 @@ client's perspective.
 - Dataset reload endpoint (see pre-existing item) — still read-only.
 - `/schema` enriched with: row count, per-column min/max,
   null-count, distinct-count estimate, which indices exist.
-- `/healthz` and `/readyz`.
 - `/metrics` (Prometheus).
-- `/version` / build-info endpoint.
 
 ### Backends / formats
 
-- DuckDB `query_arrow` implementation (currently inherits the default
-  `400`; clients silently fall back to JSON).
 - Native Parquet / NDJSON / Arrow file ingestion exposed at config
   level (DataFusion supports them already).
 - Remote storage: S3 / GCS / Azure Blob.

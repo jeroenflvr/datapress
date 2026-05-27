@@ -73,6 +73,62 @@ pub async fn readyz(backend: BackendData) -> HttpResponse {
     }
 }
 
+/// Build / version metadata published by [`version`] at `/version`.
+///
+/// Populated once by [`crate::server::serve`] from compile-time
+/// constants (`CARGO_PKG_*`) and optional build-time env vars
+/// (`DATAPRESS_GIT_SHA`, `DATAPRESS_BUILD_TIME`), and stored in actix
+/// app data. The handler just serialises it to JSON.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct BuildInfo {
+    /// Crate name (e.g. `"datapress-core"`).
+    pub name:        &'static str,
+    /// Crate version from `CARGO_PKG_VERSION` (e.g. `"0.1.17"`).
+    pub version:     &'static str,
+    /// Human-readable backend label — `"DuckDB"` or `"DataFusion"`.
+    pub backend:     &'static str,
+    /// Git commit SHA the binary was built from. `None` when
+    /// `DATAPRESS_GIT_SHA` was not set at build time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_sha:     Option<&'static str>,
+    /// ISO-8601 build timestamp. `None` when `DATAPRESS_BUILD_TIME`
+    /// was not set at build time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub build_time:  Option<&'static str>,
+    /// `"debug"` or `"release"`, derived from `cfg!(debug_assertions)`.
+    pub profile:     &'static str,
+    /// Rust target triple the binary was built for (e.g.
+    /// `"aarch64-apple-darwin"`). `None` when `DATAPRESS_TARGET` was
+    /// not set at build time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target:      Option<&'static str>,
+}
+
+impl BuildInfo {
+    /// Build a `BuildInfo` populated from compile-time constants. The
+    /// caller supplies the backend `label` (the binaries know which
+    /// they are; this crate doesn't).
+    pub fn new(backend: &'static str) -> Self {
+        Self {
+            name:       env!("CARGO_PKG_NAME"),
+            version:    env!("CARGO_PKG_VERSION"),
+            backend,
+            git_sha:    option_env!("DATAPRESS_GIT_SHA"),
+            build_time: option_env!("DATAPRESS_BUILD_TIME"),
+            profile:    if cfg!(debug_assertions) { "debug" } else { "release" },
+            target:     option_env!("DATAPRESS_TARGET"),
+        }
+    }
+}
+
+/// Build / version info. Mounted unprefixed so orchestrators and
+/// release-tracking tools can hit it without knowing how the server
+/// is exposed. Always returns `200` with a JSON object.
+#[get("/version")]
+pub async fn version(info: web::Data<BuildInfo>) -> HttpResponse {
+    HttpResponse::Ok().json(info.get_ref())
+}
+
 /// True if the caller wants Arrow IPC: either `?format=arrow` in the
 /// query string, or `Accept` lists `application/vnd.apache.arrow.stream`.
 /// A bare `Accept: */*` does **not** count — JSON stays the default.
