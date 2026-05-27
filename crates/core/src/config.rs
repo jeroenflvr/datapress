@@ -29,6 +29,13 @@ use serde::Deserialize;
 
 use crate::errors::AppError;
 
+/// Mount paths the user MUST NOT pick for `[docs].path` or
+/// `[swagger].path` — they would shadow first-party routes (probes,
+/// API scopes, root).
+const RESERVED_MOUNTS: &[&str] = &[
+    "/", "/api", "/api/v1", "/health", "/healthz", "/readyz", "/version",
+];
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -37,6 +44,10 @@ use crate::errors::AppError;
 pub struct AppConfig {
     #[serde(default)]
     pub server:   ServerConfig,
+    #[serde(default)]
+    pub docs:     DocsConfig,
+    #[serde(default)]
+    pub swagger:  SwaggerConfig,
     #[serde(rename = "dataset", default)]
     pub datasets: Vec<DatasetConfig>,
 }
@@ -102,6 +113,56 @@ pub enum Backend {
     #[default]
     Datafusion,
     Duckdb,
+}
+
+/// Embedded MkDocs documentation site (`[docs]` block).
+///
+/// Enabled by default — when the binary was built with the `docs`
+/// cargo feature, the site is served at [`DocsConfig::path`] out of
+/// the box. Set `enabled = false` in `datasets.toml` to suppress it
+/// (e.g. in prod). When the binary was built without the feature,
+/// `enabled = true` is harmless: the server logs a warning at startup
+/// and skips the mount. The mount path must be a non-trivial sub-path;
+/// reserved API and probe roots are rejected at startup.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DocsConfig {
+    pub enabled: bool,
+    pub path:    String,
+}
+
+impl Default for DocsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            path:    "/mkdocs".into(),
+        }
+    }
+}
+
+/// Swagger UI + embedded OpenAPI spec (`[swagger]` block).
+///
+/// Enabled by default — when the binary was built with the `swagger`
+/// cargo feature, an interactive Swagger UI is served at
+/// [`SwaggerConfig::path`] (default `/docs`) and the raw OpenAPI JSON
+/// at `<path>/openapi.json`. Set `enabled = false` in `datasets.toml`
+/// to suppress it (e.g. in prod). When the binary was built without
+/// the feature, `enabled = true` is harmless: the server logs a
+/// warning at startup and skips the mount.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SwaggerConfig {
+    pub enabled: bool,
+    pub path:    String,
+}
+
+impl Default for SwaggerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            path:    "/docs".into(),
+        }
+    }
 }
 
 impl Backend {
@@ -299,6 +360,52 @@ impl AppConfig {
             return Err(AppError::Internal(
                 "datasets.toml has no [[dataset]] entries".into(),
             ));
+        }
+
+        // Validate the docs mount path even when the section is disabled,
+        // so an inactive config typo can't go unnoticed.
+        {
+            let dp = &self.docs.path;
+            if !dp.starts_with('/') {
+                return Err(AppError::Internal(format!(
+                    "docs.path must start with '/' (got '{dp}')"
+                )));
+            }
+            if dp.len() > 1 && dp.ends_with('/') {
+                return Err(AppError::Internal(format!(
+                    "docs.path must not end with '/' (got '{dp}')"
+                )));
+            }
+            if RESERVED_MOUNTS.iter().any(|r| *r == dp) {
+                return Err(AppError::Internal(format!(
+                    "docs.path '{dp}' collides with a reserved route"
+                )));
+            }
+        }
+
+        // Same for the swagger UI mount.
+        {
+            let sp = &self.swagger.path;
+            if !sp.starts_with('/') {
+                return Err(AppError::Internal(format!(
+                    "swagger.path must start with '/' (got '{sp}')"
+                )));
+            }
+            if sp.len() > 1 && sp.ends_with('/') {
+                return Err(AppError::Internal(format!(
+                    "swagger.path must not end with '/' (got '{sp}')"
+                )));
+            }
+            if RESERVED_MOUNTS.iter().any(|r| *r == sp) {
+                return Err(AppError::Internal(format!(
+                    "swagger.path '{sp}' collides with a reserved route"
+                )));
+            }
+            if sp == &self.docs.path {
+                return Err(AppError::Internal(format!(
+                    "swagger.path and docs.path must differ (both '{sp}')"
+                )));
+            }
         }
 
         let mut seen = HashSet::new();
@@ -560,6 +667,8 @@ mod tests {
         for p in bad {
             let cfg = AppConfig {
                 server: ServerConfig { prefix: p.to_string(), ..Default::default() },
+                docs:     DocsConfig::default(),
+                swagger:  SwaggerConfig::default(),
                 datasets: vec![],
             };
             assert!(cfg.validate().is_err(), "prefix {p:?} should fail");
@@ -570,6 +679,8 @@ mod tests {
     fn validate_rejects_no_datasets() {
         let cfg = AppConfig {
             server: ServerConfig::default(),
+            docs:     DocsConfig::default(),
+            swagger:  SwaggerConfig::default(),
             datasets: vec![],
         };
         let err = cfg.validate().unwrap_err();

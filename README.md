@@ -170,6 +170,51 @@ DATAPRESS_TARGET=$(rustc -vV | awk '/host:/ {print $2}') \
   cargo build --release -p datapress-duckdb
 ```
 
+### Online documentation
+
+DataPress can embed two browsable sources of documentation into the
+binary itself:
+
+- An [MkDocs Material](https://squidfunk.github.io/mkdocs-material/)
+  site (the one you are reading) at `[docs].path` (default `/mkdocs`).
+- An interactive [Swagger UI](https://swagger.io/tools/swagger-ui/)
+  with a hand-written OpenAPI spec at `[swagger].path` (default
+  `/docs`). The raw spec is also exposed at `<path>/openapi.json`.
+
+Both are opt-in at build time (so wheels stay slim when you don't
+want them) and **enabled by default at runtime** once compiled in —
+set `enabled = false` to disable in prod.
+
+1. Build the MkDocs site (only needed for the `docs` feature):
+
+   ```bash
+   task docs:build
+   ```
+
+2. Build the backend with one or both features:
+
+   ```bash
+   cargo build --release -p datapress-duckdb --features docs,swagger
+   ```
+
+3. Tweak in `datasets.toml` if you want to relocate or disable either:
+
+   ```toml
+   [docs]
+   enabled = true        # default: true
+   path    = "/mkdocs"   # default: /mkdocs
+
+   [swagger]
+   enabled = true        # default: true (set to false in prod)
+   path    = "/docs"     # default: /docs
+   ```
+
+Both `path` values must start with `/`, not end with `/`, not collide
+with `/api`, `/api/v1`, `/health{z,}`, `/readyz`, or `/version`, and
+must differ from each other. When the binary is built without the
+relevant feature but the TOML enables it, the server logs a warning at
+startup and continues without that surface.
+
 ### Source
 
 `[dataset.source]` is a tagged enum.

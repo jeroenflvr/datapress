@@ -10,6 +10,14 @@ license.workspace = true
 # backend-specific `From` impls in `errors.rs`.
 duckdb     = ["dep:duckdb"]
 datafusion = ["dep:arrow", "dep:parquet", "dep:datafusion"]
+# Embed the MkDocs Material documentation site into the binary and
+# serve it from the configured `[docs].path`. Off by default to keep
+# binaries small.
+docs       = ["dep:include_dir", "dep:mime_guess"]
+# Embed Swagger UI + a hand-written OpenAPI spec. Served from
+# `[swagger].path` (default `/docs`). Off by default at compile time;
+# can be disabled at runtime via `[swagger].enabled = false`.
+swagger    = ["dep:utoipa", "dep:utoipa-swagger-ui"]
 
 [dependencies]
 actix-web.workspace   = true
@@ -26,6 +34,10 @@ duckdb     = { workspace = true, optional = true }
 arrow      = { workspace = true, optional = true }
 parquet    = { workspace = true, optional = true }
 datafusion = { workspace = true, optional = true }
+include_dir = { version = "0.7", optional = true }
+mime_guess  = { version = "2",   optional = true }
+utoipa            = { workspace = true, optional = true }
+utoipa-swagger-ui = { workspace = true, optional = true }
 
 [dev-dependencies]
 arrow = { workspace = true }

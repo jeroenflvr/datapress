@@ -44,6 +44,10 @@ glob         = "0.3"
 pyo3                = { version = "0.28.3", features = ["extension-module", "abi3-py39"] }
 pyo3-async-runtimes = { version = "0.28.0", features = ["tokio-runtime"] }
 
+# OpenAPI + Swagger UI (feature-gated via `swagger` on datapress-core).
+utoipa              = "5.5.0"
+utoipa-swagger-ui   = { version = "9.0.2", features = ["actix-web"] }
+
 [profile.release]
 opt-level     = 3
 # Fat LTO + codegen-units = 1 OOM-kills rustc when cross-building the

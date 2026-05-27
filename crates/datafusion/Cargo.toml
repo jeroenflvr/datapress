@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = []
+docs    = ["datapress-core/docs"]
+swagger = ["datapress-core/swagger"]
+
 [dependencies]
 datapress-core = { workspace = true, features = ["datafusion"] }
 

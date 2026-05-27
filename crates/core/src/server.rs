@@ -32,6 +32,25 @@ pub async fn serve(
     let max_body = cfg.server.max_body_bytes;
     let timeout_ms = cfg.server.request_timeout_ms;
     let shutdown_secs = cfg.server.shutdown_timeout_secs;
+    let docs_cfg = cfg.docs.clone();
+    let swagger_cfg = cfg.swagger.clone();
+
+    // Warn (but don't fail) when the operator asked for docs in TOML but
+    // this binary was built without the cargo feature that embeds them.
+    #[cfg(not(feature = "docs"))]
+    if docs_cfg.enabled {
+        log::warn!(
+            "[docs] enabled = true in config, but this binary was built \
+             without --features docs; skipping docs site"
+        );
+    }
+    #[cfg(not(feature = "swagger"))]
+    if swagger_cfg.enabled {
+        log::warn!(
+            "[swagger] enabled = true in config, but this binary was built \
+             without --features swagger; skipping Swagger UI"
+        );
+    }
 
     log::info!(
         "Listening on http://{}:{}{} ({} backend, {} workers, compression {}, max-body {} bytes, timeout {}, shutdown grace {}s)",
@@ -46,6 +65,20 @@ pub async fn serve(
     );
 
     log_routes(&prefix, backend.as_ref());
+
+    #[cfg(feature = "docs")]
+    if docs_cfg.enabled {
+        log::info!("  {} (mkdocs site):", docs_cfg.path);
+        log::info!("    GET    {}/", docs_cfg.path);
+        log::info!("    GET    {}/{{path}}", docs_cfg.path);
+    }
+
+    #[cfg(feature = "swagger")]
+    if swagger_cfg.enabled {
+        log::info!("  {} (swagger UI):", swagger_cfg.path);
+        log::info!("    GET    {}/", swagger_cfg.path);
+        log::info!("    GET    {}/openapi.json", swagger_cfg.path);
+    }
 
     let build_info = web::Data::new(handlers::BuildInfo::new(
         // `&'static str` so it fits BuildInfo's compile-time fields.
@@ -63,7 +96,11 @@ pub async fn serve(
         let json_cfg = web::JsonConfig::default().limit(max_body);
         let pay_cfg  = web::PayloadConfig::default().limit(max_body);
         let timeout  = Timeout::new(Duration::from_millis(timeout_ms.max(1)));
-        App::new()
+        #[cfg(feature = "docs")]
+        let docs_cfg = docs_cfg.clone();
+        #[cfg(feature = "swagger")]
+        let swagger_cfg = swagger_cfg.clone();
+        let app = App::new()
             .app_data(web::Data::new(backend))
             .app_data(build_info.clone())
             .app_data(json_cfg)
@@ -73,18 +110,37 @@ pub async fn serve(
             .wrap(middleware::Logger::new("%a \"%r\" %s %b bytes %Dms"))
             .service(handlers::healthz)
             .service(handlers::readyz)
-            .service(handlers::version)
-            .service(
-                web::scope(prefix.as_str())
-                    .service(handlers::health)
-                    // Canonical, versioned API.
-                    .service(web::scope("/api/v1").configure(handlers::v1::configure))
-                    // Legacy un-versioned alias. Kept around so older
-                    // clients (and the historical `/api/datasets/...`
-                    // URLs in docs / scripts) keep working. New code
-                    // should prefer `/api/v1/...`.
-                    .service(web::scope("/api").configure(handlers::v1::configure)),
-            )
+            .service(handlers::version);
+        // Docs + swagger are registered BEFORE the `web::scope(prefix)`
+        // catch-all below. An empty `prefix` (the default) becomes
+        // `web::scope("")` which matches every path and 404s any miss
+        // *inside* the scope — so services registered after it become
+        // unreachable. Keeping these at the top of the dispatch chain
+        // sidesteps that.
+        #[cfg(feature = "docs")]
+        let app = if docs_cfg.enabled {
+            app.configure(|c| crate::docs::configure(&docs_cfg.path, c))
+        } else {
+            app
+        };
+        #[cfg(feature = "swagger")]
+        let app = if swagger_cfg.enabled {
+            app.service(crate::swagger::service(&swagger_cfg.path))
+        } else {
+            app
+        };
+        let app = app.service(
+            web::scope(prefix.as_str())
+                .service(handlers::health)
+                // Canonical, versioned API.
+                .service(web::scope("/api/v1").configure(handlers::v1::configure))
+                // Legacy un-versioned alias. Kept around so older
+                // clients (and the historical `/api/datasets/...`
+                // URLs in docs / scripts) keep working. New code
+                // should prefer `/api/v1/...`.
+                .service(web::scope("/api").configure(handlers::v1::configure)),
+        );
+        app
     });
     if let Some(w) = workers {
         server = server.workers(w);

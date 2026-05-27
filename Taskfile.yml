@@ -38,15 +38,17 @@ tasks:
     deps: [build:duckdb, build:datafusion]
 
   run:duckdb:
-    desc: Run the DuckDB binary (release)
-    deps: [build:duckdb]
+    desc: Run the DuckDB binary (release, with embedded docs site + swagger UI)
+    deps: [docs:build]
     cmds:
+      - cargo build {{.RELEASE}} -p datapress-duckdb --bin datapress-duckdb --features docs,swagger
       - RUST_LOG=info ./target/release/datapress-duckdb
 
   run:datafusion:
-    desc: Run the DataFusion binary (release)
-    deps: [build:datafusion]
+    desc: Run the DataFusion binary (release, with embedded docs site + swagger UI)
+    deps: [docs:build]
     cmds:
+      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion --features docs,swagger
       - RUST_LOG=info ./target/release/datapress-datafusion
 
   check:
@@ -80,6 +82,19 @@ tasks:
     desc: Build a release wheel into ./target/wheels/
     cmds:
       - uv tool run --with maturin maturin build --release
+
+  # ---------------------------------------------------------------------
+  # Documentation (MkDocs + Material)
+  # ---------------------------------------------------------------------
+  docs:build:
+    desc: Build the embedded MkDocs site into docs/site/
+    cmds:
+      - uv tool run --with mkdocs-material mkdocs build -f docs/mkdocs.yml -d site --strict
+
+  docs:serve:
+    desc: Live-reload MkDocs site at http://127.0.0.1:8001
+    cmds:
+      - uv tool run --with mkdocs-material mkdocs serve -f docs/mkdocs.yml --dev-addr 127.0.0.1:8001
 
   # ---------------------------------------------------------------------
   # Changelog (git-cliff)

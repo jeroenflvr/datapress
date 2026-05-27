@@ -29,7 +29,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-clippy
-      - run: cargo clippy --workspace --all-targets --locked
+      - uses: astral-sh/setup-uv@v3
+      - name: Build MkDocs site
+        run: uv tool run --with mkdocs-material mkdocs build -f docs/mkdocs.yml -d site --strict
+      - run: cargo clippy --workspace --all-targets --features docs,swagger --locked
 
   test:
     name: cargo test
@@ -40,4 +43,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-test
-      - run: cargo test --workspace --locked
+      - uses: astral-sh/setup-uv@v3
+      - name: Build MkDocs site
+        run: uv tool run --with mkdocs-material mkdocs build -f docs/mkdocs.yml -d site --strict
+      - run: cargo test --workspace --features docs,swagger --locked

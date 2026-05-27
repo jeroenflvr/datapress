@@ -67,6 +67,8 @@ fn write_sample_parquet(dir: &std::path::Path) -> std::path::PathBuf {
 fn make_registry(parquet: &std::path::Path) -> Arc<Registry> {
     let cfg = AppConfig {
         server:   ServerConfig::default(),
+        docs:     datapress_core::config::DocsConfig::default(),
+        swagger:  datapress_core::config::SwaggerConfig::default(),
         datasets: vec![DatasetConfig {
             name:    "people".into(),
             source:  SourceConfig {

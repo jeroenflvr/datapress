@@ -452,7 +452,12 @@ impl PyDataPress {
         let datasets = datasets.into_iter()
             .map(|d| d.into_core())
             .collect::<PyResult<Vec<_>>>()?;
-        Ok(Self { cfg: AppConfig { server, datasets } })
+        Ok(Self { cfg: AppConfig {
+            server,
+            docs:     datapress_core::config::DocsConfig::default(),
+            swagger:  datapress_core::config::SwaggerConfig::default(),
+            datasets,
+        } })
     }
 
     /// Start the HTTP server and run until SIGINT (Ctrl-C).
@@ -503,6 +508,8 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
             request_timeout_ms: cfg.server.request_timeout_ms,
             shutdown_timeout_secs: cfg.server.shutdown_timeout_secs,
         },
+        docs:     cfg.docs.clone(),
+        swagger:  cfg.swagger.clone(),
         datasets: cfg.datasets.clone(),
     }
 }
