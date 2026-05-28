@@ -1,0 +1,37 @@
+[package]
+name             = "datapress-datafusion"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+docs    = ["datapress-core/docs"]
+swagger = ["datapress-core/swagger"]
+auth    = ["datapress-core/auth"]
+
+[dependencies]
+datapress-core = { workspace = true, features = ["datafusion"] }
+
+actix-web.workspace   = true
+async-trait.workspace = true
+tokio.workspace       = true
+serde.workspace       = true
+serde_json.workspace  = true
+log.workspace         = true
+env_logger.workspace  = true
+
+arrow.workspace        = true
+parquet.workspace      = true
+datafusion.workspace   = true
+rayon.workspace        = true
+itoa.workspace         = true
+ryu.workspace          = true
+arc-swap.workspace     = true
+object_store.workspace = true
+url.workspace          = true
+deltalake.workspace    = true
+
+[[bin]]
+name = "datapress-datafusion"
+path = "src/bin/datapress-datafusion.rs"

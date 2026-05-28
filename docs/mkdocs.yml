@@ -1,0 +1,141 @@
+site_name: DataPress
+site_description: |
+  Configuration-driven, columnar HTTP query server over Parquet / Delta —
+  one config, two backends (DuckDB and Arrow + DataFusion).
+site_author: DataPress contributors
+site_url: https://datapress.example/        # adjust when published
+repo_url: https://github.com/jeroenflvr/fast-api
+repo_name: jeroenflvr/fast-api
+edit_uri: edit/main/docs/
+
+docs_dir: src
+site_dir: site
+
+theme:
+  name: material
+  # Light + dark with a toggle, plus follow-system as the default.
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.action.edit
+  icon:
+    repo: fontawesome/brands/github
+  font:
+    text: Inter
+    code: JetBrains Mono
+
+plugins:
+  - search
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink
+  - pymdownx.snippets:
+      check_paths: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/jeroenflvr/fast-api
+  generator: false
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - getting-started/index.md
+      - Install: getting-started/install.md
+      - First server: getting-started/first-server.md
+      - Quick tour: getting-started/quick-tour.md
+  - Configuration:
+      - configuration/index.md
+      - Server: configuration/server.md
+      - Datasets: configuration/datasets.md
+      - S3 / object storage: configuration/s3.md
+      - Indexing: configuration/indexing.md
+      - Documentation site: configuration/docs-site.md
+  - Querying:
+      - query/index.md
+      - Request body: query/request-body.md
+      - Projection & pagination: query/projection.md
+      - Predicates: query/predicates.md
+      - Sorting & limit: query/sorting.md
+      - Grouping & aggregation: query/grouping.md
+      - Distinct: query/distinct.md
+      - Arrow IPC vs JSON: query/arrow-ipc.md
+      - Counting: query/count.md
+      - Recipes: query/recipes.md
+  - Backends:
+      - backends/index.md
+      - DuckDB: backends/duckdb.md
+      - Arrow + DataFusion: backends/datafusion.md
+      - Comparison: backends/comparison.md
+  - Python:
+      - python/index.md
+      - Config classes: python/config.md
+      - Running a server: python/server.md
+      - Client: python/client.md
+      - Examples: python/examples.md
+  - Operations:
+      - operations/index.md
+      - Probes (healthz / readyz / version): operations/probes.md
+      - Graceful shutdown: operations/graceful-shutdown.md
+      - Logging: operations/logging.md
+      - Authentication (OIDC / OAuth2): operations/auth.md
+  - Reference:
+      - reference/index.md
+      - Endpoints: reference/endpoints.md
+      - Errors: reference/errors.md
+      - Changelog: reference/changelog.md

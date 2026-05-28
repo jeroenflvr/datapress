@@ -1,0 +1,39 @@
+## One-command local Keycloak for DataPress OIDC testing.
+##
+##   docker compose up -d
+##
+## Admin console: http://localhost:8080  (admin / admin)
+## Issuer URL:    http://localhost:8080/realms/datapress
+##
+## The realm, client (`datapress-api`), and scopes (`datasets:read`,
+## `datasets:reload`) are pre-provisioned from ./realm-datapress.json.
+##
+## Get a service-account token:
+##
+##   curl -s -X POST \
+##     http://localhost:8080/realms/datapress/protocol/openid-connect/token \
+##     -d grant_type=client_credentials \
+##     -d client_id=datapress-api \
+##     -d client_secret=datapress-secret \
+##     -d scope='datasets:read datasets:reload' | jq -r .access_token
+##
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: datapress-keycloak
+    command:
+      - start-dev
+      - --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./realm-datapress.json:/opt/keycloak/data/import/realm-datapress.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 20

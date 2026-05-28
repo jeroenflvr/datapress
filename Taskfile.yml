@@ -1,0 +1,156 @@
+version: '3'
+
+# ---------------------------------------------------------------------------
+# DataPress workspace — two Rust binaries (one per engine) plus a Python
+# wheel (`datapress`) that bundles both engines.
+#
+#   task build:duckdb        # build the DuckDB Rust binary
+#   task build:datafusion    # build the DataFusion Rust binary
+#   task build               # build both Rust binaries
+#   task run:duckdb          # run the DuckDB binary
+#   task run:datafusion      # run the DataFusion binary
+#   task check               # cargo check the whole workspace
+#   task py:develop          # build + install the Python wheel into the venv
+#   task py:build            # build a release wheel
+# ---------------------------------------------------------------------------
+
+vars:
+  RELEASE: ''
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  build:duckdb:
+    desc: Build the DuckDB-backed binary (release)
+    cmds:
+      - cargo build {{.RELEASE}} -p datapress-duckdb --bin datapress-duckdb
+
+  build:datafusion:
+    desc: Build the Arrow + DataFusion-backed binary (release)
+    cmds:
+      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion
+
+  build:
+    desc: Build both Rust binaries
+    deps: [build:duckdb, build:datafusion]
+
+  run:duckdb:
+    desc: Run the DuckDB binary (release, with embedded docs site + swagger UI)
+    deps: [docs:build]
+    cmds:
+      - cargo build {{.RELEASE}} -p datapress-duckdb --bin datapress-duckdb --features docs,swagger
+      - RUST_LOG=info ./target/release/datapress-duckdb
+
+  run:datafusion:
+    desc: Run the DataFusion binary (release, with embedded docs site + swagger UI)
+    deps: [docs:build]
+    cmds:
+      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion --features docs,swagger
+      - RUST_LOG=info ./target/release/datapress-datafusion
+
+  check:
+    desc: Type-check the entire workspace (all crates, all targets)
+    cmds:
+      - cargo check --workspace --all-targets
+
+  check:duckdb:
+    cmds:
+      - cargo check -p datapress-duckdb
+
+  check:datafusion:
+    cmds:
+      - cargo check -p datapress-datafusion
+
+  fmt:
+    cmds:
+      - cargo fmt --all
+
+  clean:
+    cmds:
+      - cargo clean
+
+  py:develop:
+    desc: Build the `datapress` wheel in dev mode and install into ./.venv
+    cmds:
+      - uv venv --allow-existing
+      - uv tool run --with maturin maturin develop --release --uv
+
+  py:build:
+    desc: Build a release wheel into ./target/wheels/
+    cmds:
+      - uv tool run --with maturin maturin build --release
+
+  # ---------------------------------------------------------------------
+  # Documentation (MkDocs + Material)
+  # ---------------------------------------------------------------------
+  docs:build:
+    desc: Build the embedded MkDocs site into docs/site/
+    cmds:
+      - uv tool run --with mkdocs-material mkdocs build -f docs/mkdocs.yml -d site --strict
+
+  docs:serve:
+    desc: Live-reload MkDocs site at http://127.0.0.1:8001
+    cmds:
+      - uv tool run --with mkdocs-material mkdocs serve -f docs/mkdocs.yml --dev-addr 127.0.0.1:8001
+
+  # ---------------------------------------------------------------------
+  # Changelog (git-cliff)
+  # ---------------------------------------------------------------------
+  changelog:
+    desc: Regenerate CHANGELOG.md from the full git history
+    cmds:
+      - uv tool run --from git-cliff git-cliff --config cliff.toml --output CHANGELOG.md
+
+  changelog:unreleased:
+    desc: Preview unreleased changes (since the last tag) on stdout
+    cmds:
+      - uv tool run --from git-cliff git-cliff --config cliff.toml --unreleased
+
+  changelog:release:
+    desc: "Bump CHANGELOG for a new tag. Usage: task changelog:release -- v0.2.0"
+    cmds:
+      - uv tool run --from git-cliff git-cliff --config cliff.toml --tag {{.CLI_ARGS}} --output CHANGELOG.md
+
+  # ---------------------------------------------------------------------
+  # Release: stamp CHANGELOG, commit, tag, push.
+  # Usage:  task release -- v0.2.0
+  # ---------------------------------------------------------------------
+  release:
+    desc: "Cut a release: bump version, update CHANGELOG, commit, tag, push. Usage: task release -- v0.2.0"
+    vars:
+      VERSION: '{{.CLI_ARGS}}'
+      # Strip leading "v" for Cargo.toml (Cargo wants 0.2.0, git tag wants v0.2.0).
+      BARE_VERSION:
+        sh: printf '%s' '{{.CLI_ARGS}}' | sed 's/^v//'
+    preconditions:
+      - sh: 'test -n "{{.VERSION}}"'
+        msg: "Missing version. Usage: task release -- v0.2.0"
+      - sh: '[[ "{{.VERSION}}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]'
+        msg: "Version must look like v1.2.3 (got: {{.VERSION}})"
+      - sh: 'test -z "$(git status --porcelain)"'
+        msg: "Working tree is dirty — commit or stash changes first."
+      - sh: '! git rev-parse "{{.VERSION}}" >/dev/null 2>&1'
+        msg: "Tag {{.VERSION}} already exists."
+    cmds:
+      # 1. Bump workspace version (single source of truth — all crates inherit via version.workspace = true).
+      - |
+        python3 -c "
+        import re, pathlib
+        p = pathlib.Path('Cargo.toml')
+        s = p.read_text()
+        new, n = re.subn(r'(?m)^(version\s*=\s*\")[^\"]+(\"\s*(?:#.*)?)$', r'\g<1>{{.BARE_VERSION}}\g<2>', s, count=1)
+        assert n == 1, 'workspace version line not found in Cargo.toml'
+        p.write_text(new)
+        "
+      # 2. Refresh Cargo.lock with the new version.
+      - cargo update --workspace --offline 2>/dev/null || cargo check --workspace --quiet
+      # 3. Regenerate CHANGELOG stamped at the new tag.
+      - uv tool run --from git-cliff git-cliff --config cliff.toml --tag {{.VERSION}} --output CHANGELOG.md
+      # 4. Commit, tag, push.
+      - git add Cargo.toml Cargo.lock CHANGELOG.md
+      - 'git commit -m "chore(release): {{.VERSION}}"'
+      - 'git tag -a {{.VERSION}} -m "Release {{.VERSION}}"'
+      - git push --follow-tags

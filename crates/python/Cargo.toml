@@ -1,0 +1,37 @@
+[package]
+name             = "datapress-py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# Python submodule name: `datap_rs.datapress`. The cdylib basename must
+# match the rightmost path component of `module-name` in pyproject.toml,
+# so the .so file ends up at `datap_rs/datapress.abi3.so` inside the wheel.
+name       = "datapress"
+crate-type = ["cdylib"]
+
+[features]
+# Embed the MkDocs Material documentation site. Requires `docs/site/`
+# to exist at build time (run `task docs:build` first). Off by default
+# so local `maturin develop` works without the prereq; CI / wheel
+# builds opt in via `--features docs`.
+docs    = ["datapress-duckdb/docs", "datapress-datafusion/docs"]
+# Embed Swagger UI + the hand-written OpenAPI spec. No build-time
+# prereqs (unlike docs), but kept opt-in so local dev wheels stay slim.
+swagger = ["datapress-duckdb/swagger", "datapress-datafusion/swagger"]
+auth    = ["datapress-duckdb/auth", "datapress-datafusion/auth"]
+
+[dependencies]
+datapress-core       = { workspace = true, features = ["duckdb", "datafusion"] }
+datapress-duckdb.workspace     = true
+datapress-datafusion.workspace = true
+
+pyo3.workspace                = true
+pyo3-async-runtimes.workspace = true
+
+# We start an actix runtime in a dedicated thread inside `DataPress.run()`.
+actix-web.workspace  = true
+tokio.workspace      = true
+log.workspace        = true
+env_logger.workspace = true

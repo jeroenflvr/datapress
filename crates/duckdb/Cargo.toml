@@ -1,0 +1,32 @@
+[package]
+name             = "datapress-duckdb"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+docs    = ["datapress-core/docs"]
+swagger = ["datapress-core/swagger"]
+auth    = ["datapress-core/auth"]
+
+[dependencies]
+datapress-core = { workspace = true, features = ["duckdb"] }
+
+actix-web.workspace   = true
+async-trait.workspace = true
+tokio.workspace       = true
+serde.workspace       = true
+serde_json.workspace  = true
+log.workspace         = true
+env_logger.workspace  = true
+
+duckdb.workspace = true
+arrow.workspace  = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "datapress-duckdb"
+path = "src/bin/datapress-duckdb.rs"

@@ -1,18 +1,61 @@
-[package]
-name = "fast-api"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "3"
+members  = [
+    "crates/core",
+    "crates/duckdb",
+    "crates/datafusion",
+    "crates/python",
+]
 
-[dependencies]
-actix-web = "4.12.1"
-duckdb = { version = "1.10503.0", features = ["bundled"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-tokio = { version = "1.52.2", features = ["full"] }
-env_logger = "0.11.9"
-log = "0.4.28"
+[workspace.package]
+version = "0.1.18"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+# Internal crates (path deps).
+datapress-core       = { path = "crates/core" }
+datapress-duckdb     = { path = "crates/duckdb" }
+datapress-datafusion = { path = "crates/datafusion" }
+
+# Shared third-party deps. Pinning versions here keeps every crate aligned.
+actix-web   = { version = "4.12.1", features = ["compress-gzip", "compress-brotli", "compress-zstd"] }
+async-trait = "0.1"
+tokio       = { version = "1.52.3", features = ["full"] }
+serde      = { version = "1.0.228", features = ["derive"] }
+serde_json = "1"
+env_logger = "0.11"
+log        = "0.4"
+toml       = "0.9.8"
+
+arrow      = "58"
+parquet    = { version = "58", features = ["arrow"] }
+datafusion = "53"
+duckdb     = { version = "1.10503.0", features = ["bundled"] }
+rayon      = "1.12.0"
+itoa       = "1.0.18"
+ryu        = "1.0.23"
+arc-swap   = "1.9.1"
+object_store = { version = "0.13", features = ["aws"] }
+url          = "2"
+deltalake    = { version = "0.32", features = ["datafusion", "s3"] }
+glob         = "0.3"
+
+pyo3                = { version = "0.28.3", features = ["extension-module", "abi3-py39"] }
+pyo3-async-runtimes = { version = "0.28.0", features = ["tokio-runtime"] }
+
+# OpenAPI + Swagger UI (feature-gated via `swagger` on datapress-core).
+utoipa              = "5.5.0"
+utoipa-swagger-ui   = { version = "9.0.2", features = ["actix-web"] }
+
+# OIDC / OAuth2 enforcement (feature-gated via `auth` on datapress-core).
+jsonwebtoken        = "9"
+reqwest             = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
+opt-level     = 3
+# Fat LTO + codegen-units = 1 OOM-kills rustc when cross-building the
+# aarch64 wheel under QEMU on GitHub-hosted runners. Thin LTO retains
+# almost all of the runtime benefit at a fraction of the link-time RAM.
+lto           = "thin"
+codegen-units = 16

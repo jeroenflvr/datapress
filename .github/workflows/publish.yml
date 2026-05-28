@@ -1,0 +1,165 @@
+name: Publish datapress to PyPI
+
+# Build wheels only on `v*` tags (which then publish to PyPI) and on
+# manual dispatch. Branch pushes and PRs no longer trigger a build.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Linux: build wheels for x86_64 (zig cross) and aarch64 (native runner).
+  # -----------------------------------------------------------------------
+  linux:
+    name: wheels-linux-${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64
+            runner: ubuntu-latest
+          - target: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: astral-sh/setup-uv@v3
+      - name: Build MkDocs site
+        run: uv tool run --with mkdocs-material mkdocs build -f docs/mkdocs.yml -d site --strict
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wheels-linux-${{ matrix.target }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          target:         ${{ matrix.target }}
+          manylinux:      auto
+          args:           --release --features docs,swagger --out dist
+          rust-toolchain: stable
+          # The rust-cross manylinux2014 images ship GCC 4.8 (CentOS 7
+          # base), which trips DuckDB's `__GNUC__ < 5` ABI guard in
+          # platform.hpp regardless of _GLIBCXX_USE_CXX11_ABI. The only
+          # source-level bypass is defining DUCKDB_CUSTOM_PLATFORM,
+          # which makes DuckDBPlatform() early-return before the
+          # #error. The error message's "DUCKDB_EXPLICIT_PLATFORM"
+          # hint is a lie — that macro is only honored by upstream
+          # Makefile/CMake, not the bundled cc-rs build.
+          before-script-linux: |
+            case "${{ matrix.target }}" in
+              x86_64)  PLATFORM=linux_amd64_gcc4 ;;
+              aarch64) PLATFORM=linux_arm64_gcc4 ;;
+              *)       echo "Unknown target ${{ matrix.target }}"; exit 1 ;;
+            esac
+            export CXXFLAGS="-DDUCKDB_CUSTOM_PLATFORM=${PLATFORM} ${CXXFLAGS:-}"
+            echo "CXXFLAGS=${CXXFLAGS}"
+          # sccache disabled: wrapping `c++` inside the manylinux container
+          # makes the bundled duckdb-sys C++ build fail silently. The
+          # Swatinem/rust-cache step above already caches target/ between
+          # runs, which covers the same C++ object files.
+          sccache:        'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-${{ matrix.target }}
+          path: dist
+
+  # -----------------------------------------------------------------------
+  # macOS: arm64 only.
+  # -----------------------------------------------------------------------
+  macos:
+    name: wheels-macos-aarch64
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: astral-sh/setup-uv@v3
+      - name: Build MkDocs site
+        run: uv tool run --with mkdocs-material mkdocs build -f docs/mkdocs.yml -d site --strict
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wheels-macos-aarch64
+      - uses: PyO3/maturin-action@v1
+        with:
+          target:         aarch64
+          args:           --release --features docs,swagger --out dist
+          rust-toolchain: stable
+          sccache:        'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-aarch64
+          path: dist
+
+  # -----------------------------------------------------------------------
+  # Windows: x86_64 only (aarch64 needs a non-trivial duckdb cross build).
+  # -----------------------------------------------------------------------
+  windows:
+    name: wheels-windows-x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: astral-sh/setup-uv@v3
+      - name: Build MkDocs site
+        run: uv tool run --with mkdocs-material mkdocs build -f docs/mkdocs.yml -d site --strict
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wheels-windows-x64
+      - uses: PyO3/maturin-action@v1
+        with:
+          target:         x64
+          args:           --release --features docs,swagger --out dist
+          rust-toolchain: stable
+          sccache:        'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-x64
+          path: dist
+
+  # -----------------------------------------------------------------------
+  # Source distribution
+  # -----------------------------------------------------------------------
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args:    --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist
+
+  # -----------------------------------------------------------------------
+  # Publish: runs only on `v*` tag push.
+  # Auth: classic PyPI API token stored in repo secret PYPI_API_TOKEN.
+  #   Create at https://pypi.org/manage/account/token/ and add it under
+  #   GitHub → Settings → Secrets and variables → Actions → New secret.
+  # -----------------------------------------------------------------------
+  publish:
+    name: publish-to-pypi
+    needs: [linux, macos, windows, sdist]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path:    dist
+          pattern: 'wheels-*'
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          password: ${{ secrets.PYPI_API_TOKEN }}
