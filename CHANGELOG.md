@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.0] - 2026-05-28
+
+### Documentation
+
+- Update auth doc ([9f83459](https://github.com/jeroenflvr/fast-api/commit/9f83459e051b4cd2e061644b8ff0b2a3d188cbf7))
+
+### Features
+
+- Add pluggable auth ([510592f](https://github.com/jeroenflvr/fast-api/commit/510592f3c6753a57507ae8ea2741378ff0db7f4c))
+- Add docs/mkdocs/version/.. ([5e2cb04](https://github.com/jeroenflvr/fast-api/commit/5e2cb0406ecacf0df6123386aa27ae89edd12280))
+
 ## [0.1.18] - 2026-05-27
 
 ### Documentation
