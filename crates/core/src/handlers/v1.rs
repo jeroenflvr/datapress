@@ -6,7 +6,7 @@
 //! | Method | Path                              | Description                          |
 //! |--------|-----------------------------------|--------------------------------------|
 //! | GET    | `/datasets`                       | List datasets with summaries         |
-//! | GET    | `/datasets/{name}/schema`         | Full schema + sample row             |
+//! | GET    | `/datasets/{name}/schema`         | Schema + rows + indexed cols + sample |
 //! | POST   | `/datasets/{name}/query`          | Query (JSON or Arrow IPC)            |
 //! | POST   | `/datasets/{name}/count`          | Count matching rows                  |
 //! | POST   | `/datasets/{name}/reload`         | Rebuild dataset (admin-only)         |
@@ -64,14 +64,24 @@ pub async fn get_schema(
         Ok(s)  => s,
         Err(e) => return e.error_response(),
     };
+    let summary = match backend.summary(&name) {
+        Ok(s)  => s,
+        Err(e) => return e.error_response(),
+    };
+    let indexed = match backend.indexed_columns(&name) {
+        Ok(i)  => i,
+        Err(e) => return e.error_response(),
+    };
     let sample = match backend.sample(&name).await {
         Ok(s)  => s,
         Err(e) => return e.error_response(),
     };
     let body = format!(
-        r#"{{"name":{name_lit},"columns":{cols},"sample":{sample}}}"#,
+        r#"{{"name":{name_lit},"rows":{rows},"columns":{cols},"indexed":{indexed},"sample":{sample}}}"#,
         name_lit = serde_json::to_string(&schema.name).unwrap(),
+        rows     = summary.rows,
         cols     = serde_json::to_string(&schema.columns).unwrap(),
+        indexed  = serde_json::to_string(&indexed).unwrap(),
     );
     HttpResponse::Ok().content_type("application/json").body(body)
 }

@@ -10,6 +10,7 @@
 //! (Postman, code generators, …) can consume it directly.
 
 use actix_web::dev::HttpServiceFactory;
+use actix_web::{HttpResponse, http::header, web};
 use utoipa::openapi::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -23,6 +24,26 @@ use utoipa_swagger_ui::SwaggerUi;
 pub fn service(mount: &str) -> impl HttpServiceFactory + use<> {
     SwaggerUi::new(format!("{mount}/{{_:.*}}"))
         .url(format!("{mount}/openapi.json"), openapi())
+}
+
+/// Register the Swagger UI plus a `mount` → `mount/` redirect.
+///
+/// Without the redirect, visiting the bare mount path (e.g. `/docs`)
+/// 404s because `SwaggerUi`'s tail-capture route requires the trailing
+/// slash to match the empty asset path.
+pub fn configure(mount: &str, cfg: &mut web::ServiceConfig) {
+    let redirect_target = format!("{mount}/");
+    cfg.service(
+        web::resource(mount.to_string()).route(web::get().to(move || {
+            let to = redirect_target.clone();
+            async move {
+                HttpResponse::MovedPermanently()
+                    .insert_header((header::LOCATION, to))
+                    .finish()
+            }
+        })),
+    )
+    .service(service(mount));
 }
 
 /// Build the OpenAPI document. The spec is authored as a JSON literal
@@ -123,7 +144,7 @@ fn openapi() -> OpenApi {
             "/api/v1/datasets/{name}/schema": {
                 "get": {
                     "tags":    ["datasets"],
-                    "summary": "Schema + sample row for one dataset",
+                    "summary": "Schema, row count, indexed columns, and sample row",
                     "parameters": [ dataset_name_param ],
                     "responses": {
                         "200": {

@@ -45,6 +45,15 @@ pub trait Backend: Send + Sync + 'static {
     /// Full schema for `name`. `Err(NotFound)` on unknown name.
     fn schema(&self, name: &str) -> Result<Arc<DatasetSchema>, AppError>;
 
+    /// Names of columns the backend has built an equality index over,
+    /// for inclusion in the `/schema` response. Default impl returns
+    /// an empty vec — backends without per-column indexes (e.g.
+    /// DuckDB, which relies on the embedded database engine) need
+    /// not override.
+    fn indexed_columns(&self, _name: &str) -> Result<Vec<String>, AppError> {
+        Ok(Vec::new())
+    }
+
     /// JSON for the first row of the dataset, or the literal string
     /// `"null"` if the dataset is empty.
     async fn sample(&self, name: &str) -> Result<String, AppError>;

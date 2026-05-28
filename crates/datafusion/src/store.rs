@@ -1506,6 +1506,25 @@ impl Backend for Store {
         Ok(Arc::new(st.schema.clone()))
     }
 
+    fn indexed_columns(&self, name: &str) -> Result<Vec<String>, AppError> {
+        let st = self.dataset(name)?;
+        // Report indexed columns in the dataset's declared schema order
+        // so the `/schema` response is deterministic.
+        let mut cols: Vec<String> = st.schema.columns.iter()
+            .map(|c| c.name.clone())
+            .filter(|n| st.index.contains_key(n))
+            .collect();
+        // Any indexed columns not in `schema.columns` (shouldn't happen,
+        // but be defensive) get appended sorted.
+        let mut extras: Vec<String> = st.index.keys()
+            .filter(|n| !cols.iter().any(|c| c == *n))
+            .cloned()
+            .collect();
+        extras.sort();
+        cols.extend(extras);
+        Ok(cols)
+    }
+
     async fn sample(&self, name: &str) -> Result<String, AppError> {
         Store::sample(self, name).await
     }

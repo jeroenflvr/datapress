@@ -125,7 +125,7 @@ pub async fn serve(
         };
         #[cfg(feature = "swagger")]
         let app = if swagger_cfg.enabled {
-            app.service(crate::swagger::service(&swagger_cfg.path))
+            app.configure(|c| crate::swagger::configure(&swagger_cfg.path, c))
         } else {
             app
         };

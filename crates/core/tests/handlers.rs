@@ -198,7 +198,10 @@ async fn schema_returns_columns_and_sample() {
         .uri("/api/datasets/people/schema").to_request();
     let body: Value = test::call_and_read_body_json(&app, req).await;
     assert_eq!(body["name"], "people");
+    assert_eq!(body["rows"], 5);
     assert_eq!(body["columns"][0]["name"], "id");
+    // Default Backend::indexed_columns impl returns an empty list.
+    assert_eq!(body["indexed"], serde_json::json!([]));
     assert_eq!(body["sample"]["id"],   1);
     assert_eq!(body["sample"]["name"], "Anna");
 }
