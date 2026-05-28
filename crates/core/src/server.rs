@@ -174,7 +174,7 @@ pub async fn serve(
         } else {
             app
         };
-        let app = app.service(
+        app.service(
             web::scope(prefix.as_str())
                 .service(handlers::health)
                 // Canonical, versioned API.
@@ -184,8 +184,7 @@ pub async fn serve(
                 // URLs in docs / scripts) keep working. New code
                 // should prefer `/api/v1/...`.
                 .service(web::scope("/api").configure(handlers::v1::configure)),
-        );
-        app
+        )
     });
     if let Some(w) = workers {
         server = server.workers(w);

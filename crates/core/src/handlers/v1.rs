@@ -30,10 +30,11 @@ use crate::models::{CountRequest, QueryRequest};
 #[cfg(feature = "auth")]
 fn require_read(req: &HttpRequest) -> Result<(), crate::errors::AppError> {
     use std::sync::Arc;
-    if let Some(cfg) = req.app_data::<web::Data<Arc<crate::config::AuthConfig>>>() {
-        if cfg.enabled && !cfg.anonymous_read {
-            return crate::auth::require_scopes(req, &cfg.read_scopes);
-        }
+    if let Some(cfg) = req.app_data::<web::Data<Arc<crate::config::AuthConfig>>>()
+        && cfg.enabled
+        && !cfg.anonymous_read
+    {
+        return crate::auth::require_scopes(req, &cfg.read_scopes);
     }
     Ok(())
 }
@@ -45,19 +46,20 @@ fn require_read(_: &HttpRequest) -> Result<(), crate::errors::AppError> { Ok(())
 /// configured reload scopes. The two paths are independent so operators
 /// can migrate to OIDC without breaking existing automation.
 fn require_reload(req: &HttpRequest) -> Result<(), crate::errors::AppError> {
+    #[cfg(feature = "auth")]
     let admin_ok = admin::require_admin(req).is_ok();
     #[cfg(feature = "auth")]
     {
         use std::sync::Arc;
-        if let Some(cfg) = req.app_data::<web::Data<Arc<crate::config::AuthConfig>>>() {
-            if cfg.enabled {
-                let scope_ok = crate::auth::require_scopes(req, &cfg.reload_scopes).is_ok();
-                if admin_ok && cfg.admin_token_fallback { return Ok(()); }
-                if scope_ok { return Ok(()); }
-                // Neither path satisfied — surface the scope error so
-                // the client gets a 401/403 with a Bearer challenge.
-                return crate::auth::require_scopes(req, &cfg.reload_scopes);
-            }
+        if let Some(cfg) = req.app_data::<web::Data<Arc<crate::config::AuthConfig>>>()
+            && cfg.enabled
+        {
+            let scope_ok = crate::auth::require_scopes(req, &cfg.reload_scopes).is_ok();
+            if admin_ok && cfg.admin_token_fallback { return Ok(()); }
+            if scope_ok { return Ok(()); }
+            // Neither path satisfied — surface the scope error so
+            // the client gets a 401/403 with a Bearer challenge.
+            return crate::auth::require_scopes(req, &cfg.reload_scopes);
         }
     }
     // No OIDC layer — fall back to the admin-token check.
