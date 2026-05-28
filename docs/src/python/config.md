@@ -122,7 +122,7 @@ Pass it to `DataPress(...)` via the `auth=` keyword:
 from datap_rs.datapress import DataPress, DataPressConfig, DatasetConfig, AuthConfig
 
 dp = DataPress(
-    DataPressConfig(host="0.0.0.0", port=8000),
+    DataPressConfig(backend="datafusion", listen="0.0.0.0", port=8000),
     [DatasetConfig(name="accidents", source="data/accidents.parquet")],
     auth=AuthConfig(
         enabled=True,
@@ -132,7 +132,7 @@ dp = DataPress(
         reload_scopes=["datasets:reload"],
     ),
 )
-dp.serve()
+import asyncio; asyncio.run(dp.run())
 ```
 
 Validation rules (raised as `ValueError`):
@@ -142,6 +142,6 @@ Validation rules (raised as `ValueError`):
 - `tenant_claim` must be a JSON Pointer starting with `/`.
 
 To spin up a local OIDC provider for testing, see
-[`examples/keycloak/`](https://github.com/jeroenrosenberg/datapress/tree/main/examples/keycloak)
+[`examples/keycloak/`](https://github.com/jeroenflvr/fast-api/tree/main/examples/keycloak)
 — one `docker compose up` and you have a pre-provisioned realm with
 client `datapress-api` and the right scopes.
