@@ -48,6 +48,10 @@ pyo3-async-runtimes = { version = "0.28.0", features = ["tokio-runtime"] }
 utoipa              = "5.5.0"
 utoipa-swagger-ui   = { version = "9.0.2", features = ["actix-web"] }
 
+# OIDC / OAuth2 enforcement (feature-gated via `auth` on datapress-core).
+jsonwebtoken        = "9"
+reqwest             = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
 [profile.release]
 opt-level     = 3
 # Fat LTO + codegen-units = 1 OOM-kills rustc when cross-building the

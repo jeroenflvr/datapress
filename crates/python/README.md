@@ -104,7 +104,8 @@ Four classes, no module-level state:
 | `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `request_timeout_ms`, `shutdown_timeout_secs`. |
 | `DatasetConfig`   | One dataset: `name`, `source`, `format`, `mode`, optional S3 + index.|
 | `S3Config`        | S3 / S3-compatible credentials and endpoint config.                  |
-| `DataPress`       | Built from a `DataPressConfig` + list of `DatasetConfig`. `await .run()`. |
+| `DataPress`       | Built from a `DataPressConfig` + list of `DatasetConfig` + optional `AuthConfig`. `await .run()`. |
+| `AuthConfig`      | OIDC / OAuth2 bearer enforcement (requires the `auth` feature in the wheel). |
 | `DataPressClient` | Sync HTTP client for talking to a running server (stdlib + lazy pyarrow). |
 
 Hover any of them in your IDE for full kwarg docs.
@@ -381,6 +382,61 @@ rebuild fails the swap simply doesn't happen and the old snapshot stays
 live. Per-dataset reloads are serialised by an async mutex; reloads of
 different datasets run in parallel. Peak RSS roughly doubles for the
 dataset being reloaded while both buffers are resident.
+
+---
+
+## Authentication (OIDC / OAuth2)
+
+Optional bearer-token enforcement against any OpenID Connect issuer
+(Keycloak, Auth0, Entra ID, Okta, Zitadel, …). Requires a wheel built
+with the `auth` Cargo feature:
+
+```bash
+maturin build --release --features auth
+```
+
+Pre-built PyPI wheels include it by default.
+
+```python
+from datap_rs.datapress import (
+    DataPress, DataPressConfig, DatasetConfig, AuthConfig,
+)
+
+auth = AuthConfig(
+    enabled=True,
+    issuer="http://localhost:8080/realms/datapress",
+    audience="datapress-api",
+    read_scopes=["datasets:read"],
+    reload_scopes=["datasets:reload"],
+    # anonymous_read=False,
+    # algorithms=["RS256"],
+    # leeway_secs=60,
+    # jwks_refresh_secs=3600,
+    # tenant_claim="/tenant_id",
+    # allowed_tenants=["acme"],
+    # admin_token_fallback=True,    # honour legacy X-Admin-Token
+    # start_degraded=True,          # boot even if JWKS fetch fails
+)
+
+server = DataPress(cfg, datasets=[ds], auth=auth)
+await server.run()
+```
+
+When `enabled=False` (default) all other fields are ignored and the
+server behaves exactly as before. Validation errors (missing issuer,
+malformed `tenant_claim`, …) raise `ValueError` at construction time.
+
+Call any endpoint with `Authorization: Bearer <jwt>`. Reload endpoints
+require `reload_scopes`; read endpoints require `read_scopes` unless
+`anonymous_read=True`.
+
+### Try it locally
+
+The repo ships a one-command Keycloak stack at
+[`examples/keycloak/`](https://github.com/jeroenflvr/fast-api/tree/main/examples/keycloak)
+with a pre-provisioned realm, service-account client, scopes and a test
+user. `docker compose up -d` and point `issuer` at
+`http://localhost:8080/realms/datapress`.
 
 ---
 

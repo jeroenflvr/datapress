@@ -5,20 +5,35 @@ delete / replace endpoints. Dataset reload via "load new, switch pointer,
 drop old" is fine since it preserves read-only semantics from the
 client's perspective.
 
+## Recently closed (kept here for one release as a changelog hint)
+
+- Versioned API prefix `/v1/...` (+ legacy `/api/...` alias).
+- OpenAPI / Swagger UI at `/docs` (feature-gated, default on).
+- MkDocs Material site embedded at `/mkdocs` (feature-gated, default on).
+- Graceful shutdown on SIGINT / SIGTERM with configurable grace period.
+- Reverse-proxy path prefix (`server.prefix`).
+- Dataset reload endpoint (`POST .../reload`, admin-token guarded).
+- Request timeout, max body size, response compression toggle.
+- Per-request access log (method, path, status, bytes, ms).
+- Arrow IPC stream response (content-negotiated via `Accept` or
+  `?format=arrow`).
+- Python config surface: backend, listen address, port, workers,
+  prefix, compression, body/timeout caps, datasets list, index policy.
+- Wheel matrix in CI: linux + macos + windows (manylinux via maturin).
+- `/schema` enriched with `rows` + `indexed` (column list).
+- OIDC / OAuth2 bearer auth (feature-gated `--features auth`): JWKS
+  cache w/ background refresh, scope + tenant claim enforcement,
+  Swagger UI SSO via OpenID Connect, admin-token kept as fallback.
+
+---
+
 ## Pre-existing items
 
-- pydantic_settings on the Python side.
-- Add endpoint to reload data (load data into new area, switch pointer,
-  delete old area). Requires the dataset to fit twice in memory.
-- Allow running behind a reverse proxy with a path prefix
-  (e.g. `/fast-api` → `/fast-api/api/datasets/{name}/query`).
-- Python config surface:
-  - number of workers (all cores if `None`)
-  - dataset location
-  - duckdb vs datafusion
-  - index mode `auto` or explicit list (+ define list)
-  - port
-  - listen address (`127.0.0.1` by default; don't expose by default)
+- `pydantic_settings` on the Python side (load `DataPressConfig` from
+  env vars / `.env`).
+- Python config surface: still missing — dataset *location* helper
+  (currently every dataset must be specified explicitly; a "point at
+  this folder, auto-register every parquet" shortcut would be nice).
 
 ---
 
@@ -41,9 +56,8 @@ client's perspective.
 
 ### Endpoints / metadata
 
-- Dataset reload endpoint (see pre-existing item) — still read-only.
-- `/schema` enriched with: row count, per-column min/max,
-  null-count, distinct-count estimate, which indices exist.
+- `/schema` further enrichment: per-column min/max, null-count,
+  distinct-count estimate. (Row count + indexed columns are now in.)
 - `/metrics` (Prometheus).
 
 ### Backends / formats
@@ -57,7 +71,11 @@ client's perspective.
 
 ### Auth & multi-tenant
 
-- Authentication: API keys and/or JWT bearer.
+- Authentication: integration test against a fake JWKS issuer
+  (currently covered by unit tests on scope/tenant/parse helpers only).
+- Per-operation security requirements in the OpenAPI spec (scopes are
+  enforced server-side; surfacing them per-route in the spec would let
+  Swagger UI request only the minimum needed scopes).
 - Per-dataset ACLs and/or row-level filters.
 - Rate limiting / per-client quotas.
 - CORS configuration (`actix-cors`).
@@ -69,10 +87,9 @@ client's perspective.
 
 ### Reliability / ops
 
-- Request timeout, max body size, max predicate count,
-  max JSON depth — DoS hardening.
+- Max predicate count, max JSON depth — DoS hardening beyond the
+  existing body-size cap.
 - Per-query memory cap / row-scan cap (beyond `page_size`).
-- Graceful shutdown on SIGTERM.
 - Backpressure / connection-cap config.
 - Query result cache; ETag / `If-None-Match` support.
 
@@ -80,15 +97,15 @@ client's perspective.
 
 - Structured logging config (level, JSON vs text).
 - Tracing (`tracing` + OTLP).
-- Per-request access log line: method, path, dataset, ms, rows, bytes.
 
 ### Testing & CI
 
 - Done: handler integration tests, DuckDB end-to-end with the full
   predicate matrix, Arrow IPC round-trip, and `.github/workflows/ci.yml`
-  (clippy + workspace test). `cargo fmt --check` left out of CI because
-  the codebase relies on hand-aligned formatting that conflicts with
-  rustfmt's default rules — pick this up when a `rustfmt.toml` is in.
+  (clippy + workspace test, `docs,swagger` features on). `cargo fmt
+  --check` still left out because the codebase relies on hand-aligned
+  formatting that conflicts with rustfmt's default rules — pick this
+  up when a `rustfmt.toml` is in.
 - Criterion benchmarks committed so perf claims are reproducible.
 - `cargo audit` + semver checks in CI.
 - Fuzz target for the DSL parser.
@@ -116,18 +133,17 @@ work around this.
 - Pure-Python client class (`DataPressClient`) with typed
   `query()` / `count()` returning a pyarrow Table; saves users from
   hand-rolling `requests` + dicts.
-- Wheel matrix on PyPI: manylinux + musllinux + macOS arm64/x86_64
-  + windows (maturin + cibuildwheel).
+- Wheel matrix on PyPI: musllinux still missing (manylinux + macOS
+  arm64/x86_64 + windows are wired in `.github/workflows/publish.yml`).
 
 ### Docs / API contract
 
-- OpenAPI / JSON-schema spec for the request DSL — keeps clients and
-  docs in sync automatically.
-- Versioned API prefix `/v1/...` (see pre-existing item).
-- `CHANGELOG.md` discipline.
+- `CHANGELOG.md` discipline. (OpenAPI spec + versioned `/v1` prefix
+  are now in — see "Recently closed".)
 
 ### Security
 
 - Fuzz pass on weird column names and predicate values to confirm no
   SQL escape is possible.
 - Secret-handling story for future remote-storage credentials.
+

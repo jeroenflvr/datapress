@@ -51,6 +51,36 @@ pub async fn serve(
              without --features swagger; skipping Swagger UI"
         );
     }
+    #[cfg(not(feature = "auth"))]
+    if cfg.auth.enabled {
+        log::warn!(
+            "[auth] enabled = true in config, but this binary was built \
+             without --features auth; skipping OIDC enforcement"
+        );
+    }
+
+    // Boot the JWKS cache (and validate config) before binding the
+    // listener. With `start_degraded = true` this only warns on an
+    // unreachable IdP; with `false` it propagates the error and the
+    // process exits non-zero.
+    #[cfg(feature = "auth")]
+    let auth_state = if cfg.auth.enabled {
+        let jwks = crate::auth::JwksCache::boot(&cfg.auth).await
+            .map_err(|e| std::io::Error::other(format!("auth bootstrap failed: {e}")))?;
+        log::info!(
+            "[auth] OIDC enforcement enabled (issuer = {}, audience = {}, read_scopes = {:?}, reload_scopes = {:?})",
+            cfg.auth.issuer,
+            if cfg.auth.audience.is_empty() { "<none>" } else { cfg.auth.audience.as_str() },
+            cfg.auth.read_scopes,
+            cfg.auth.reload_scopes,
+        );
+        Some(crate::auth::AuthState {
+            cfg:  Arc::new(cfg.auth.clone()),
+            jwks,
+        })
+    } else {
+        None
+    };
 
     log::info!(
         "Listening on http://{}:{}{} ({} backend, {} workers, compression {}, max-body {} bytes, timeout {}, shutdown grace {}s)",
@@ -100,6 +130,8 @@ pub async fn serve(
         let docs_cfg = docs_cfg.clone();
         #[cfg(feature = "swagger")]
         let swagger_cfg = swagger_cfg.clone();
+        #[cfg(feature = "auth")]
+        let auth_state = auth_state.clone();
         let app = App::new()
             .app_data(web::Data::new(backend))
             .app_data(build_info.clone())
@@ -107,7 +139,20 @@ pub async fn serve(
             .app_data(pay_cfg)
             .wrap(middleware::Condition::new(timeout_ms > 0, timeout))
             .wrap(middleware::Condition::new(compress, middleware::Compress::default()))
-            .wrap(middleware::Logger::new("%a \"%r\" %s %b bytes %Dms"))
+            .wrap(middleware::Logger::new("%a \"%r\" %s %b bytes %Dms"));
+        // Auth middleware wraps everything below — including the docs +
+        // swagger services and the prefix scope. Health/version probes
+        // are registered above and remain unauthenticated by design so
+        // load balancers can keep checking liveness. When auth is
+        // disabled the middleware is a pass-through.
+        #[cfg(feature = "auth")]
+        let app = match auth_state.clone() {
+            Some(state) => app
+                .app_data(web::Data::new(state.cfg.clone()))
+                .wrap(crate::auth::Auth::new(state)),
+            None => app.wrap(crate::auth::Auth::disabled()),
+        };
+        let app = app
             .service(handlers::healthz)
             .service(handlers::readyz)
             .service(handlers::version);
@@ -125,7 +170,7 @@ pub async fn serve(
         };
         #[cfg(feature = "swagger")]
         let app = if swagger_cfg.enabled {
-            app.configure(|c| crate::swagger::configure(&swagger_cfg.path, c))
+            app.configure(|c| crate::swagger::configure(&swagger_cfg.path, swagger_cfg.oauth2.as_ref(), c))
         } else {
             app
         };

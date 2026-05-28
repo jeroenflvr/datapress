@@ -215,6 +215,35 @@ must differ from each other. When the binary is built without the
 relevant feature but the TOML enables it, the server logs a warning at
 startup and continues without that surface.
 
+### Authentication (OIDC / OAuth2)
+
+Build with `--features auth` to enable JWT bearer enforcement against
+any OpenID-Connect issuer (Entra ID, Auth0, Keycloak, Okta, …). When
+enabled, the server fetches the issuer's JWKS at startup, refreshes it
+in the background, and validates `Authorization: Bearer <jwt>` headers
+against the configured issuer, audience, algorithms, and scopes.
+
+```toml
+[auth]
+enabled         = true
+issuer          = "https://login.microsoftonline.com/<tenant-id>/v2.0"
+audience        = "api://datapress"
+algorithms      = ["RS256"]
+read_scopes     = ["datasets:read"]
+reload_scopes   = ["datasets:reload"]
+anonymous_read  = false      # set true to keep read endpoints public
+tenant_claim    = "/tid"     # JSON-pointer into the JWT claims
+allowed_tenants = ["<tenant-id>"]
+admin_token_fallback = true  # keep X-Admin-Token working in parallel
+```
+
+Health probes (`/healthz`, `/readyz`, `/version`) stay unauthenticated
+so load balancers keep working. The legacy `X-Admin-Token` header keeps
+working for `POST .../reload` as long as `admin_token_fallback = true`.
+
+To turn the Swagger UI itself into an SSO client, add an `[swagger.oauth2]`
+block — it gets rendered as an `OpenIdConnect` security scheme with PKCE.
+
 ### Source
 
 `[dataset.source]` is a tagged enum.

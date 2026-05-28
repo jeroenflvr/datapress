@@ -4,6 +4,8 @@
 //! response models, schema description, and admin-token auth.
 
 pub mod admin;
+#[cfg(feature = "auth")]
+pub mod auth;
 pub mod backend;
 pub mod banner;
 pub mod config;

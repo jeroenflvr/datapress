@@ -6,7 +6,9 @@ pub enum AppError {
     UnknownOperator(String),
     InvalidValue(String),
     NotFound(String),
+    Unauthorized(String),
     Forbidden(String),
+    Unavailable(String),
     Internal(String),
 }
 
@@ -17,7 +19,9 @@ impl std::fmt::Display for AppError {
             AppError::UnknownOperator(o) => write!(f, "unknown operator: {o}"),
             AppError::InvalidValue(v)    => write!(f, "invalid value: {v}"),
             AppError::NotFound(n)        => write!(f, "not found: {n}"),
+            AppError::Unauthorized(m)    => write!(f, "unauthorized: {m}"),
             AppError::Forbidden(m)       => write!(f, "forbidden: {m}"),
+            AppError::Unavailable(m)     => write!(f, "service unavailable: {m}"),
             AppError::Internal(s)        => write!(f, "internal error: {s}"),
         }
     }
@@ -53,10 +57,12 @@ impl From<datafusion::error::DataFusionError> for AppError {
 impl ResponseError for AppError {
     fn status_code(&self) -> StatusCode {
         match self {
-            AppError::Internal(_)  => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::NotFound(_)  => StatusCode::NOT_FOUND,
-            AppError::Forbidden(_) => StatusCode::FORBIDDEN,
-            _                      => StatusCode::BAD_REQUEST,
+            AppError::Internal(_)     => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::NotFound(_)     => StatusCode::NOT_FOUND,
+            AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
+            AppError::Forbidden(_)    => StatusCode::FORBIDDEN,
+            AppError::Unavailable(_)  => StatusCode::SERVICE_UNAVAILABLE,
+            _                         => StatusCode::BAD_REQUEST,
         }
     }
 

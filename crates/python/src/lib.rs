@@ -21,9 +21,9 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
 use datapress_core::config::{
-    AddressingStyle, AppConfig, Backend, DatasetConfig as CoreDatasetConfig,
-    IndexConfig, IndexMode, S3Config as CoreS3Config, ServerConfig, SourceConfig,
-    SourceKind,
+    AddressingStyle, AppConfig, AuthConfig as CoreAuthConfig, Backend,
+    DatasetConfig as CoreDatasetConfig, IndexConfig, IndexMode,
+    S3Config as CoreS3Config, ServerConfig, SourceConfig, SourceKind,
 };
 
 // ---------------------------------------------------------------------------
@@ -408,6 +408,168 @@ impl PyDataPressConfig {
 }
 
 // ---------------------------------------------------------------------------
+// AuthConfig
+// ---------------------------------------------------------------------------
+
+/// OIDC / OAuth2 bearer-token enforcement for the HTTP API.
+///
+/// Pass an instance to :class:`DataPress` as the ``auth`` kwarg. Requires
+/// the wheel to be built with the ``auth`` Cargo feature (the published
+/// wheels include it). When ``enabled=False`` (default) the entire auth
+/// layer is a no-op and existing ``X-Admin-Token`` semantics apply.
+///
+/// Args:
+///     enabled (bool): Master switch. Default ``False``.
+///     issuer (str): OIDC issuer URL — must equal the JWT ``iss`` claim.
+///         Required when ``enabled=True``. Must be ``https://...`` (or
+///         ``http://localhost...`` for local development).
+///     audience (str): Expected JWT ``aud`` claim. Empty disables ``aud``
+///         validation (not recommended in production).
+///     read_scopes (list[str]): Scopes required on every read endpoint
+///         (``GET /datasets``, schema, query, count). Empty list = any
+///         valid token is enough.
+///     reload_scopes (list[str]): Scopes required on ``POST .../reload``.
+///     anonymous_read (bool): Allow unauthenticated reads. Default
+///         ``False``.
+///     algorithms (list[str]): Allowed JWS algorithms. Default
+///         ``["RS256"]``. Only RS/ES/PS variants are accepted.
+///     leeway_secs (int): Clock-skew tolerance for ``exp``/``nbf``.
+///         Default ``60``.
+///     jwks_refresh_secs (int): Background JWKS refresh interval.
+///         Default ``3600`` (clamped to ≥ 60).
+///     tenant_claim (str): JSON-pointer into the JWT claims to extract a
+///         tenant id (e.g. ``"/tid"`` for Entra ID). Empty disables.
+///     allowed_tenants (list[str]): If non-empty, the token's tenant
+///         value must be in this list. Has no effect without
+///         ``tenant_claim``.
+///     admin_token_fallback (bool): Keep ``X-Admin-Token`` working in
+///         parallel with OIDC for ``POST .../reload``. Default ``True``.
+///     start_degraded (bool): If ``True`` (default) the server starts
+///         even when the IdP is unreachable and serves 503 for
+///         authenticated requests until JWKS becomes available.
+///         If ``False``, an unreachable IdP at boot fails startup.
+#[pyclass(name = "AuthConfig", module = "datap_rs.datapress", from_py_object)]
+#[derive(Clone)]
+pub struct PyAuthConfig {
+    #[pyo3(get, set)] pub enabled:              bool,
+    #[pyo3(get, set)] pub issuer:               String,
+    #[pyo3(get, set)] pub audience:             String,
+    #[pyo3(get, set)] pub read_scopes:          Vec<String>,
+    #[pyo3(get, set)] pub reload_scopes:        Vec<String>,
+    #[pyo3(get, set)] pub anonymous_read:       bool,
+    #[pyo3(get, set)] pub algorithms:           Vec<String>,
+    #[pyo3(get, set)] pub leeway_secs:          u64,
+    #[pyo3(get, set)] pub jwks_refresh_secs:    u64,
+    #[pyo3(get, set)] pub tenant_claim:         String,
+    #[pyo3(get, set)] pub allowed_tenants:      Vec<String>,
+    #[pyo3(get, set)] pub admin_token_fallback: bool,
+    #[pyo3(get, set)] pub start_degraded:       bool,
+}
+
+impl Default for PyAuthConfig {
+    fn default() -> Self {
+        let d = CoreAuthConfig::default();
+        Self {
+            enabled:              d.enabled,
+            issuer:               d.issuer,
+            audience:             d.audience,
+            read_scopes:          d.read_scopes,
+            reload_scopes:        d.reload_scopes,
+            anonymous_read:       d.anonymous_read,
+            algorithms:           d.algorithms,
+            leeway_secs:          d.leeway_secs,
+            jwks_refresh_secs:    d.jwks_refresh_secs,
+            tenant_claim:         d.tenant_claim,
+            allowed_tenants:      d.allowed_tenants,
+            admin_token_fallback: d.admin_token_fallback,
+            start_degraded:       d.start_degraded,
+        }
+    }
+}
+
+#[pymethods]
+impl PyAuthConfig {
+    /// Build an :class:`AuthConfig`. All kwargs match the TOML ``[auth]``
+    /// block; see the class docstring for semantics.
+    #[new]
+    #[pyo3(signature = (
+        enabled              = false,
+        issuer               = String::new(),
+        audience             = String::new(),
+        read_scopes          = Vec::new(),
+        reload_scopes        = Vec::new(),
+        anonymous_read       = false,
+        algorithms           = vec!["RS256".to_string()],
+        leeway_secs          = 60,
+        jwks_refresh_secs    = 3600,
+        tenant_claim         = String::new(),
+        allowed_tenants      = Vec::new(),
+        admin_token_fallback = true,
+        start_degraded       = true,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        enabled:              bool,
+        issuer:               String,
+        audience:             String,
+        read_scopes:          Vec<String>,
+        reload_scopes:        Vec<String>,
+        anonymous_read:       bool,
+        algorithms:           Vec<String>,
+        leeway_secs:          u64,
+        jwks_refresh_secs:    u64,
+        tenant_claim:         String,
+        allowed_tenants:      Vec<String>,
+        admin_token_fallback: bool,
+        start_degraded:       bool,
+    ) -> Self {
+        Self {
+            enabled, issuer, audience, read_scopes, reload_scopes,
+            anonymous_read, algorithms, leeway_secs, jwks_refresh_secs,
+            tenant_claim, allowed_tenants, admin_token_fallback,
+            start_degraded,
+        }
+    }
+}
+
+impl PyAuthConfig {
+    fn into_core(self) -> PyResult<CoreAuthConfig> {
+        if self.enabled {
+            if self.issuer.is_empty() {
+                return Err(PyValueError::new_err(
+                    "AuthConfig.issuer is required when enabled=True",
+                ));
+            }
+            if self.tenant_claim.is_empty() && !self.allowed_tenants.is_empty() {
+                return Err(PyValueError::new_err(
+                    "AuthConfig.allowed_tenants requires tenant_claim to be set",
+                ));
+            }
+            if !self.tenant_claim.is_empty() && !self.tenant_claim.starts_with('/') {
+                return Err(PyValueError::new_err(
+                    "AuthConfig.tenant_claim must be a JSON-pointer (start with '/')",
+                ));
+            }
+        }
+        Ok(CoreAuthConfig {
+            enabled:              self.enabled,
+            issuer:               self.issuer,
+            audience:             self.audience,
+            read_scopes:          self.read_scopes,
+            reload_scopes:        self.reload_scopes,
+            anonymous_read:       self.anonymous_read,
+            algorithms:           self.algorithms,
+            leeway_secs:          self.leeway_secs,
+            jwks_refresh_secs:    self.jwks_refresh_secs,
+            tenant_claim:         self.tenant_claim,
+            allowed_tenants:      self.allowed_tenants,
+            admin_token_fallback: self.admin_token_fallback,
+            start_degraded:       self.start_degraded,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // DataPress
 // ---------------------------------------------------------------------------
 
@@ -441,21 +603,32 @@ impl PyDataPress {
     /// Args:
     ///     config (DataPressConfig): Server-side configuration.
     ///     datasets (list[DatasetConfig]): Datasets to publish. Must be non-empty.
+    ///     auth (AuthConfig | None): Optional OIDC/OAuth2 enforcement.
+    ///         Defaults to disabled.
     ///
     /// Raises:
     ///     ValueError: If any field is invalid (bad backend name, bad prefix,
     ///         duplicate dataset name, …).
     #[new]
-    #[pyo3(signature = (config, datasets))]
-    fn new(config: PyDataPressConfig, datasets: Vec<PyDatasetConfig>) -> PyResult<Self> {
+    #[pyo3(signature = (config, datasets, auth = None))]
+    fn new(
+        config:   PyDataPressConfig,
+        datasets: Vec<PyDatasetConfig>,
+        auth:     Option<PyAuthConfig>,
+    ) -> PyResult<Self> {
         let server = config.into_core()?;
         let datasets = datasets.into_iter()
             .map(|d| d.into_core())
             .collect::<PyResult<Vec<_>>>()?;
+        let auth = match auth {
+            Some(a) => a.into_core()?,
+            None    => CoreAuthConfig::default(),
+        };
         Ok(Self { cfg: AppConfig {
             server,
             docs:     datapress_core::config::DocsConfig::default(),
             swagger:  datapress_core::config::SwaggerConfig::default(),
+            auth,
             datasets,
         } })
     }
@@ -510,6 +683,7 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
         },
         docs:     cfg.docs.clone(),
         swagger:  cfg.swagger.clone(),
+        auth:     cfg.auth.clone(),
         datasets: cfg.datasets.clone(),
     }
 }
@@ -528,6 +702,7 @@ fn datapress(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyS3Config>()?;
     m.add_class::<PyDatasetConfig>()?;
     m.add_class::<PyDataPressConfig>()?;
+    m.add_class::<PyAuthConfig>()?;
     m.add_class::<PyDataPress>()?;
     Ok(())
 }

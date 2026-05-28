@@ -18,6 +18,11 @@ docs       = ["dep:include_dir", "dep:mime_guess"]
 # `[swagger].path` (default `/docs`). Off by default at compile time;
 # can be disabled at runtime via `[swagger].enabled = false`.
 swagger    = ["dep:utoipa", "dep:utoipa-swagger-ui"]
+# OIDC bearer-token authentication + scope enforcement. Off by default;
+# when enabled, `[auth]` config block must be provided. The Swagger UI's
+# SSO support (`[swagger.oauth2]`) is independent of this and only
+# drives the UI; the actual API enforcement lives behind this feature.
+auth       = ["dep:jsonwebtoken", "dep:reqwest", "dep:arc-swap"]
 
 [dependencies]
 actix-web.workspace   = true
@@ -38,6 +43,9 @@ include_dir = { version = "0.7", optional = true }
 mime_guess  = { version = "2",   optional = true }
 utoipa            = { workspace = true, optional = true }
 utoipa-swagger-ui = { workspace = true, optional = true }
+jsonwebtoken      = { workspace = true, optional = true }
+reqwest           = { workspace = true, optional = true }
+arc-swap          = { workspace = true, optional = true }
 
 [dev-dependencies]
 arrow = { workspace = true }

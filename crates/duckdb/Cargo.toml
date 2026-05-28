@@ -8,6 +8,7 @@ license.workspace = true
 default = []
 docs    = ["datapress-core/docs"]
 swagger = ["datapress-core/swagger"]
+auth    = ["datapress-core/auth"]
 
 [dependencies]
 datapress-core = { workspace = true, features = ["duckdb"] }

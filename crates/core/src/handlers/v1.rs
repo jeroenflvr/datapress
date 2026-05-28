@@ -22,6 +22,48 @@ use crate::admin;
 use crate::handlers::{ARROW_IPC_MIME, BackendData, wants_arrow};
 use crate::models::{CountRequest, QueryRequest};
 
+// -------------------------------------------------------------- auth guards --
+
+/// Enforce the configured `read` scopes when the `auth` feature is on
+/// and OIDC enforcement is enabled. When disabled (either at build time
+/// or in config) this is a no-op.
+#[cfg(feature = "auth")]
+fn require_read(req: &HttpRequest) -> Result<(), crate::errors::AppError> {
+    use std::sync::Arc;
+    if let Some(cfg) = req.app_data::<web::Data<Arc<crate::config::AuthConfig>>>() {
+        if cfg.enabled && !cfg.anonymous_read {
+            return crate::auth::require_scopes(req, &cfg.read_scopes);
+        }
+    }
+    Ok(())
+}
+#[cfg(not(feature = "auth"))]
+fn require_read(_: &HttpRequest) -> Result<(), crate::errors::AppError> { Ok(()) }
+
+/// Allow the request to perform a reload if EITHER the legacy admin
+/// token matches OR (when `auth` is enabled) the caller holds the
+/// configured reload scopes. The two paths are independent so operators
+/// can migrate to OIDC without breaking existing automation.
+fn require_reload(req: &HttpRequest) -> Result<(), crate::errors::AppError> {
+    let admin_ok = admin::require_admin(req).is_ok();
+    #[cfg(feature = "auth")]
+    {
+        use std::sync::Arc;
+        if let Some(cfg) = req.app_data::<web::Data<Arc<crate::config::AuthConfig>>>() {
+            if cfg.enabled {
+                let scope_ok = crate::auth::require_scopes(req, &cfg.reload_scopes).is_ok();
+                if admin_ok && cfg.admin_token_fallback { return Ok(()); }
+                if scope_ok { return Ok(()); }
+                // Neither path satisfied — surface the scope error so
+                // the client gets a 401/403 with a Bearer challenge.
+                return crate::auth::require_scopes(req, &cfg.reload_scopes);
+            }
+        }
+    }
+    // No OIDC layer — fall back to the admin-token check.
+    admin::require_admin(req)
+}
+
 /// Register every v1 route on the provided actix [`web::ServiceConfig`].
 ///
 /// Call this inside a [`web::scope`] — usually `/api/v1` — so paths come
@@ -46,7 +88,8 @@ pub const ROUTES: &[(&str, &str)] = &[
 
 // ---------------------------------------------------------------- handlers --
 
-pub async fn list_datasets(backend: BackendData) -> HttpResponse {
+pub async fn list_datasets(req: HttpRequest, backend: BackendData) -> HttpResponse {
+    if let Err(e) = require_read(&req) { return e.error_response(); }
     let summaries: Vec<_> = backend
         .names()
         .into_iter()
@@ -56,9 +99,11 @@ pub async fn list_datasets(backend: BackendData) -> HttpResponse {
 }
 
 pub async fn get_schema(
+    req:     HttpRequest,
     backend: BackendData,
     path:    web::Path<String>,
 ) -> HttpResponse {
+    if let Err(e) = require_read(&req) { return e.error_response(); }
     let name = path.into_inner();
     let schema = match backend.schema(&name) {
         Ok(s)  => s,
@@ -92,6 +137,7 @@ pub async fn query_dataset(
     path:    web::Path<String>,
     body:    web::Json<QueryRequest>,
 ) -> HttpResponse {
+    if let Err(e) = require_read(&http) { return e.error_response(); }
     let name      = path.into_inner();
     let page      = body.page.max(1);
     let page_size = body.page_size.clamp(1, 1_000_000);
@@ -121,10 +167,12 @@ pub async fn query_dataset(
 }
 
 pub async fn count_dataset(
+    req:     HttpRequest,
     backend: BackendData,
     path:    web::Path<String>,
     body:    Option<web::Json<CountRequest>>,
 ) -> HttpResponse {
+    if let Err(e) = require_read(&req) { return e.error_response(); }
     let name = path.into_inner();
     let req  = body.map(|b| b.into_inner()).unwrap_or_default();
 
@@ -142,7 +190,7 @@ pub async fn reload_dataset(
     backend: BackendData,
     path:    web::Path<String>,
 ) -> HttpResponse {
-    if let Err(e) = admin::require_admin(&req) {
+    if let Err(e) = require_reload(&req) {
         return e.error_response();
     }
     let name = path.into_inner();

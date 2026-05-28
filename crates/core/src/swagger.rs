@@ -14,6 +14,8 @@ use actix_web::{HttpResponse, http::header, web};
 use utoipa::openapi::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+use crate::config::SwaggerOAuth2Config;
+
 /// Build the [`SwaggerUi`] actix service for the given mount path.
 ///
 /// Visiting `<mount>/` (e.g. `/docs/`) loads the interactive UI;
@@ -21,9 +23,27 @@ use utoipa_swagger_ui::SwaggerUi;
 ///
 /// The mount is registered with a tail-capture (`{_:.*}`) so Swagger
 /// UI's nested assets resolve correctly.
-pub fn service(mount: &str) -> impl HttpServiceFactory + use<> {
-    SwaggerUi::new(format!("{mount}/{{_:.*}}"))
-        .url(format!("{mount}/openapi.json"), openapi())
+///
+/// When `oauth2` is `Some`, the spec advertises an `OpenIdConnect`
+/// security scheme (auto-discovered from the issuer's well-known URL)
+/// and the UI's `initOAuth` is preconfigured with `client_id`, scopes,
+/// and PKCE so users can sign in directly from the docs page.
+pub fn service(mount: &str, oauth2: Option<&SwaggerOAuth2Config>) -> impl HttpServiceFactory + use<> {
+    let ui = SwaggerUi::new(format!("{mount}/{{_:.*}}"))
+        .url(format!("{mount}/openapi.json"), openapi(oauth2));
+    if let Some(o) = oauth2 {
+        let mut scopes: Vec<String> = o.scopes.clone();
+        if !scopes.iter().any(|s| s == "openid") {
+            scopes.insert(0, "openid".to_string());
+        }
+        let oauth_cfg = utoipa_swagger_ui::oauth::Config::new()
+            .client_id(&o.client_id)
+            .scopes(scopes)
+            .use_pkce_with_authorization_code_grant(o.pkce);
+        ui.oauth(oauth_cfg)
+    } else {
+        ui
+    }
 }
 
 /// Register the Swagger UI plus a `mount` → `mount/` redirect.
@@ -31,7 +51,11 @@ pub fn service(mount: &str) -> impl HttpServiceFactory + use<> {
 /// Without the redirect, visiting the bare mount path (e.g. `/docs`)
 /// 404s because `SwaggerUi`'s tail-capture route requires the trailing
 /// slash to match the empty asset path.
-pub fn configure(mount: &str, cfg: &mut web::ServiceConfig) {
+pub fn configure(
+    mount:  &str,
+    oauth2: Option<&SwaggerOAuth2Config>,
+    cfg:    &mut web::ServiceConfig,
+) {
     let redirect_target = format!("{mount}/");
     cfg.service(
         web::resource(mount.to_string()).route(web::get().to(move || {
@@ -43,7 +67,7 @@ pub fn configure(mount: &str, cfg: &mut web::ServiceConfig) {
             }
         })),
     )
-    .service(service(mount));
+    .service(service(mount, oauth2));
 }
 
 /// Build the OpenAPI document. The spec is authored as a JSON literal
@@ -51,7 +75,7 @@ pub fn configure(mount: &str, cfg: &mut web::ServiceConfig) {
 /// the API surface is small and stable, and a hand-written spec gives
 /// us full control over examples + descriptions without scattering
 /// attributes across the handler tree.
-fn openapi() -> OpenApi {
+fn openapi(oauth2: Option<&SwaggerOAuth2Config>) -> OpenApi {
     let version = env!("CARGO_PKG_VERSION");
     // Reusable inline parameter — utoipa doesn't accept `$ref`-style
     // parameters at the Operation level, so we splice the object in
@@ -63,7 +87,7 @@ fn openapi() -> OpenApi {
         "schema":   { "type": "string" },
         "description": "Dataset identifier as declared in `datasets.toml`."
     });
-    let json = serde_json::json!({
+    let mut json = serde_json::json!({
         "openapi": "3.1.0",
         "info": {
             "title":       "datapress HTTP API",
@@ -322,6 +346,28 @@ fn openapi() -> OpenApi {
         }
     });
 
+    // Splice in the OIDC security scheme if SSO is configured. Done
+    // outside the json! literal so the macro stays static and the
+    // optional bits live in plain Rust.
+    if let Some(o) = oauth2 {
+        let scheme = serde_json::json!({
+            "type":             "openIdConnect",
+            "openIdConnectUrl": format!("{}/.well-known/openid-configuration", o.issuer),
+            "description":      "Sign in with your identity provider. The Swagger UI \
+                                 will attach the resulting access token as \
+                                 `Authorization: Bearer …` to every \"Try it out\" \
+                                 request.",
+        });
+        json["components"]["securitySchemes"]["OpenIdConnect"] = scheme;
+        // Apply globally so every operation shows the lock icon. Scope
+        // requirements per operation can be tightened later when the
+        // server actually enforces tokens.
+        let scopes = serde_json::Value::Array(
+            o.scopes.iter().map(|s| serde_json::Value::String(s.clone())).collect()
+        );
+        json["security"] = serde_json::json!([ { "OpenIdConnect": scopes } ]);
+    }
+
     // The hand-written literal above is type-checked at runtime by
     // `serde`; if a future edit produces invalid OpenAPI, this panics
     // at server start (covered by the integration test below).
@@ -335,6 +381,27 @@ mod tests {
     #[test]
     fn openapi_deserialises() {
         // Smoke test: the spec must be a valid OpenAPI 3 document.
-        let _ = openapi();
+        let _ = openapi(None);
+    }
+
+    #[test]
+    fn openapi_with_oauth2_advertises_openid_connect_scheme() {
+        let cfg = SwaggerOAuth2Config {
+            issuer:    "https://issuer.example.com".into(),
+            client_id: "dp-swagger".into(),
+            scopes:    vec!["openid".into(), "datasets:read".into()],
+            pkce:      true,
+        };
+        let spec = openapi(Some(&cfg));
+        let json = serde_json::to_value(&spec).unwrap();
+        assert_eq!(
+            json["components"]["securitySchemes"]["OpenIdConnect"]["type"],
+            "openIdConnect"
+        );
+        assert_eq!(
+            json["components"]["securitySchemes"]["OpenIdConnect"]["openIdConnectUrl"],
+            "https://issuer.example.com/.well-known/openid-configuration"
+        );
+        assert!(json["security"][0]["OpenIdConnect"].is_array());
     }
 }

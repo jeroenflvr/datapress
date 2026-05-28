@@ -48,6 +48,8 @@ pub struct AppConfig {
     pub docs:     DocsConfig,
     #[serde(default)]
     pub swagger:  SwaggerConfig,
+    #[serde(default)]
+    pub auth:     AuthConfig,
     #[serde(rename = "dataset", default)]
     pub datasets: Vec<DatasetConfig>,
 }
@@ -149,11 +151,19 @@ impl Default for DocsConfig {
 /// to suppress it (e.g. in prod). When the binary was built without
 /// the feature, `enabled = true` is harmless: the server logs a
 /// warning at startup and skips the mount.
+///
+/// To let users sign in to the UI itself (Authorization Code + PKCE
+/// against any OIDC provider), populate the optional `[swagger.oauth2]`
+/// sub-block. Acquired tokens are attached as `Authorization: Bearer …`
+/// to every "Try it out" request — useful for exercising auth-protected
+/// endpoints from the docs page. This drives the UI only; it does not
+/// turn on server-side token validation.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SwaggerConfig {
     pub enabled: bool,
     pub path:    String,
+    pub oauth2:  Option<SwaggerOAuth2Config>,
 }
 
 impl Default for SwaggerConfig {
@@ -161,9 +171,130 @@ impl Default for SwaggerConfig {
         Self {
             enabled: true,
             path:    "/docs".into(),
+            oauth2:  None,
         }
     }
 }
+
+/// OIDC single-sign-on for the Swagger UI (`[swagger.oauth2]`).
+///
+/// Configures the UI to drive an Authorization Code + PKCE flow against
+/// the given OIDC issuer. Swagger UI auto-discovers the authorize /
+/// token endpoints from `<issuer>/.well-known/openid-configuration`,
+/// so we don't need to pin them here.
+///
+/// All fields are required when the block is present — there is no
+/// sensible default for `issuer` or `client_id`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SwaggerOAuth2Config {
+    /// OIDC issuer URL, e.g.
+    /// `https://login.microsoftonline.com/<tenant>/v2.0` or
+    /// `https://accounts.google.com`. Must not end in `/`.
+    pub issuer: String,
+    /// Public OAuth2 client identifier registered with the IdP. The
+    /// client must be a SPA / public client (no secret) with
+    /// `https://<your-host>{swagger.path}/oauth2-redirect.html` listed
+    /// as an allowed redirect URI.
+    pub client_id: String,
+    /// Scopes to request by default. Will be pre-checked in the Swagger
+    /// UI authorize dialog; users can edit them before signing in.
+    /// `openid` is always added if missing.
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    /// Use PKCE for the authorization code flow. Defaults to `true`;
+    /// disable only if your IdP doesn't support PKCE for public clients.
+    #[serde(default = "default_true")]
+    pub pkce: bool,
+}
+
+/// OIDC bearer-token enforcement for the HTTP API (`[auth]` block).
+///
+/// Disabled by default. When `enabled = true`, the server validates
+/// every request's `Authorization: Bearer …` JWT against the JWKS
+/// fetched from `<issuer>/.well-known/jwks.json`, then enforces the
+/// configured scope requirements per route.
+///
+/// Only compiled in when the binary was built with the `auth` cargo
+/// feature. Without the feature, `enabled = true` is rejected at
+/// startup so a misconfigured production deployment can't silently
+/// fall back to "no auth".
+///
+/// The Swagger UI's SSO support (`[swagger.oauth2]`) is *independent*
+/// of this block — `[swagger.oauth2]` only drives the UI's login
+/// dialog; `[auth]` is what enforces tokens on the API.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AuthConfig {
+    /// Master switch. `false` (default) skips all auth processing.
+    pub enabled: bool,
+    /// OIDC issuer URL — must match the `iss` claim of every accepted
+    /// token. Required when `enabled = true`. Must not end in `/`.
+    pub issuer: String,
+    /// Expected `aud` claim. When empty, audience validation is
+    /// skipped (not recommended in production).
+    pub audience: String,
+    /// Scopes a caller must hold to read datasets (GET endpoints +
+    /// POST `…/query` and `…/count`). Empty list means "no scope check,
+    /// just a valid token is enough".
+    pub read_scopes: Vec<String>,
+    /// Scopes required for admin/mutation endpoints (POST `…/reload`).
+    /// Empty list means "no scope check, just a valid token is enough".
+    pub reload_scopes: Vec<String>,
+    /// Allow unauthenticated GETs through. Useful for public datasets
+    /// and demo deployments. Defaults to `false`.
+    pub anonymous_read: bool,
+    /// Continue serving even if the JWKS fetch fails at startup.
+    /// When `true` (default), the server starts in a degraded mode that
+    /// rejects every auth'd request with 503 until JWKS becomes
+    /// reachable. When `false`, startup fails outright.
+    pub start_degraded: bool,
+    /// Allowed signing algorithms. Pinned to RS256 by default; never
+    /// include `HS*` or `none` here unless you really know what you're
+    /// doing.
+    pub algorithms: Vec<String>,
+    /// Clock-skew leeway for `exp`/`nbf` checks, in seconds.
+    pub leeway_secs: u64,
+    /// How often (in seconds) the background refresher re-fetches the
+    /// JWKS. On a `kid` cache miss the JWKS is also refreshed
+    /// out-of-band.
+    pub jwks_refresh_secs: u64,
+    /// Optional JSON-pointer into the JWT claims that extracts a
+    /// tenant identifier — attached to the principal and logged on
+    /// every request. Example: `"/tid"` (Azure AD), `"/org_id"`.
+    /// When empty, no tenant is extracted.
+    pub tenant_claim: String,
+    /// If non-empty, requests whose extracted tenant ID is not in this
+    /// list are rejected with 403. Has no effect when `tenant_claim`
+    /// is empty.
+    pub allowed_tenants: Vec<String>,
+    /// If `true`, `POST …/reload` accepts *either* a valid token with
+    /// `reload_scopes` *or* the legacy `X-Admin-Token` header. Defaults
+    /// to `true` for one-release backwards compatibility — flip to
+    /// `false` once your automation has migrated to OIDC.
+    pub admin_token_fallback: bool,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            enabled:              false,
+            issuer:               String::new(),
+            audience:             String::new(),
+            read_scopes:          Vec::new(),
+            reload_scopes:        Vec::new(),
+            anonymous_read:       false,
+            start_degraded:       true,
+            algorithms:           vec!["RS256".into()],
+            leeway_secs:          60,
+            jwks_refresh_secs:    3600,
+            tenant_claim:         String::new(),
+            allowed_tenants:      Vec::new(),
+            admin_token_fallback: true,
+        }
+    }
+}
+
 
 impl Backend {
     pub fn as_str(self) -> &'static str {
@@ -405,6 +536,83 @@ impl AppConfig {
                 return Err(AppError::Internal(format!(
                     "swagger.path and docs.path must differ (both '{sp}')"
                 )));
+            }
+            if let Some(o) = &self.swagger.oauth2 {
+                if o.issuer.trim().is_empty() {
+                    return Err(AppError::Internal(
+                        "swagger.oauth2.issuer must not be empty".into(),
+                    ));
+                }
+                if o.issuer.ends_with('/') {
+                    return Err(AppError::Internal(format!(
+                        "swagger.oauth2.issuer must not end with '/' (got '{}')",
+                        o.issuer
+                    )));
+                }
+                if !(o.issuer.starts_with("https://") || o.issuer.starts_with("http://")) {
+                    return Err(AppError::Internal(format!(
+                        "swagger.oauth2.issuer must be an absolute http(s) URL (got '{}')",
+                        o.issuer
+                    )));
+                }
+                if o.client_id.trim().is_empty() {
+                    return Err(AppError::Internal(
+                        "swagger.oauth2.client_id must not be empty".into(),
+                    ));
+                }
+            }
+        }
+
+        // Auth block — only meaningful when `enabled = true`. The cargo
+        // feature gate is enforced separately in `server::serve` so a
+        // binary built without `--features auth` and a config with
+        // `auth.enabled = true` aborts with a clear error.
+        if self.auth.enabled {
+            let a = &self.auth;
+            if a.issuer.trim().is_empty() {
+                return Err(AppError::Internal(
+                    "auth.issuer must not be empty when auth.enabled = true".into(),
+                ));
+            }
+            if a.issuer.ends_with('/') {
+                return Err(AppError::Internal(format!(
+                    "auth.issuer must not end with '/' (got '{}')",
+                    a.issuer
+                )));
+            }
+            if !(a.issuer.starts_with("https://") || a.issuer.starts_with("http://")) {
+                return Err(AppError::Internal(format!(
+                    "auth.issuer must be an absolute http(s) URL (got '{}')",
+                    a.issuer
+                )));
+            }
+            for alg in &a.algorithms {
+                match alg.as_str() {
+                    "RS256" | "RS384" | "RS512"
+                  | "ES256" | "ES384"
+                  | "PS256" | "PS384" | "PS512" => {},
+                    other => return Err(AppError::Internal(format!(
+                        "auth.algorithms[{other}] is not allowed; pick one of \
+                         RS256/RS384/RS512, ES256/ES384, PS256/PS384/PS512"
+                    ))),
+                }
+            }
+            if a.algorithms.is_empty() {
+                return Err(AppError::Internal(
+                    "auth.algorithms must not be empty".into(),
+                ));
+            }
+            if !a.tenant_claim.is_empty() && !a.tenant_claim.starts_with('/') {
+                return Err(AppError::Internal(format!(
+                    "auth.tenant_claim must be a JSON pointer starting with '/' (got '{}')",
+                    a.tenant_claim
+                )));
+            }
+            if !a.allowed_tenants.is_empty() && a.tenant_claim.is_empty() {
+                return Err(AppError::Internal(
+                    "auth.allowed_tenants is set but auth.tenant_claim is empty — \
+                     can't enforce a tenant allow-list without a claim to extract from".into(),
+                ));
             }
         }
 
@@ -669,6 +877,7 @@ mod tests {
                 server: ServerConfig { prefix: p.to_string(), ..Default::default() },
                 docs:     DocsConfig::default(),
                 swagger:  SwaggerConfig::default(),
+                auth:     AuthConfig::default(),
                 datasets: vec![],
             };
             assert!(cfg.validate().is_err(), "prefix {p:?} should fail");
@@ -681,6 +890,7 @@ mod tests {
             server: ServerConfig::default(),
             docs:     DocsConfig::default(),
             swagger:  SwaggerConfig::default(),
+            auth:     AuthConfig::default(),
             datasets: vec![],
         };
         let err = cfg.validate().unwrap_err();

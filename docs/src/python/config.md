@@ -72,3 +72,76 @@ Credentials fall back to the standard AWS env vars
 `AWS_REGION`) when not set inline. See
 [Configuration › S3](../configuration/s3.md) for the full precedence
 chain and per-dataset env var overrides.
+
+## `AuthConfig`
+
+Available when the wheel is built with the `auth` Cargo feature
+(`maturin build --release --features auth`). Mirrors the TOML `[auth]`
+block — see [Operations › Authentication](../operations/auth.md) for
+field semantics and the full validation pipeline.
+
+```python
+from datap_rs.datapress import AuthConfig
+
+auth = AuthConfig(
+    enabled=True,
+    issuer="https://login.example.com/realms/datapress",
+    audience="datapress-api",
+    read_scopes=["datasets:read"],
+    reload_scopes=["datasets:reload"],
+    anonymous_read=False,
+    algorithms=["RS256"],
+    leeway_secs=60,
+    jwks_refresh_secs=3600,
+    tenant_claim="",                   # e.g. "/tenant"
+    allowed_tenants=[],
+    admin_token_fallback=True,
+    start_degraded=True,
+)
+```
+
+| kwarg                  | Default          | Meaning                                                                |
+|------------------------|------------------|------------------------------------------------------------------------|
+| `enabled`              | `False`          | Master switch. When `False` all other fields are ignored.              |
+| `issuer`               | `""`             | OIDC issuer URL. Required when `enabled=True`.                         |
+| `audience`             | `""`             | Expected `aud` claim. Empty = skip audience check.                     |
+| `read_scopes`          | `[]`             | Scopes required for `GET` endpoints.                                   |
+| `reload_scopes`        | `[]`             | Scopes required for reload / admin endpoints.                          |
+| `anonymous_read`       | `False`          | Allow unauthenticated `GET` requests.                                  |
+| `algorithms`           | `["RS256"]`      | Permitted JWT signing algorithms.                                      |
+| `leeway_secs`          | `60`             | Clock-skew tolerance for `exp` / `nbf`.                                |
+| `jwks_refresh_secs`    | `3600`           | Background JWKS refresh interval.                                      |
+| `tenant_claim`         | `""`             | JSON Pointer (`/tenant_id`, `/realm_access/roles/0`, …).               |
+| `allowed_tenants`      | `[]`             | Allow-list. Requires `tenant_claim`.                                   |
+| `admin_token_fallback` | `True`           | Honour the legacy `X-Admin-Token` header on reload endpoints.          |
+| `start_degraded`       | `True`           | Boot even if JWKS fetch fails; all requests rejected until it recovers.|
+
+Pass it to `DataPress(...)` via the `auth=` keyword:
+
+```python
+from datap_rs.datapress import DataPress, DataPressConfig, DatasetConfig, AuthConfig
+
+dp = DataPress(
+    DataPressConfig(host="0.0.0.0", port=8000),
+    [DatasetConfig(name="accidents", source="data/accidents.parquet")],
+    auth=AuthConfig(
+        enabled=True,
+        issuer="http://localhost:8080/realms/datapress",
+        audience="datapress-api",
+        read_scopes=["datasets:read"],
+        reload_scopes=["datasets:reload"],
+    ),
+)
+dp.serve()
+```
+
+Validation rules (raised as `ValueError`):
+
+- `enabled=True` requires a non-empty `issuer`.
+- `allowed_tenants` requires `tenant_claim` to be set.
+- `tenant_claim` must be a JSON Pointer starting with `/`.
+
+To spin up a local OIDC provider for testing, see
+[`examples/keycloak/`](https://github.com/jeroenrosenberg/datapress/tree/main/examples/keycloak)
+— one `docker compose up` and you have a pre-provisioned realm with
+client `datapress-api` and the right scopes.
