@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.2] - 2026-05-28
+
+### Bug Fixes
+
+- *(ci)* Don't trigger on main ([80b54ef](https://github.com/jeroenflvr/fast-api/commit/80b54ef39ac6c6e79558afb6a5bb4e568b036b90))
+
 ## [0.2.1] - 2026-05-28
 
 ### Bug Fixes
