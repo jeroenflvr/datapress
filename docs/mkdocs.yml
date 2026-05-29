@@ -133,6 +133,7 @@ nav:
       - Probes (healthz / readyz / version): operations/probes.md
       - Graceful shutdown: operations/graceful-shutdown.md
       - Logging: operations/logging.md
+      - Prometheus metrics: operations/metrics.md
       - Authentication (OIDC / OAuth2): operations/auth.md
   - Reference:
       - reference/index.md

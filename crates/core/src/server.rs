@@ -34,6 +34,7 @@ pub async fn serve(
     let shutdown_secs = cfg.server.shutdown_timeout_secs;
     let docs_cfg = cfg.docs.clone();
     let swagger_cfg = cfg.swagger.clone();
+    let metrics_cfg = cfg.metrics.clone();
 
     // Warn (but don't fail) when the operator asked for docs in TOML but
     // this binary was built without the cargo feature that embeds them.
@@ -56,6 +57,13 @@ pub async fn serve(
         log::warn!(
             "[auth] enabled = true in config, but this binary was built \
              without --features auth; skipping OIDC enforcement"
+        );
+    }
+    #[cfg(not(feature = "metrics"))]
+    if metrics_cfg.enabled {
+        log::warn!(
+            "[metrics] enabled = true in config, but this binary was built \
+             without --features metrics; skipping Prometheus endpoint"
         );
     }
 
@@ -110,6 +118,27 @@ pub async fn serve(
         log::info!("    GET    {}/openapi.json", swagger_cfg.path);
     }
 
+    // Build the Prometheus middleware once, outside the worker closure, so
+    // every worker shares a single registry (counts aggregate correctly).
+    // Constructed whenever the feature is compiled; the runtime `enabled`
+    // flag gates whether it is actually wrapped (and the endpoint served).
+    #[cfg(feature = "metrics")]
+    let prometheus = {
+        use actix_web_prom::PrometheusMetricsBuilder;
+        PrometheusMetricsBuilder::new("datapress")
+            .endpoint(metrics_cfg.path.as_str())
+            .build()
+            .map_err(|e| std::io::Error::other(format!("metrics init failed: {e}")))?
+    };
+    #[cfg(feature = "metrics")]
+    let metrics_enabled = metrics_cfg.enabled;
+
+    #[cfg(feature = "metrics")]
+    if metrics_cfg.enabled {
+        log::info!("  {} (prometheus metrics):", metrics_cfg.path);
+        log::info!("    GET    {}", metrics_cfg.path);
+    }
+
     let build_info = web::Data::new(handlers::BuildInfo::new(
         // `&'static str` so it fits BuildInfo's compile-time fields.
         // The match keeps this generic enough for future backends.
@@ -132,6 +161,8 @@ pub async fn serve(
         let swagger_cfg = swagger_cfg.clone();
         #[cfg(feature = "auth")]
         let auth_state = auth_state.clone();
+        #[cfg(feature = "metrics")]
+        let prometheus = prometheus.clone();
         let app = App::new()
             .app_data(web::Data::new(backend))
             .app_data(build_info.clone())
@@ -152,6 +183,13 @@ pub async fn serve(
                 .wrap(crate::auth::Auth::new(state)),
             None => app.wrap(crate::auth::Auth::disabled()),
         };
+        // Prometheus middleware sits OUTERMOST (added last → runs first) so
+        // it observes every request — including those auth rejects — and so
+        // the `/metrics` scrape it serves bypasses the auth layer entirely.
+        // `Condition` makes it a pass-through (and suppresses the endpoint)
+        // when `[metrics].enabled = false`.
+        #[cfg(feature = "metrics")]
+        let app = app.wrap(middleware::Condition::new(metrics_enabled, prometheus));
         let app = app
             .service(handlers::healthz)
             .service(handlers::readyz)

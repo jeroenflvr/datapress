@@ -115,6 +115,8 @@ class DataPressConfig:
     max_body_bytes: int
     request_timeout_ms: int
     shutdown_timeout_secs: int
+    metrics_enabled: bool
+    metrics_path: str
 
     def __init__(
         self,
@@ -127,6 +129,8 @@ class DataPressConfig:
         max_body_bytes: int = 1_048_576,
         request_timeout_ms: int = 30_000,
         shutdown_timeout_secs: int = 30,
+        metrics_enabled: bool = False,
+        metrics_path: str = "/metrics",
     ) -> None:
         """Build a :class:`DataPressConfig`.
 
@@ -151,6 +155,13 @@ class DataPressConfig:
             shutdown_timeout_secs: Grace period for in-flight requests after
                 the server receives ``SIGTERM``/``SIGINT``, in seconds.
                 Default ``30``.
+            metrics_enabled: Expose a Prometheus metrics endpoint. Requires
+                the wheel to be built with the ``metrics`` Cargo feature.
+                Default ``False``.
+            metrics_path: Path the metrics endpoint is served on. Must start
+                with ``/`` and not end with ``/``. The endpoint is
+                unauthenticated — isolate it at the network layer. Default
+                ``"/metrics"``.
         """
         ...
 

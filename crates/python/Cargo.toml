@@ -20,6 +20,9 @@ docs    = ["datapress-duckdb/docs", "datapress-datafusion/docs"]
 # Embed Swagger UI + the hand-written OpenAPI spec. No build-time
 # prereqs (unlike docs), but kept opt-in so local dev wheels stay slim.
 swagger = ["datapress-duckdb/swagger", "datapress-datafusion/swagger"]
+# Expose a Prometheus `/metrics` endpoint. No build-time prereqs; opt-in
+# so local dev wheels stay slim. Published wheels enable it.
+metrics = ["datapress-duckdb/metrics", "datapress-datafusion/metrics"]
 auth    = ["datapress-duckdb/auth", "datapress-datafusion/auth"]
 
 [dependencies]

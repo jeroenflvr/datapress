@@ -7,5 +7,7 @@ Day-2 concerns for running DataPress in production.
 - [Graceful shutdown](graceful-shutdown.md) — `SIGTERM` handling and
   `shutdown_timeout_secs` tuning.
 - [Logging](logging.md) — actix request log format, `RUST_LOG`.
+- [Prometheus metrics](metrics.md) — opt-in `/metrics` endpoint,
+  request counters and latency histograms.
 - [Authentication](auth.md) — OIDC / OAuth2 bearer enforcement,
   Swagger UI SSO, free providers for testing.

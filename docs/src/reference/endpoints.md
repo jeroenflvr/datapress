@@ -51,6 +51,16 @@ When built with `--features docs` and `[docs] enabled = true`:
 
 See [Configuration › Documentation site](../configuration/docs-site.md).
 
+## Metrics (optional)
+
+When built with `--features metrics` and `[metrics] enabled = true`:
+
+| Method | Path             | Purpose                                            |
+|--------|------------------|----------------------------------------------------|
+| GET    | `{metrics.path}` | Prometheus metrics, text format (default `/metrics`). Unprefixed and unauthenticated. |
+
+See [Operations › Prometheus metrics](../operations/metrics.md).
+
 ## Admin
 
 `POST .../reload` requires the `ADMIN_TOKEN` environment variable to

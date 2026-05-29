@@ -33,7 +33,7 @@ use crate::errors::AppError;
 /// `[swagger].path` — they would shadow first-party routes (probes,
 /// API scopes, root).
 const RESERVED_MOUNTS: &[&str] = &[
-    "/", "/api", "/api/v1", "/health", "/healthz", "/readyz", "/version",
+    "/", "/api", "/api/v1", "/health", "/healthz", "/readyz", "/version", "/metrics",
 ];
 
 // ---------------------------------------------------------------------------
@@ -48,6 +48,8 @@ pub struct AppConfig {
     pub docs:     DocsConfig,
     #[serde(default)]
     pub swagger:  SwaggerConfig,
+    #[serde(default)]
+    pub metrics:  MetricsConfig,
     #[serde(default)]
     pub auth:     AuthConfig,
     #[serde(rename = "dataset", default)]
@@ -206,6 +208,41 @@ pub struct SwaggerOAuth2Config {
     /// disable only if your IdP doesn't support PKCE for public clients.
     #[serde(default = "default_true")]
     pub pkce: bool,
+}
+
+/// Prometheus metrics endpoint (`[metrics]` block).
+///
+/// Disabled by default. When `enabled = true` (and the binary was built
+/// with the `metrics` cargo feature), the server installs a middleware
+/// that records per-request HTTP counters and latency histograms, and
+/// exposes them in the Prometheus text exposition format at
+/// [`MetricsConfig::path`] (default `/metrics`).
+///
+/// The endpoint is mounted at a fixed, *unprefixed* path — like the
+/// health probes — so a scrape config doesn't need to know about any
+/// reverse-proxy `server.prefix`. It is **not** behind the `[auth]`
+/// layer: Prometheus scrapers rarely carry bearer tokens, and the
+/// endpoint exposes only aggregate request metrics (no row data). Keep
+/// it on a network the scraper can reach but the public cannot, e.g. by
+/// binding `server.listen` to a private interface.
+///
+/// When the binary was built without the `metrics` feature,
+/// `enabled = true` is harmless: the server logs a warning at startup
+/// and skips the endpoint.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct MetricsConfig {
+    pub enabled: bool,
+    pub path:    String,
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            path:    "/metrics".into(),
+        }
+    }
 }
 
 /// OIDC bearer-token enforcement for the HTTP API (`[auth]` block).
@@ -564,6 +601,40 @@ impl AppConfig {
             }
         }
 
+        // Metrics endpoint mount path. Validated even when disabled so an
+        // inactive config typo can't go unnoticed. `/metrics` is itself a
+        // reserved mount (so docs/swagger can't shadow it), so we check the
+        // remaining reserved routes — and the docs/swagger paths — for
+        // collisions rather than the whole list.
+        {
+            let mp = &self.metrics.path;
+            if !mp.starts_with('/') {
+                return Err(AppError::Internal(format!(
+                    "metrics.path must start with '/' (got '{mp}')"
+                )));
+            }
+            if mp.len() > 1 && mp.ends_with('/') {
+                return Err(AppError::Internal(format!(
+                    "metrics.path must not end with '/' (got '{mp}')"
+                )));
+            }
+            if RESERVED_MOUNTS.iter().any(|r| *r == mp && *r != "/metrics") {
+                return Err(AppError::Internal(format!(
+                    "metrics.path '{mp}' collides with a reserved route"
+                )));
+            }
+            if mp == &self.docs.path {
+                return Err(AppError::Internal(format!(
+                    "metrics.path and docs.path must differ (both '{mp}')"
+                )));
+            }
+            if mp == &self.swagger.path {
+                return Err(AppError::Internal(format!(
+                    "metrics.path and swagger.path must differ (both '{mp}')"
+                )));
+            }
+        }
+
         // Auth block — only meaningful when `enabled = true`. The cargo
         // feature gate is enforced separately in `server::serve` so a
         // binary built without `--features auth` and a config with
@@ -878,6 +949,7 @@ mod tests {
                 server: ServerConfig { prefix: p.to_string(), ..Default::default() },
                 docs:     DocsConfig::default(),
                 swagger:  SwaggerConfig::default(),
+                metrics:  MetricsConfig::default(),
                 auth:     AuthConfig::default(),
                 datasets: vec![],
             };
@@ -891,6 +963,7 @@ mod tests {
             server: ServerConfig::default(),
             docs:     DocsConfig::default(),
             swagger:  SwaggerConfig::default(),
+            metrics:  MetricsConfig::default(),
             auth:     AuthConfig::default(),
             datasets: vec![],
         };

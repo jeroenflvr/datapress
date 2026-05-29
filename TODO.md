@@ -186,16 +186,19 @@ findings clippy does not catch. Ordered by severity.
   Fix: log the detail (already done) but return a generic
   `"internal error"` body for the 500 case.
 
-- **DataFusion predicate path string-interpolates literals.**
-  `crates/datafusion/src/store.rs::json_to_sql_lit` builds WHERE-clause
-  values by inlining them into the SQL text (escaping `'` → `''`),
-  whereas the DuckDB backend (`crates/duckdb/src/repository.rs`) uses
-  real bound parameters (`params_from_iter`). The escaping looks
-  correct for the standard SQL dialect DataFusion uses, but it is a
-  lower-assurance approach and the two backends are inconsistent.
-  This is the concrete target for the existing "fuzz pass" item above;
-  prefer DataFusion's prepared-statement / `LogicalPlanBuilder` API so
-  values never touch the SQL string.
+- ~~**DataFusion predicate path string-interpolates literals.**~~
+  *(Fixed.)* `crates/datafusion/src/store.rs` no longer inlines
+  predicate values into the SQL text. The builders emit positional
+  placeholders (`$1`, `$2`, …) and collect each value as a typed
+  `ScalarValue`; the scalars are bound to the logical plan via
+  `DataFrame::with_param_values` before execution, so user input
+  reaches the engine as data and can never alter query structure
+  (`json_to_sql_lit` replaced by `json_to_scalar` + a `Params`
+  accumulator). This brings the DataFusion backend in line with the
+  DuckDB backend's bound-parameter approach. Regression tests in
+  `crates/datafusion/tests/end_to_end.rs` cover quote-containing
+  values, an injection-style literal, `in`-list binding, and numeric
+  coercion.
 
 - **No cap on predicate count or `in`-list length.**
   Request bodies are bounded by `server.max_body_bytes` (default 1 MiB)

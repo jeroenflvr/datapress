@@ -23,7 +23,8 @@ use pyo3::prelude::*;
 use datapress_core::config::{
     AddressingStyle, AppConfig, AuthConfig as CoreAuthConfig, Backend,
     DatasetConfig as CoreDatasetConfig, IndexConfig, IndexMode,
-    S3Config as CoreS3Config, ServerConfig, SourceConfig, SourceKind,
+    MetricsConfig as CoreMetricsConfig, S3Config as CoreS3Config, ServerConfig,
+    SourceConfig, SourceKind,
 };
 
 // ---------------------------------------------------------------------------
@@ -316,6 +317,13 @@ pub struct PyDataPressConfig {
     #[pyo3(get, set)] pub request_timeout_ms: u64,
     /// Grace period for in-flight requests on shutdown, in seconds.
     #[pyo3(get, set)] pub shutdown_timeout_secs: u64,
+    /// Expose a Prometheus metrics endpoint. Requires the wheel to be built
+    /// with the ``metrics`` Cargo feature. Default ``False``.
+    #[pyo3(get, set)] pub metrics_enabled: bool,
+    /// Path the metrics endpoint is served on. Must start with ``/`` and not
+    /// end with ``/``. The endpoint is unauthenticated — isolate it at the
+    /// network layer. Default ``"/metrics"``.
+    #[pyo3(get, set)] pub metrics_path: String,
 }
 
 #[pymethods]
@@ -338,6 +346,12 @@ impl PyDataPressConfig {
     ///     shutdown_timeout_secs (int): Grace period for in-flight
     ///         requests on ``SIGTERM``/``SIGINT``, in seconds.
     ///         Default ``30``.
+    ///     metrics_enabled (bool): Expose a Prometheus metrics endpoint.
+    ///         Requires a wheel built with the ``metrics`` feature.
+    ///         Default ``False``.
+    ///     metrics_path (str): Path the metrics endpoint is served on.
+    ///         Must start with ``/`` and not end with ``/``. The endpoint
+    ///         is unauthenticated. Default ``"/metrics"``.
     #[new]
     #[pyo3(signature = (
         backend            = "duckdb".to_string(),
@@ -349,6 +363,8 @@ impl PyDataPressConfig {
         max_body_bytes     = 1_048_576,
         request_timeout_ms = 30_000,
         shutdown_timeout_secs = 30,
+        metrics_enabled    = false,
+        metrics_path       = "/metrics".to_string(),
     ))]
     #[allow(clippy::too_many_arguments)] // user-facing kwargs surface
     fn new(
@@ -361,10 +377,13 @@ impl PyDataPressConfig {
         max_body_bytes:     usize,
         request_timeout_ms: u64,
         shutdown_timeout_secs: u64,
+        metrics_enabled:    bool,
+        metrics_path:       String,
     ) -> Self {
         Self {
             backend, listen, port, workers, prefix, compress,
             max_body_bytes, request_timeout_ms, shutdown_timeout_secs,
+            metrics_enabled, metrics_path,
         }
     }
 }
@@ -403,6 +422,27 @@ impl PyDataPressConfig {
             max_body_bytes:     self.max_body_bytes,
             request_timeout_ms: self.request_timeout_ms,
             shutdown_timeout_secs: self.shutdown_timeout_secs,
+        })
+    }
+
+    /// Build the core `MetricsConfig` from the Python-facing fields,
+    /// validating the path the same way `AppConfig::validate()` does.
+    fn metrics_into_core(&self) -> PyResult<CoreMetricsConfig> {
+        if !self.metrics_path.starts_with('/') {
+            return Err(PyValueError::new_err(format!(
+                "DataPressConfig.metrics_path must start with '/' (got '{}')",
+                self.metrics_path
+            )));
+        }
+        if self.metrics_path.len() > 1 && self.metrics_path.ends_with('/') {
+            return Err(PyValueError::new_err(format!(
+                "DataPressConfig.metrics_path must not end with '/' (got '{}')",
+                self.metrics_path
+            )));
+        }
+        Ok(CoreMetricsConfig {
+            enabled: self.metrics_enabled,
+            path:    self.metrics_path.clone(),
         })
     }
 }
@@ -616,6 +656,7 @@ impl PyDataPress {
         datasets: Vec<PyDatasetConfig>,
         auth:     Option<PyAuthConfig>,
     ) -> PyResult<Self> {
+        let metrics = config.metrics_into_core()?;
         let server = config.into_core()?;
         let datasets = datasets.into_iter()
             .map(|d| d.into_core())
@@ -628,6 +669,7 @@ impl PyDataPress {
             server,
             docs:     datapress_core::config::DocsConfig::default(),
             swagger:  datapress_core::config::SwaggerConfig::default(),
+            metrics,
             auth,
             datasets,
         } })
@@ -683,6 +725,7 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
         },
         docs:     cfg.docs.clone(),
         swagger:  cfg.swagger.clone(),
+        metrics:  cfg.metrics.clone(),
         auth:     cfg.auth.clone(),
         datasets: cfg.datasets.clone(),
     }

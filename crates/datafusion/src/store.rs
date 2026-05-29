@@ -24,6 +24,7 @@ use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
 use datafusion::prelude::{ParquetReadOptions, SessionContext};
+use datafusion::scalar::ScalarValue;
 
 use object_store::aws::AmazonS3Builder;
 use url::Url;
@@ -283,9 +284,13 @@ impl Store {
 
         // Fallback (and only path for lazy datasets): DataFusion SQL —
         // multi-threaded vectorised execution covers all operators
-        // (LIKE, ILIKE, ranges, NOT NULL, …).
-        let sql     = build_query_sql(&st.schema, req)?;
-        let df      = self.ctx.sql(&sql).await?;
+        // (LIKE, ILIKE, ranges, NOT NULL, …). Predicate values are bound
+        // as typed parameters, never interpolated into the SQL text.
+        let (sql, params) = build_query_sql(&st.schema, req)?;
+        let mut df  = self.ctx.sql(&sql).await?;
+        if !params.is_empty() {
+            df = df.with_param_values(params)?;
+        }
         let batches = df.collect().await?;
         if batches.is_empty() || batches.iter().all(|b| b.num_rows() == 0) {
             // Synthesize an empty batch with the SQL result schema so the
@@ -317,9 +322,13 @@ impl Store {
             }
         }
 
-        // Fallback: DataFusion SQL — same predicate translation as `query`.
-        let sql     = build_count_sql(&st.schema, &req.predicates)?;
-        let df      = self.ctx.sql(&sql).await?;
+        // Fallback: DataFusion SQL — same predicate translation as `query`,
+        // with predicate values bound as typed parameters.
+        let (sql, params) = build_count_sql(&st.schema, &req.predicates)?;
+        let mut df  = self.ctx.sql(&sql).await?;
+        if !params.is_empty() {
+            df = df.with_param_values(params)?;
+        }
         let batches = df.collect().await?;
         let n = batches.first()
             .and_then(|b| b.column(0).as_any().downcast_ref::<arrow::array::Int64Array>())
@@ -962,7 +971,39 @@ fn project(schema: &DatasetSchema, batch: RecordBatch, columns: &[String])
 // SQL builder
 // ---------------------------------------------------------------------------
 
-fn build_query_sql(schema: &DatasetSchema, req: &QueryRequest) -> Result<String, AppError> {
+/// Accumulates the typed literal values for a parameterised query.
+///
+/// Predicate values are never interpolated into the SQL text. Instead each
+/// value is pushed here and the builder emits a positional placeholder
+/// (`$1`, `$2`, …) referencing it. The collected [`ScalarValue`]s are bound
+/// to the logical plan via [`DataFrame::with_param_values`], so user input
+/// reaches the engine as typed scalars and can never alter the query
+/// structure (no SQL injection surface, no escaping to get wrong).
+#[derive(Default)]
+struct Params {
+    values: Vec<ScalarValue>,
+}
+
+impl Params {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    /// Bind `v` and return its `$N` placeholder token.
+    fn bind(&mut self, v: ScalarValue) -> String {
+        self.values.push(v);
+        format!("${}", self.values.len())
+    }
+
+    fn into_values(self) -> Vec<ScalarValue> {
+        self.values
+    }
+}
+
+fn build_query_sql(
+    schema: &DatasetSchema,
+    req: &QueryRequest,
+) -> Result<(String, Vec<ScalarValue>), AppError> {
     let agg_plan = req.agg_plan(schema)?;
 
     let cols = if let Some(plan) = &agg_plan {
@@ -991,8 +1032,9 @@ fn build_query_sql(schema: &DatasetSchema, req: &QueryRequest) -> Result<String,
 
     let (limit, offset) = req.effective_limit_offset(1000);
 
+    let mut params = Params::new();
     let clauses: Vec<String> = req.predicates.iter()
-        .map(|p| pred_to_sql(schema, p))
+        .map(|p| pred_to_sql(schema, p, &mut params))
         .collect::<Result<_, _>>()?;
 
     let table = DatasetSchema::quote_ident(&schema.name);
@@ -1015,15 +1057,20 @@ fn build_query_sql(schema: &DatasetSchema, req: &QueryRequest) -> Result<String,
         Some(s) => format!(" ORDER BY {s}"),
         None    => String::new(),
     };
-    Ok(format!(
+    let sql = format!(
         "SELECT {cols} FROM {table}{where_clause}{group_clause}{order_clause} \
          LIMIT {limit} OFFSET {offset}"
-    ))
+    );
+    Ok((sql, params.into_values()))
 }
 
-fn build_count_sql(schema: &DatasetSchema, predicates: &[Predicate]) -> Result<String, AppError> {
+fn build_count_sql(
+    schema: &DatasetSchema,
+    predicates: &[Predicate],
+) -> Result<(String, Vec<ScalarValue>), AppError> {
+    let mut params = Params::new();
     let clauses: Vec<String> = predicates.iter()
-        .map(|p| pred_to_sql(schema, p))
+        .map(|p| pred_to_sql(schema, p, &mut params))
         .collect::<Result<_, _>>()?;
     let table = DatasetSchema::quote_ident(&schema.name);
     let where_clause = if clauses.is_empty() {
@@ -1031,10 +1078,15 @@ fn build_count_sql(schema: &DatasetSchema, predicates: &[Predicate]) -> Result<S
     } else {
         format!(" WHERE {}", clauses.join(" AND "))
     };
-    Ok(format!("SELECT COUNT(*) FROM {table}{where_clause}"))
+    let sql = format!("SELECT COUNT(*) FROM {table}{where_clause}");
+    Ok((sql, params.into_values()))
 }
 
-fn pred_to_sql(schema: &DatasetSchema, pred: &Predicate) -> Result<String, AppError> {
+fn pred_to_sql(
+    schema: &DatasetSchema,
+    pred: &Predicate,
+    params: &mut Params,
+) -> Result<String, AppError> {
     let info = schema.find(&pred.col)?;
     let col  = DatasetSchema::quote_ident(&info.name);
 
@@ -1051,8 +1103,10 @@ fn pred_to_sql(schema: &DatasetSchema, pred: &Predicate) -> Result<String, AppEr
         let items = val.as_array()
             .filter(|a| !a.is_empty())
             .ok_or_else(|| AppError::InvalidValue("'in' needs a non-empty array".into()))?;
-        let lits: Vec<String> = items.iter().map(json_to_sql_lit).collect::<Result<_, _>>()?;
-        return Ok(format!("{col} IN ({})", lits.join(", ")));
+        let placeholders: Vec<String> = items.iter()
+            .map(|item| Ok(params.bind(json_to_scalar(item)?)))
+            .collect::<Result<_, AppError>>()?;
+        return Ok(format!("{col} IN ({})", placeholders.join(", ")));
     }
 
     let sql_op = match pred.op.as_str() {
@@ -1066,15 +1120,29 @@ fn pred_to_sql(schema: &DatasetSchema, pred: &Predicate) -> Result<String, AppEr
         "ilike" => "ILIKE",
         other   => return Err(AppError::UnknownOperator(other.into())),
     };
-    Ok(format!("{col} {sql_op} {}", json_to_sql_lit(val)?))
+    let placeholder = params.bind(json_to_scalar(val)?);
+    Ok(format!("{col} {sql_op} {placeholder}"))
 }
 
-fn json_to_sql_lit(val: &JsonValue) -> Result<String, AppError> {
+/// Convert a JSON predicate value into a typed Arrow [`ScalarValue`] for
+/// binding as a query parameter. The engine applies the usual numeric
+/// widening / comparison coercion against the target column type.
+fn json_to_scalar(val: &JsonValue) -> Result<ScalarValue, AppError> {
     match val {
-        JsonValue::String(s) => Ok(format!("'{}'", s.replace('\'', "''"))),
-        JsonValue::Number(n) => Ok(n.to_string()),
-        JsonValue::Bool(b)   => Ok(b.to_string()),
-        JsonValue::Null      => Ok("NULL".to_string()),
+        JsonValue::String(s) => Ok(ScalarValue::Utf8(Some(s.clone()))),
+        JsonValue::Bool(b)   => Ok(ScalarValue::Boolean(Some(*b))),
+        JsonValue::Null      => Ok(ScalarValue::Null),
+        JsonValue::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(ScalarValue::Int64(Some(i)))
+            } else if let Some(u) = n.as_u64() {
+                Ok(ScalarValue::UInt64(Some(u)))
+            } else if let Some(f) = n.as_f64() {
+                Ok(ScalarValue::Float64(Some(f)))
+            } else {
+                Err(AppError::InvalidValue("unsupported numeric literal in predicate".into()))
+            }
+        }
         _ => Err(AppError::InvalidValue("unsupported literal type in predicate".into())),
     }
 }

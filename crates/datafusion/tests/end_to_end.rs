@@ -19,7 +19,7 @@ use tempfile::TempDir;
 use datapress_core::config::{
     AppConfig, DatasetConfig, IndexConfig, ServerConfig, SourceConfig, SourceKind,
 };
-use datapress_core::models::QueryRequest;
+use datapress_core::models::{Predicate, QueryRequest};
 use datapress_datafusion::store::Store;
 
 // ---------------------------------------------------------------------------
@@ -113,6 +113,25 @@ fn parse_rows(s: &str) -> Vec<Value> {
     v.as_array().expect("json array").clone()
 }
 
+fn pred(col: &str, op: &str, val: Value) -> Predicate {
+    Predicate { col: col.into(), op: op.into(), val: Some(val) }
+}
+
+fn req_with(preds: Vec<Predicate>) -> QueryRequest {
+    QueryRequest { predicates: preds, ..empty_req() }
+}
+
+/// Single parquet file whose `name` column includes a value with an
+/// embedded single quote and a SQL-injection-looking string.
+fn write_people(path: &std::path::Path) {
+    write_parquet(
+        path,
+        &[1, 2, 3, 4],
+        &["Anna", "O'Brien", "Bob", "' OR '1'='1"],
+        &[10.0, 20.0, 30.0, 40.0],
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -160,4 +179,79 @@ async fn hive_partition_column_lazy() {
         "hive partition column `city` was not surfaced (lazy). row keys: {:?}",
         rows.first().and_then(|r| r.as_object()).map(|o| o.keys().collect::<Vec<_>>())
     );
+}
+
+// ---------------------------------------------------------------------------
+// Parameterised predicates — values are bound as typed params, never
+// interpolated into the SQL text (lazy mode always takes the SQL path).
+// ---------------------------------------------------------------------------
+
+/// A value containing a single quote must match itself exactly — proving the
+/// literal is bound as data, not spliced into the query where the quote
+/// would otherwise terminate the string.
+#[actix_web::test]
+async fn predicate_eq_value_with_quote() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("people.parquet");
+    write_people(&file);
+    let store = make_store(&file.display().to_string(), true).await;
+
+    let req = req_with(vec![pred("name", "eq", Value::String("O'Brien".into()))]);
+    let rows = parse_rows(&store.query("people", &req).await.unwrap());
+    assert_eq!(rows.len(), 1, "exactly one row should match O'Brien");
+    assert_eq!(rows[0]["name"], Value::String("O'Brien".into()));
+}
+
+/// An injection-looking value must be treated as an opaque literal: it only
+/// matches the row whose `name` is literally that string, never the whole
+/// table.
+#[actix_web::test]
+async fn predicate_injection_is_treated_as_literal() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("people.parquet");
+    write_people(&file);
+    let store = make_store(&file.display().to_string(), true).await;
+
+    let inject = Value::String("' OR '1'='1".into());
+    let req = req_with(vec![pred("name", "eq", inject.clone())]);
+    let rows = parse_rows(&store.query("people", &req).await.unwrap());
+    assert_eq!(rows.len(), 1, "must match only the literal row, not the whole table");
+    assert_eq!(rows[0]["name"], inject);
+
+    // count() shares the same parameterised path.
+    let n = store
+        .count("people", &datapress_core::models::CountRequest { predicates: req.predicates })
+        .await
+        .unwrap();
+    assert_eq!(n, 1);
+}
+
+/// `in` binds each element as its own placeholder.
+#[actix_web::test]
+async fn predicate_in_binds_each_element() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("people.parquet");
+    write_people(&file);
+    let store = make_store(&file.display().to_string(), true).await;
+
+    let req = req_with(vec![pred(
+        "name",
+        "in",
+        Value::Array(vec![Value::String("Anna".into()), Value::String("Bob".into())]),
+    )]);
+    let rows = parse_rows(&store.query("people", &req).await.unwrap());
+    assert_eq!(rows.len(), 2);
+}
+
+/// Numeric predicates bind as typed scalars and coerce against the column.
+#[actix_web::test]
+async fn predicate_numeric_range() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("people.parquet");
+    write_people(&file);
+    let store = make_store(&file.display().to_string(), true).await;
+
+    let req = req_with(vec![pred("score", "gte", serde_json::json!(25.0))]);
+    let rows = parse_rows(&store.query("people", &req).await.unwrap());
+    assert_eq!(rows.len(), 2, "scores 30 and 40 are >= 25");
 }
