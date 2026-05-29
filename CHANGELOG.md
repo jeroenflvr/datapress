@@ -3,6 +3,26 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.3] - 2026-05-29
+
+### Bug Fixes
+
+- Group_by on duckdb backend ([b7cfd0f](https://github.com/jeroenflvr/fast-api/commit/b7cfd0f49ae441ef3cea31e6bd0a84f910042c51))
+
+### CI
+
+- Add dependency audit ([99665a4](https://github.com/jeroenflvr/fast-api/commit/99665a4149119042fa99fec2c6fc00c01d121ef5))
+
+### Documentation
+
+- Update python bindings doc ([b811f6a](https://github.com/jeroenflvr/fast-api/commit/b811f6a6ed53cd79d11bb872ac2c0623aaf9a298))
+
+### Features
+
+- Raising community standards ([d5010db](https://github.com/jeroenflvr/fast-api/commit/d5010db7e334332fcdf87f8b81a927b02c83678b))
+- Add prometheus exports ([3335c93](https://github.com/jeroenflvr/fast-api/commit/3335c93d598a950c71089f89f40041c7a196fa2f))
+- Support hive-style partitioning of parquet data ([c171b23](https://github.com/jeroenflvr/fast-api/commit/c171b23e1bf684b66e95fa8c1aec0e3a29ce5a97))
+
 ## [0.2.2] - 2026-05-28
 
 ### Bug Fixes
