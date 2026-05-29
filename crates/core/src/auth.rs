@@ -105,13 +105,27 @@ struct JwksSnapshot {
 #[derive(Clone)]
 pub struct JwksCache {
     inner:    Arc<ArcSwap<Option<JwksSnapshot>>>,
-    jwks_url: Arc<String>,
+    /// OIDC issuer, used to run discovery (`.well-known/openid-configuration`).
+    issuer:   Arc<String>,
+    /// JWKS endpoint discovered from the issuer's OIDC metadata. Cached
+    /// once resolved; `None` until the first successful discovery.
+    jwks_uri: Arc<ArcSwap<Option<String>>>,
     client:   reqwest::Client,
 }
 
 impl JwksCache {
-    /// Build the cache and seed it from the issuer's well-known JWKS
-    /// endpoint. When the initial fetch fails, behaviour depends on
+    /// Build the cache and seed it from the issuer's JWKS endpoint.
+    ///
+    /// The JWKS URL is **discovered** from the issuer's OIDC metadata
+    /// (`{issuer}/.well-known/openid-configuration` → `jwks_uri`) rather
+    /// than assumed, so IdPs that publish keys under a non-standard path
+    /// (Keycloak's `…/protocol/openid-connect/certs`, Azure AD, Auth0,
+    /// Okta, …) work out of the box. If discovery is unreachable the
+    /// cache falls back to the legacy `{issuer}/.well-known/jwks.json`
+    /// path for that attempt only, and re-tries discovery on the next
+    /// refresh.
+    ///
+    /// When the initial fetch fails, behaviour depends on
     /// `start_degraded`:
     ///
     /// * `start_degraded = true` → return `Ok` with an empty cache;
@@ -126,28 +140,29 @@ impl JwksCache {
             .timeout(Duration::from_secs(10))
             .build()
             .map_err(|e| AppError::Internal(format!("reqwest client: {e}")))?;
-        let jwks_url = format!("{}/.well-known/jwks.json", cfg.issuer);
         let cache = Self {
             inner:    Arc::new(ArcSwap::from_pointee(None)),
-            jwks_url: Arc::new(jwks_url.clone()),
+            issuer:   Arc::new(cfg.issuer.clone()),
+            jwks_uri: Arc::new(ArcSwap::from_pointee(None)),
             client:   client.clone(),
         };
 
-        match fetch_jwks(&client, &jwks_url).await {
+        match cache.resolve_and_fetch().await {
             Ok(set) => {
                 cache.inner.store(Arc::new(Some(JwksSnapshot { set: Arc::new(set) })));
-                log::info!("auth: JWKS loaded from {jwks_url}");
+                log::info!("auth: JWKS loaded for issuer {}", cfg.issuer);
             }
             Err(e) if cfg.start_degraded => {
                 log::warn!(
-                    "auth: initial JWKS fetch from {jwks_url} failed ({e}); \
+                    "auth: initial JWKS load for issuer {} failed ({e}); \
                      starting in degraded mode — auth'd requests will return 503 \
-                     until JWKS becomes reachable"
+                     until JWKS becomes reachable",
+                    cfg.issuer
                 );
             }
             Err(e) => {
                 return Err(AppError::Internal(format!(
-                    "auth: JWKS fetch failed and start_degraded = false: {e}"
+                    "auth: JWKS load failed and start_degraded = false: {e}"
                 )));
             }
         }
@@ -168,8 +183,33 @@ impl JwksCache {
         Ok(cache)
     }
 
+    /// Resolve the JWKS URL (via OIDC discovery, cached) and fetch the
+    /// key set. On the first call this runs discovery against the
+    /// issuer's `.well-known/openid-configuration` and caches the
+    /// resulting `jwks_uri`. If discovery is unreachable, this falls
+    /// back to the legacy `{issuer}/.well-known/jwks.json` path for this
+    /// attempt only (without caching), so a later refresh re-discovers.
+    async fn resolve_and_fetch(&self) -> Result<JwkSet, String> {
+        if let Some(uri) = self.jwks_uri.load_full().as_ref().clone() {
+            return fetch_jwks(&self.client, &uri).await;
+        }
+        match discover_jwks_uri(&self.client, &self.issuer).await {
+            Ok(uri) => {
+                self.jwks_uri.store(Arc::new(Some(uri.clone())));
+                fetch_jwks(&self.client, &uri).await
+            }
+            Err(e) => {
+                let fallback = format!("{}/.well-known/jwks.json", self.issuer);
+                log::warn!(
+                    "auth: OIDC discovery failed ({e}); falling back to legacy {fallback}"
+                );
+                fetch_jwks(&self.client, &fallback).await
+            }
+        }
+    }
+
     async fn refresh_quiet(&self) {
-        match fetch_jwks(&self.client, &self.jwks_url).await {
+        match self.resolve_and_fetch().await {
             Ok(set) => {
                 self.inner.store(Arc::new(Some(JwksSnapshot { set: Arc::new(set) })));
                 log::debug!("auth: JWKS refreshed");
@@ -183,6 +223,28 @@ impl JwksCache {
     fn snapshot(&self) -> Option<JwksSnapshot> {
         self.inner.load_full().as_ref().clone()
     }
+}
+
+/// Run OIDC discovery: GET `{issuer}/.well-known/openid-configuration`
+/// and return its `jwks_uri`. Returns `Err` on a network failure, a
+/// non-success HTTP status, or an unparseable / `jwks_uri`-less body.
+async fn discover_jwks_uri(client: &reqwest::Client, issuer: &str) -> Result<String, String> {
+    #[derive(Deserialize)]
+    struct OidcMetadata {
+        jwks_uri: String,
+    }
+
+    let disco_url = format!("{issuer}/.well-known/openid-configuration");
+    let resp = client.get(&disco_url).send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("discovery {disco_url} → HTTP {}", resp.status()));
+    }
+    let meta = resp
+        .json::<OidcMetadata>()
+        .await
+        .map_err(|e| format!("discovery {disco_url} body: {e}"))?;
+    log::info!("auth: discovered jwks_uri={} via {disco_url}", meta.jwks_uri);
+    Ok(meta.jwks_uri)
 }
 
 async fn fetch_jwks(client: &reqwest::Client, url: &str) -> Result<JwkSet, String> {

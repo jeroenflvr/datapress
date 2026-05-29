@@ -435,40 +435,45 @@ async fn build_lazy_local_parquet(
     d:   &DatasetConfig,
     ctx: &SessionContext,
 ) -> Result<(DatasetState, Arc<dyn TableProvider>), AppError> {
-    let files = d.resolve_local_parquet_files()?;
+    let (url, part_keys) = lazy_local_listing(d)?;
 
-    let urls: Vec<ListingTableUrl> = files.iter()
-        .map(|p| {
-            let s = p.to_str().ok_or_else(|| AppError::Internal(format!(
-                "dataset '{}': non-utf8 path {}", d.name, p.display()
-            )))?;
-            ListingTableUrl::parse(s).map_err(|e| AppError::Internal(format!(
-                "dataset '{}': bad url '{s}': {e}", d.name
-            )))
-        })
-        .collect::<Result<_, _>>()?;
-
-    let opts = ListingOptions::new(Arc::new(ParquetFormat::default()))
+    let mut opts = ListingOptions::new(Arc::new(ParquetFormat::default()))
         .with_file_extension(".parquet");
+    if !part_keys.is_empty() {
+        opts = opts.with_table_partition_cols(
+            part_keys.iter().map(|k| (k.clone(), DataType::Utf8)).collect(),
+        );
+    }
 
     let session_state = ctx.state();
-    let resolved_schema = opts
-        .infer_schema(&session_state, &urls[0])
+    // `infer_schema` returns the *file* schema (without partition columns);
+    // `ListingTable` appends the declared partition columns on top.
+    let file_schema = opts
+        .infer_schema(&session_state, &url)
         .await
         .map_err(|e| AppError::Internal(format!(
             "dataset '{}': infer parquet schema: {e}", d.name
         )))?;
 
-    let cfg = ListingTableConfig::new_with_multi_paths(urls)
+    let cfg = ListingTableConfig::new(url)
         .with_listing_options(opts)
-        .with_schema(resolved_schema.clone());
+        .with_schema(file_schema.clone());
     let table = ListingTable::try_new(cfg)
         .map_err(|e| AppError::Internal(format!(
             "dataset '{}': ListingTable::try_new: {e}", d.name
         )))?;
     let provider: Arc<dyn TableProvider> = Arc::new(table);
 
-    let arrow_sch = resolved_schema;
+    // Discovery schema = file columns + partition columns (Utf8).
+    let mut fields: Vec<Field> =
+        file_schema.fields().iter().map(|f| f.as_ref().clone()).collect();
+    for k in &part_keys {
+        if !fields.iter().any(|f| f.name() == k) {
+            fields.push(Field::new(k, DataType::Utf8, false));
+        }
+    }
+    let arrow_sch = Arc::new(Schema::new(fields));
+
     let columns: Vec<ColumnInfo> = arrow_sch.fields().iter().map(|f| {
         let dt = f.data_type();
         ColumnInfo {
@@ -481,8 +486,8 @@ async fn build_lazy_local_parquet(
     let schema = DatasetSchema::new(&d.name, columns);
 
     log::info!(
-        "dataset '{}' [{}, lazy]: {} files, {} cols (no materialise, no index)",
-        d.name, d.source.kind.as_str(), files.len(), schema.columns.len()
+        "dataset '{}' [{}, lazy]: {} cols ({} partition), no materialise, no index",
+        d.name, d.source.kind.as_str(), schema.columns.len(), part_keys.len()
     );
 
     Ok((
@@ -495,6 +500,85 @@ async fn build_lazy_local_parquet(
         },
         provider,
     ))
+}
+
+/// Resolve a local lazy-parquet location into a single `ListingTableUrl`
+/// rooted at the dataset base plus the ordered hive partition keys (if any).
+/// Handles three shapes: a glob (`root/city=*/*.parquet`), a directory
+/// (hive root or flat folder of parquets), and a single `*.parquet` file.
+fn lazy_local_listing(
+    d: &DatasetConfig,
+) -> Result<(ListingTableUrl, Vec<String>), AppError> {
+    let loc = &d.source.location;
+
+    if loc.contains('*') || loc.contains('?') || loc.contains('[') {
+        let parts: Vec<&str> = loc.split('/').collect();
+        let first_wild = parts.iter()
+            .position(|c| c.contains('*') || c.contains('?') || c.contains('['))
+            .unwrap_or(parts.len());
+        let base = parts[..first_wild].join("/");
+        let base = if base.is_empty() { "/".to_string() } else { base };
+        // Partition keys: `key=…` components between the base and the file
+        // pattern (the final component).
+        let upper = parts.len().saturating_sub(1);
+        let keys: Vec<String> = parts[first_wild.min(upper)..upper]
+            .iter()
+            .filter_map(|c| c.split_once('=').map(|(k, _)| k.to_string()))
+            .filter(|k| !k.is_empty())
+            .collect();
+        return Ok((dir_url(std::path::Path::new(&base), d)?, keys));
+    }
+
+    let path = std::path::Path::new(loc);
+    if path.is_dir() {
+        let keys = discover_hive_keys(path);
+        return Ok((dir_url(path, d)?, keys));
+    }
+
+    let url = ListingTableUrl::parse(loc).map_err(|e| AppError::Internal(format!(
+        "dataset '{}': bad url '{loc}': {e}", d.name
+    )))?;
+    Ok((url, Vec::new()))
+}
+
+/// Parse a directory path into a `ListingTableUrl` (trailing slash so
+/// DataFusion treats it as a directory root, not a single object).
+fn dir_url(path: &std::path::Path, d: &DatasetConfig) -> Result<ListingTableUrl, AppError> {
+    let s = path.to_str().ok_or_else(|| AppError::Internal(format!(
+        "dataset '{}': non-utf8 path {}", d.name, path.display()
+    )))?;
+    let s = if s.ends_with('/') { s.to_string() } else { format!("{s}/") };
+    ListingTableUrl::parse(&s).map_err(|e| AppError::Internal(format!(
+        "dataset '{}': bad url '{s}': {e}", d.name
+    )))
+}
+
+/// Walk down a directory following the first `key=value` subdirectory at
+/// each level to discover the ordered hive partition keys. Returns an empty
+/// vec for a flat (non-partitioned) folder.
+fn discover_hive_keys(base: &std::path::Path) -> Vec<String> {
+    let mut keys = Vec::new();
+    let mut cur = base.to_path_buf();
+    loop {
+        let Ok(rd) = std::fs::read_dir(&cur) else { break };
+        let mut next: Option<(String, std::path::PathBuf)> = None;
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if !p.is_dir() { continue; }
+            let Some(name) = p.file_name().and_then(|n| n.to_str()) else { continue };
+            if let Some((k, v)) = name.split_once('=')
+                && !k.is_empty() && !v.is_empty()
+            {
+                next = Some((k.to_string(), p));
+                break;
+            }
+        }
+        match next {
+            Some((k, p)) => { keys.push(k); cur = p; }
+            None         => break,
+        }
+    }
+    keys
 }
 
 /// Lazy S3 parquet: register the dataset's S3 object store on `ctx`, then
@@ -654,8 +738,17 @@ fn read_local_parquet(d: &DatasetConfig) -> Result<Vec<RecordBatch>, AppError> {
             .with_batch_size(65_536)
             .with_projection(projection)
             .build()?;
+        // Hive-style partition columns (`city=NYC/…`) live in the path, not
+        // the file. Fold them in as constant Utf8 columns so they show up in
+        // the schema and are queryable — matching the DuckDB backend.
+        let pairs = hive_pairs(f);
         for batch in reader {
-            all.push(batch.map_err(|e| AppError::Internal(e.to_string()))?);
+            let batch = batch.map_err(|e| AppError::Internal(e.to_string()))?;
+            all.push(if pairs.is_empty() {
+                batch
+            } else {
+                append_partition_cols(&batch, &pairs)?
+            });
         }
     }
     if all.is_empty() {
@@ -664,6 +757,42 @@ fn read_local_parquet(d: &DatasetConfig) -> Result<Vec<RecordBatch>, AppError> {
         )));
     }
     Ok(all)
+}
+
+/// Ordered hive-style partition `(key, value)` pairs encoded in a path, i.e.
+/// directory components shaped like `key=value` (e.g. `year=2024/city=NYC`).
+fn hive_pairs(path: &std::path::Path) -> Vec<(String, String)> {
+    path.components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .filter_map(|seg| {
+            let (k, v) = seg.split_once('=')?;
+            if k.is_empty() || v.is_empty() || v.contains('=') {
+                return None;
+            }
+            Some((k.to_string(), v.to_string()))
+        })
+        .collect()
+}
+
+/// Append constant Utf8 columns for each hive partition pair. A partition
+/// key that collides with a real file column is skipped (the file wins).
+fn append_partition_cols(
+    batch: &RecordBatch,
+    pairs: &[(String, String)],
+) -> Result<RecordBatch, AppError> {
+    let n = batch.num_rows();
+    let mut fields: Vec<Field> =
+        batch.schema().fields().iter().map(|f| f.as_ref().clone()).collect();
+    let mut cols: Vec<ArrayRef> = batch.columns().to_vec();
+    for (k, v) in pairs {
+        if fields.iter().any(|f| f.name() == k) {
+            continue;
+        }
+        fields.push(Field::new(k, DataType::Utf8, false));
+        cols.push(Arc::new(StringArray::from(vec![v.as_str(); n])));
+    }
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), cols)
+        .map_err(|e| AppError::Internal(e.to_string()))
 }
 
 /// Register an `AmazonS3` object store on the SessionContext (so DataFusion's

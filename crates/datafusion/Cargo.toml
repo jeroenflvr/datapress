@@ -32,6 +32,9 @@ object_store.workspace = true
 url.workspace          = true
 deltalake.workspace    = true
 
+[dev-dependencies]
+tempfile = "3"
+
 [[bin]]
 name = "datapress-datafusion"
 path = "src/bin/datapress-datafusion.rs"

@@ -44,7 +44,7 @@ start_degraded       = true                 # warn-and-continue if IdP is down a
 | Key                    | Default     | Notes                                                                  |
 |------------------------|-------------|------------------------------------------------------------------------|
 | `enabled`              | `false`     | Master switch. When false the section is a no-op.                      |
-| `issuer`               | *(required)*| Must be `https://...`. JWKS fetched from `{issuer}/.well-known/jwks.json`. |
+| `issuer`               | *(required)*| Must be `https://...`. JWKS URL is discovered from `{issuer}/.well-known/openid-configuration` (`jwks_uri`). |
 | `audience`             | `""`        | Empty disables `aud` validation.                                       |
 | `algorithms`           | `["RS256"]` | Allow-list. Only RS/ES/PS variants are accepted.                       |
 | `leeway_secs`          | `60`        | Clock skew tolerance for `exp` / `nbf`.                                |
@@ -103,8 +103,9 @@ you can roll OIDC out without breaking existing automation. Flip it to
 ## Free / self-hostable OIDC providers for testing
 
 You don't need a paid identity tenant to exercise the auth layer.
-Anything that publishes a standards-compliant `/.well-known/jwks.json`
-and signs with RS256/ES256 will work.
+Anything that publishes standards-compliant OIDC discovery
+(`/.well-known/openid-configuration` with a `jwks_uri`) and signs with
+RS256/ES256 will work.
 
 ### Self-hosted (zero cost, full control)
 

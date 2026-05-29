@@ -212,8 +212,9 @@ pub struct SwaggerOAuth2Config {
 ///
 /// Disabled by default. When `enabled = true`, the server validates
 /// every request's `Authorization: Bearer …` JWT against the JWKS
-/// fetched from `<issuer>/.well-known/jwks.json`, then enforces the
-/// configured scope requirements per route.
+/// discovered from the issuer's OIDC metadata
+/// (`<issuer>/.well-known/openid-configuration` → `jwks_uri`), then
+/// enforces the configured scope requirements per route.
 ///
 /// Only compiled in when the binary was built with the `auth` cargo
 /// feature. Without the feature, `enabled = true` is rejected at

@@ -24,6 +24,17 @@ client's perspective.
 - OIDC / OAuth2 bearer auth (feature-gated `--features auth`): JWKS
   cache w/ background refresh, scope + tenant claim enforcement,
   Swagger UI SSO via OpenID Connect, admin-token kept as fallback.
+- S3 / S3-compatible object storage source (`s3://`, custom endpoint
+  for MinIO / R2 / Wasabi, virtual/path addressing, env credential
+  chain).
+- Delta Lake source kind (`kind = "delta"`).
+- Multi-file / glob parquet datasets (`data/*.parquet`, folder of
+  parquets) + optional `lazy` on-disk streaming on the DataFusion
+  backend.
+- Hive-style partitioned datasets (`city=NYC/part.parquet`): partition
+  keys are folded into the schema and are queryable on both backends
+  (DuckDB natively; DataFusion via constant columns in eager mode and
+  `ListingTable` partition columns in `lazy` mode).
 
 ---
 
@@ -62,10 +73,9 @@ client's perspective.
 
 ### Backends / formats
 
-- Native Parquet / NDJSON / Arrow file ingestion exposed at config
-  level (DataFusion supports them already).
-- Remote storage: S3 / GCS / Azure Blob.
-- Partitioned / multi-file datasets (folder of parquets, hive-style).
+- NDJSON / Arrow *file* ingestion exposed at config level (Parquet and
+  Delta are already in; DataFusion supports the rest).
+- Remote storage: GCS / Azure Blob. (S3 / S3-compatible is done.)
 - More response export formats: CSV, NDJSON, Parquet
   (in addition to JSON + Arrow IPC).
 
@@ -146,4 +156,58 @@ work around this.
 - Fuzz pass on weird column names and predicate values to confirm no
   SQL escape is possible.
 - Secret-handling story for future remote-storage credentials.
+
+## Audit findings (2025)
+
+Recorded from a code review of the workspace. `cargo clippy
+--workspace --all-targets --all-features` is clean; these are
+findings clippy does not catch. Ordered by severity.
+
+### Correctness — bugs
+
+- ~~**JWKS URL is hardcoded, breaks standard OIDC discovery.**~~
+  *(Fixed.)* `JwksCache` now runs OIDC discovery against
+  `{issuer}/.well-known/openid-configuration` and uses the advertised
+  `jwks_uri` (caching it), with a one-shot fallback to the legacy
+  `{issuer}/.well-known/jwks.json` path only when discovery is
+  unreachable. Works with Keycloak / Azure AD / Auth0 / Okta out of the
+  box. See `crates/core/src/auth.rs`.
+
+### Security — hardening
+
+- **Internal error messages leak to clients.**
+  `crates/core/src/errors.rs` renders `AppError::Internal(_)` straight
+  into the HTTP body via `json!({ "error": self.to_string() })`. The
+  `Internal` variant wraps raw `duckdb` / `datafusion` / `arrow` /
+  `parquet` error strings, which can disclose SQL fragments, column
+  names, local file paths, and S3 URLs to unauthenticated callers.
+  Fix: log the detail (already done) but return a generic
+  `"internal error"` body for the 500 case.
+
+- **DataFusion predicate path string-interpolates literals.**
+  `crates/datafusion/src/store.rs::json_to_sql_lit` builds WHERE-clause
+  values by inlining them into the SQL text (escaping `'` → `''`),
+  whereas the DuckDB backend (`crates/duckdb/src/repository.rs`) uses
+  real bound parameters (`params_from_iter`). The escaping looks
+  correct for the standard SQL dialect DataFusion uses, but it is a
+  lower-assurance approach and the two backends are inconsistent.
+  This is the concrete target for the existing "fuzz pass" item above;
+  prefer DataFusion's prepared-statement / `LogicalPlanBuilder` API so
+  values never touch the SQL string.
+
+- **No cap on predicate count or `in`-list length.**
+  Request bodies are bounded by `server.max_body_bytes` (default 1 MiB)
+  but nothing caps the number of predicates or the size of an `in`
+  array within that budget. A single request can therefore force a
+  very large `WHERE … AND … AND …` / `IN (…)` against a lazy dataset.
+  Consider an explicit per-request predicate/in-list limit.
+
+### Process
+
+- **No dependency vulnerability scanning.** `cargo audit` is not
+  installed locally and is not run in CI. Add `cargo install
+  cargo-audit` + a `cargo audit` (and ideally `cargo deny`) step to
+  `.github/workflows/ci.yml` so advisory regressions are caught. (This
+  overlaps the existing "cargo audit + semver checks in CI" item under
+  Testing & CI.)
 

@@ -65,6 +65,12 @@ fn write_sample_parquet(dir: &std::path::Path) -> std::path::PathBuf {
 }
 
 fn make_registry(parquet: &std::path::Path) -> Arc<Registry> {
+    make_registry_at(&parquet.display().to_string())
+}
+
+/// Like `make_registry`, but takes an arbitrary source `location` string
+/// (file, directory, or glob) so tests can exercise multi-file datasets.
+fn make_registry_at(location: &str) -> Arc<Registry> {
     let cfg = AppConfig {
         server:   ServerConfig::default(),
         docs:     datapress_core::config::DocsConfig::default(),
@@ -74,7 +80,7 @@ fn make_registry(parquet: &std::path::Path) -> Arc<Registry> {
             name:    "people".into(),
             source:  SourceConfig {
                 kind:     SourceKind::Parquet,
-                location: parquet.display().to_string(),
+                location: location.to_string(),
             },
             s3:          None,
             index:       IndexConfig::default(),
@@ -84,6 +90,31 @@ fn make_registry(parquet: &std::path::Path) -> Arc<Registry> {
         }],
     };
     Arc::new(load_registry(&cfg).expect("load_registry"))
+}
+
+/// Build a hive-partitioned dataset under `dir`:
+///   dir/city=NYC/part.parquet  -> id, name, score   (3 rows)
+///   dir/city=LA/part.parquet   -> id, name, score   (2 rows)
+/// The partition key `city` is encoded *only* in the directory name, never
+/// inside the parquet files. Returns the dataset root `dir`.
+fn write_hive_dataset(dir: &std::path::Path) {
+    for (city, rows) in [
+        ("NYC", "SELECT 1 AS id, 'Anna' AS name, 10.5 AS score
+                 UNION ALL SELECT 3, 'Cara', 30.0
+                 UNION ALL SELECT 4, 'Dan',  40.0"),
+        ("LA",  "SELECT 2 AS id, 'Bob' AS name, 20.0 AS score
+                 UNION ALL SELECT 5, 'Eve', 50.5"),
+    ] {
+        let part_dir = dir.join(format!("city={city}"));
+        std::fs::create_dir_all(&part_dir).unwrap();
+        let parquet = part_dir.join("part.parquet");
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        let sql = format!(
+            "COPY ({rows}) TO '{}' (FORMAT PARQUET);",
+            parquet.display()
+        );
+        conn.execute_batch(&sql).expect("write hive parquet");
+    }
 }
 
 fn parse_rows(s: &str) -> Vec<Value> {
@@ -323,4 +354,41 @@ async fn arrow_ipc_with_group_by_emits_typed_columns() {
     let batches: Vec<_> = reader.collect::<Result<Vec<_>, _>>().unwrap();
     let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
     assert_eq!(total_rows, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Hive-partitioned / multi-file directory datasets
+//
+// Layout: `city=NYC/part.parquet`, `city=LA/part.parquet` — the partition
+// key `city` lives only in the directory name. DuckDB's `read_parquet`
+// auto-detects hive `key=value` segments, so both the multi-file union and
+// the partition column are surfaced.
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+async fn hive_glob_unions_all_files() {
+    let tmp = TempDir::new().unwrap();
+    write_hive_dataset(tmp.path());
+    let glob = format!("{}/city=*/*.parquet", tmp.path().display());
+    let reg = make_registry_at(&glob);
+
+    // Multi-file union: all 5 rows across both partitions are visible.
+    let rows = parse_rows(&reg.query("people", &empty_req()).await.unwrap());
+    assert_eq!(rows.len(), 5, "expected union of both partition files");
+}
+
+#[actix_web::test]
+async fn hive_partition_column_is_surfaced() {
+    let tmp = TempDir::new().unwrap();
+    write_hive_dataset(tmp.path());
+    let glob = format!("{}/city=*/*.parquet", tmp.path().display());
+    let reg = make_registry_at(&glob);
+
+    let rows = parse_rows(&reg.query("people", &empty_req()).await.unwrap());
+    let has_city = rows.first().map(|r| r.get("city").is_some()).unwrap_or(false);
+    assert!(
+        has_city,
+        "hive partition column `city` was not surfaced. row keys: {:?}",
+        rows.first().and_then(|r| r.as_object()).map(|o| o.keys().collect::<Vec<_>>())
+    );
 }
