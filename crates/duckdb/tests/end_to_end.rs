@@ -76,6 +76,7 @@ fn make_registry_at(location: &str) -> Arc<Registry> {
         docs:     datapress_core::config::DocsConfig::default(),
         swagger:  datapress_core::config::SwaggerConfig::default(),
         auth:     datapress_core::config::AuthConfig::default(),
+        metrics:  datapress_core::config::MetricsConfig::default(),
         datasets: vec![DatasetConfig {
             name:    "people".into(),
             source:  SourceConfig {
@@ -236,10 +237,9 @@ async fn group_by_with_default_count_and_named_aggs() {
     assert_eq!(la["count"],  Value::from(2));
     assert_eq!(nyc["count"], Value::from(3));
 
-    // Explicit SUM + AVG + MIN + MAX with custom alias.
-    // (No ORDER BY alias here: the DuckDB JSON path doesn't expose the
-    // aggregation alias to the outer SQL scope — see the Arrow IPC test
-    // below for ordering on aliases.)
+    // Explicit SUM + AVG + MIN + MAX with custom alias, ordered by an
+    // aggregation alias. The JSON path runs the aggregation in an inner
+    // subquery so `ORDER BY <alias>` resolves against a real output column.
     let mut req = empty_req();
     req.group_by = vec!["city".into()];
     req.aggregations = vec![
@@ -247,12 +247,16 @@ async fn group_by_with_default_count_and_named_aggs() {
         Aggregation { col: Some("score".into()), op: "min".into(),   alias: None },
         Aggregation { col: Some("score".into()), op: "max".into(),   alias: None },
     ];
+    req.order_by = vec![OrderBy { col: "total".into(), dir: Some("asc".into()) }];
     let rows = parse_rows(&reg.query("people", &req).await.unwrap());
     assert_eq!(rows.len(), 2);
-    let la  = rows.iter().find(|r| r["city"] == "LA").unwrap();
-    let nyc = rows.iter().find(|r| r["city"] == "NYC").unwrap();
     // NYC has scores 10.5, NULL, 40.0 — sum = 50.5, min = 10.5, max = 40.0.
     // LA  has scores 20.0, 50.5            — sum = 70.5, min = 20.0, max = 50.5.
+    // Ordered by `total` ASC → NYC (50.5) before LA (70.5).
+    assert_eq!(rows[0]["city"], Value::from("NYC"));
+    assert_eq!(rows[1]["city"], Value::from("LA"));
+    let la  = rows.iter().find(|r| r["city"] == "LA").unwrap();
+    let nyc = rows.iter().find(|r| r["city"] == "NYC").unwrap();
     assert_eq!(la["total"].as_f64().unwrap(),  70.5);
     assert_eq!(nyc["total"].as_f64().unwrap(), 50.5);
     assert_eq!(la["min_score"].as_f64().unwrap(),  20.0);

@@ -68,8 +68,12 @@ where
         .join(", ")
 }
 
-/// Build the `'key', expr` pairs for a `json_object(…)` call from a
-/// validated GROUP BY plan: group columns first, then aggregation outputs.
+/// Build the `'key', expr` pairs for the outer `json_object(…)` of a
+/// grouped query. Group columns and aggregation outputs are referenced by
+/// the aliases produced in the inner aggregation subquery, so each is a
+/// real output column (visible to `ORDER BY`) rather than an inline
+/// expression buried inside `json_object` — DuckDB cannot order by a name
+/// that only exists as a `json_object` key.
 fn group_json_obj_pairs(schema: &DatasetSchema, plan: &AggPlan) -> String {
     let mut parts: Vec<String> = Vec::with_capacity(plan.group_cols.len() + plan.aggs.len());
     for name in &plan.group_cols {
@@ -87,12 +91,9 @@ fn group_json_obj_pairs(schema: &DatasetSchema, plan: &AggPlan) -> String {
         }
     }
     for a in &plan.aggs {
-        let expr = match (a.op, a.col.as_deref()) {
-            (AggOp::Count, None) => "COUNT(*)".to_string(),
-            (op, Some(c))        => format!("{}({})", op.as_sql(), DatasetSchema::quote_ident(c)),
-            _ => unreachable!(),
-        };
-        parts.push(format!("'{}', {expr}", a.alias.replace('\'', "''")));
+        // Reference the inner subquery's aggregation alias by name.
+        let q = DatasetSchema::quote_ident(&a.alias);
+        parts.push(format!("'{}', {q}", a.alias.replace('\'', "''")));
     }
     parts.join(", ")
 }
@@ -165,23 +166,6 @@ impl<'a> DatasetRepository<'a> {
     pub fn query(&self, req: &QueryRequest) -> Result<String, AppError> {
         let agg_plan = req.agg_plan(self.schema)?;
 
-        // SELECT list — either a row-shaped json_object over projected
-        // columns, or a grouped json_object over group cols + aggregations.
-        let pairs = if let Some(plan) = &agg_plan {
-            group_json_obj_pairs(self.schema, plan)
-        } else {
-            // Resolve projection through the dataset schema.
-            let cols: Vec<&datapress_core::schema::ColumnInfo> = if req.columns.is_empty() {
-                self.schema.columns.iter().collect()
-            } else {
-                req.columns
-                    .iter()
-                    .map(|n| self.schema.find(n))
-                    .collect::<Result<_, _>>()?
-            };
-            json_obj_pairs(cols)
-        };
-
         let (limit, offset) = req.effective_limit_offset(1_000_000);
 
         let mut conditions: Vec<String>   = Vec::new();
@@ -192,27 +176,39 @@ impl<'a> DatasetRepository<'a> {
         }
 
         let where_clause = build_where(&conditions);
-        let group_clause = match &agg_plan {
-            Some(p) => format!(
-                " GROUP BY {}",
-                p.group_cols.iter()
-                    .map(|c| DatasetSchema::quote_ident(c))
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            ),
-            None => String::new(),
-        };
         let order_clause = match req.order_by_sql(self.schema, agg_plan.as_ref())? {
             Some(s) => format!(" ORDER BY {s}"),
             None    => String::new(),
         };
         let table = DatasetSchema::quote_ident(&self.schema.name);
 
-        // DISTINCT path: dedup on the raw projected columns inside a
-        // subquery, then format each surviving row as a JSON object. This
-        // avoids running DISTINCT over the (expensive) json_object string
-        // and keeps ORDER BY / LIMIT / OFFSET applied to the deduped set.
-        let sql = if req.distinct && agg_plan.is_none() {
+        let sql = if let Some(plan) = &agg_plan {
+            // Grouped / aggregated path. Run the aggregation in an inner
+            // query so each aggregation alias is a real output column —
+            // visible to ORDER BY — then wrap the surviving rows in
+            // json_object. Emitting the aliases only inside json_object
+            // would hide them from the outer scope and DuckDB would reject
+            // `ORDER BY <alias>`.
+            let inner_select = agg_select_list(plan);
+            let group_by = plan.group_cols.iter()
+                .map(|c| DatasetSchema::quote_ident(c))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let pairs = group_json_obj_pairs(self.schema, plan);
+            format!(
+                "SELECT json_object({pairs}) FROM (\
+                    SELECT {inner_select} FROM {table}{where_clause} \
+                    GROUP BY {group_by}{order_clause} \
+                    LIMIT {limit} OFFSET {offset}\
+                 ) sub"
+            )
+        } else if req.distinct {
+            // DISTINCT path: dedup on the raw projected columns inside a
+            // subquery, then format each surviving row as a JSON object.
+            // This avoids running DISTINCT over the (expensive) json_object
+            // string and keeps ORDER BY / LIMIT / OFFSET applied to the
+            // deduped set.
+            let pairs = self.row_json_obj_pairs(req)?;
             let projection: String = if req.columns.is_empty() {
                 "*".into()
             } else {
@@ -228,13 +224,29 @@ impl<'a> DatasetRepository<'a> {
                  ) sub"
             )
         } else {
+            // Plain row path: one json_object per projected row.
+            let pairs = self.row_json_obj_pairs(req)?;
             format!(
-                "SELECT json_object({pairs}) FROM {table}{where_clause}{group_clause}{order_clause} \
+                "SELECT json_object({pairs}) FROM {table}{where_clause}{order_clause} \
                  LIMIT {limit} OFFSET {offset}"
             )
         };
 
         stream_as_json_array(self.conn, &sql, &bind_vals)
+    }
+
+    /// Resolve the request projection through the dataset schema and build
+    /// the `'key', expr` pairs for a row-shaped `json_object(…)`.
+    fn row_json_obj_pairs(&self, req: &QueryRequest) -> Result<String, AppError> {
+        let cols: Vec<&datapress_core::schema::ColumnInfo> = if req.columns.is_empty() {
+            self.schema.columns.iter().collect()
+        } else {
+            req.columns
+                .iter()
+                .map(|n| self.schema.find(n))
+                .collect::<Result<_, _>>()?
+        };
+        Ok(json_obj_pairs(cols))
     }
 
     /// Same shape as [`query`], but returns the result as an Arrow IPC

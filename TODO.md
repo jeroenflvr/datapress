@@ -117,25 +117,24 @@ client's perspective.
   formatting that conflicts with rustfmt's default rules — pick this
   up when a `rustfmt.toml` is in.
 - Criterion benchmarks committed so perf claims are reproducible.
-- `cargo audit` + semver checks in CI.
+- ~~`cargo audit`~~ + semver checks in CI. *(`cargo audit` added as the
+  `audit` job in `.github/workflows/ci.yml`; semver checks still open.)*
 - Fuzz target for the DSL parser.
 
-### DuckDB GROUP BY: `ORDER BY <alias>` rejection (regression risk)
+### DuckDB GROUP BY: `ORDER BY <alias>` rejection (regression risk) *(Fixed.)*
 
-The DuckDB JSON path emits `SELECT json_object('city', "city", 'total',
+The DuckDB JSON path emitted `SELECT json_object('city', "city", 'total',
 SUM("score"), …) FROM … GROUP BY "city" ORDER BY "total"` — but
-`"total"` is only a key inside `json_object`, never exposed to the
-outer SQL scope, so DuckDB rejects the `ORDER BY`. Either:
+`"total"` was only a key inside `json_object`, never exposed to the
+outer SQL scope, so DuckDB rejected the `ORDER BY`.
 
-- wrap the projection in a subquery so the aliases are visible to
-  `ORDER BY`, or
-- rewrite `ORDER BY <alias>` to the corresponding aggregation
-  expression at plan time.
-
-The integration test
-`crates/duckdb/tests/end_to_end.rs::group_by_with_default_count_and_named_aggs`
-currently asserts the aggregation values without an `ORDER BY` to
-work around this.
+Fixed by running the aggregation in an inner subquery
+(`SELECT "city", SUM("score") AS "total" FROM … GROUP BY "city" ORDER BY
+"total" LIMIT … OFFSET …`) so each alias is a real output column visible
+to `ORDER BY`, then wrapping it in `json_object` in the outer query
+(mirroring the existing `DISTINCT` subquery pattern). The integration
+test `crates/duckdb/tests/end_to_end.rs::group_by_with_default_count_and_named_aggs`
+now asserts `ORDER BY <alias>` ordering.
 
 ### Python wrapper polish
 
