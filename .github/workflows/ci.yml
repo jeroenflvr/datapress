@@ -64,3 +64,18 @@ jobs:
       - name: Build MkDocs site
         run: uv tool run --with mkdocs-material mkdocs build -f docs/mkdocs.yml -d site --strict
       - run: cargo test --workspace --features docs,swagger --locked
+
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # Scan Cargo.lock for crates with known RUSTSEC advisories.
+      # Fails the build on any vulnerability (unmaintained-crate warnings
+      # do not fail the build).
+      - run: cargo audit
+
