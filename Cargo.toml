@@ -11,12 +11,19 @@ members  = [
 version = "0.2.2"
 edition = "2024"
 license = "MIT"
+authors = ["Jeroen <jeroenflvr@users.noreply.github.com>"]
+repository = "https://github.com/jeroenflvr/fast-api"
+homepage = "https://github.com/jeroenflvr/fast-api"
+documentation = "https://docs.rs/datapress-core"
+keywords = ["parquet", "delta", "duckdb", "datafusion", "http"]
+categories = ["database", "web-programming::http-server"]
 
 [workspace.dependencies]
-# Internal crates (path deps).
-datapress-core       = { path = "crates/core" }
-datapress-duckdb     = { path = "crates/duckdb" }
-datapress-datafusion = { path = "crates/datafusion" }
+# Internal crates (path deps). Versions are required so the crates can be
+# published to crates.io while still resolving to the local path in-tree.
+datapress-core       = { path = "crates/core", version = "0.2.2" }
+datapress-duckdb     = { path = "crates/duckdb", version = "0.2.2" }
+datapress-datafusion = { path = "crates/datafusion", version = "0.2.2" }
 
 # Shared third-party deps. Pinning versions here keeps every crate aligned.
 actix-web   = { version = "4.12.1", features = ["compress-gzip", "compress-brotli", "compress-zstd"] }

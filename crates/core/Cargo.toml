@@ -3,6 +3,14 @@ name             = "datapress-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Backend-agnostic core types, config, routing, and HTTP handlers for the datapress dataset server."
+documentation = "https://docs.rs/datapress-core"
+readme = "README.md"
 
 [features]
 # Backend crates opt in to these via `features = [...]` on their

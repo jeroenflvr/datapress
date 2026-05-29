@@ -3,6 +3,12 @@ name             = "datapress-py"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "PyO3 bindings for the datapress dataset server (published to PyPI as `datap-rs`, not crates.io)."
+# Distributed as a Python wheel via maturin/PyPI, not as a crates.io crate.
+publish = false
 
 [lib]
 # Python submodule name: `datap_rs.datapress`. The cdylib basename must
