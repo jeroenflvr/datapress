@@ -139,10 +139,12 @@ work around this.
 
 ### Python wrapper polish
 
-- `.pyi` type stubs for IDE autocomplete / mypy.
-- Pure-Python client class (`DataPressClient`) with typed
-  `query()` / `count()` returning a pyarrow Table; saves users from
-  hand-rolling `requests` + dicts.
+- ~~`.pyi` type stubs for IDE autocomplete / mypy.~~ *(Done — full
+  stubs for `datapress` + `client`, kept in sync with the compiled
+  classes; `AuthConfig` re-exported at the top level.)*
+- ~~Pure-Python client class (`DataPressClient`) with typed
+  `query()` / `count()` returning a pyarrow Table.~~ *(Done — see
+  `crates/python/python/datap_rs/client.py`.)*
 - Wheel matrix on PyPI: musllinux still missing (manylinux + macOS
   arm64/x86_64 + windows are wired in `.github/workflows/publish.yml`).
 

@@ -2,6 +2,7 @@
 
 from . import datapress as datapress
 from .datapress import (
+    AuthConfig as AuthConfig,
     DataPress as DataPress,
     DataPressConfig as DataPressConfig,
     DatasetConfig as DatasetConfig,
@@ -14,6 +15,7 @@ from .client import (
 
 __all__ = [
     "datapress",
+    "AuthConfig",
     "DataPress",
     "DataPressConfig",
     "DatasetConfig",

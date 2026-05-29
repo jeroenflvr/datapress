@@ -114,6 +114,7 @@ class DataPressConfig:
     compress: bool
     max_body_bytes: int
     request_timeout_ms: int
+    shutdown_timeout_secs: int
 
     def __init__(
         self,
@@ -125,6 +126,7 @@ class DataPressConfig:
         compress: bool = True,
         max_body_bytes: int = 1_048_576,
         request_timeout_ms: int = 30_000,
+        shutdown_timeout_secs: int = 30,
     ) -> None:
         """Build a :class:`DataPressConfig`.
 
@@ -146,6 +148,80 @@ class DataPressConfig:
                 Larger bodies are rejected with ``413``. Default ``1_048_576``.
             request_timeout_ms: Per-request handler timeout, in ms.
                 ``0`` disables the timeout. Default ``30_000``.
+            shutdown_timeout_secs: Grace period for in-flight requests after
+                the server receives ``SIGTERM``/``SIGINT``, in seconds.
+                Default ``30``.
+        """
+        ...
+
+
+class AuthConfig:
+    """OIDC / OAuth2 bearer-token enforcement for the HTTP API.
+
+    Pass an instance to :class:`DataPress` as the ``auth`` kwarg. Requires
+    the wheel to be built with the ``auth`` Cargo feature (the published
+    wheels include it). When ``enabled=False`` (default) the entire auth
+    layer is a no-op and existing ``X-Admin-Token`` semantics apply.
+    """
+
+    enabled: bool
+    issuer: str
+    audience: str
+    read_scopes: list[str]
+    reload_scopes: list[str]
+    anonymous_read: bool
+    algorithms: list[str]
+    leeway_secs: int
+    jwks_refresh_secs: int
+    tenant_claim: str
+    allowed_tenants: list[str]
+    admin_token_fallback: bool
+    start_degraded: bool
+
+    def __init__(
+        self,
+        enabled: bool = False,
+        issuer: str = "",
+        audience: str = "",
+        read_scopes: Optional[list[str]] = None,
+        reload_scopes: Optional[list[str]] = None,
+        anonymous_read: bool = False,
+        algorithms: Optional[list[str]] = None,
+        leeway_secs: int = 60,
+        jwks_refresh_secs: int = 3600,
+        tenant_claim: str = "",
+        allowed_tenants: Optional[list[str]] = None,
+        admin_token_fallback: bool = True,
+        start_degraded: bool = True,
+    ) -> None:
+        """Build an :class:`AuthConfig`.
+
+        Args:
+            enabled: Master switch. Default ``False``.
+            issuer: OIDC issuer URL — must equal the JWT ``iss`` claim.
+                Required when ``enabled=True``. Must be ``https://...`` (or
+                ``http://localhost...`` for local development).
+            audience: Expected JWT ``aud`` claim. Empty disables ``aud``
+                validation (not recommended in production).
+            read_scopes: Scopes required on every read endpoint. Empty
+                (default) = any valid token is enough.
+            reload_scopes: Scopes required on ``POST .../reload``.
+            anonymous_read: Allow unauthenticated reads. Default ``False``.
+            algorithms: Allowed JWS algorithms. Default ``["RS256"]``.
+                Only RS/ES/PS variants are accepted.
+            leeway_secs: Clock-skew tolerance for ``exp``/``nbf``. Default ``60``.
+            jwks_refresh_secs: Background JWKS refresh interval. Default
+                ``3600`` (clamped to ≥ 60).
+            tenant_claim: JSON-pointer into the JWT claims to extract a
+                tenant id (e.g. ``"/tid"`` for Entra ID). Empty disables.
+            allowed_tenants: If non-empty, the token's tenant value must be
+                in this list. Has no effect without ``tenant_claim``.
+            admin_token_fallback: Keep ``X-Admin-Token`` working in parallel
+                with OIDC for ``POST .../reload``. Default ``True``.
+            start_degraded: If ``True`` (default) the server starts even when
+                the IdP is unreachable and serves 503 for authenticated
+                requests until JWKS becomes available. If ``False``, an
+                unreachable IdP at boot fails startup.
         """
         ...
 
@@ -171,12 +247,14 @@ class DataPress:
         self,
         config: DataPressConfig,
         datasets: list[DatasetConfig],
+        auth: Optional[AuthConfig] = None,
     ) -> None:
         """Build a :class:`DataPress` instance.
 
         Args:
             config: Server-side configuration.
             datasets: Datasets to publish. Must be non-empty.
+            auth: Optional OIDC/OAuth2 enforcement. Defaults to disabled.
 
         Raises:
             ValueError: If any field is invalid (bad backend name, bad
@@ -200,4 +278,4 @@ class DataPress:
         ...
 
 
-__all__ = ["DataPress", "DataPressConfig", "DatasetConfig", "S3Config"]
+__all__ = ["AuthConfig", "DataPress", "DataPressConfig", "DatasetConfig", "S3Config"]
