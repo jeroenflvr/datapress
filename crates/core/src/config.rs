@@ -157,6 +157,50 @@ impl Default for QuackConfig {
     }
 }
 
+impl QuackConfig {
+    /// Validate the enabled Quack configuration against DuckDB's current
+    /// safety rules. The extension treats only the literal `localhost` as
+    /// local unless `allow_other_hostname` is set.
+    pub fn validate_enabled(&self) -> Result<(), AppError> {
+        if self.uri.trim().is_empty() {
+            return Err(AppError::Internal(
+                "server.quack.uri must not be empty when server.quack.enabled = true".into(),
+            ));
+        }
+        if !self.uri.starts_with("quack:") {
+            return Err(AppError::Internal(format!(
+                "server.quack.uri must start with 'quack:' (got '{}')",
+                self.uri
+            )));
+        }
+        if !self.allow_other_hostname {
+            let host = self.hostname().unwrap_or_default();
+            if host != "localhost" {
+                return Err(AppError::Internal(format!(
+                    "server.quack.uri host must be 'localhost' unless \
+                     server.quack.allow_other_hostname = true (got '{}')",
+                    self.uri
+                )));
+            }
+        }
+        if let Some(token) = self.token.as_deref()
+            && token.len() < 4
+        {
+            return Err(AppError::Internal(
+                "server.quack.token must be at least 4 characters".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn hostname(&self) -> Option<&str> {
+        let rest = self.uri.strip_prefix("quack:")?;
+        let rest = rest.strip_prefix("//").unwrap_or(rest);
+        let host = rest.split([':', '/', '?', '#']).next().unwrap_or_default();
+        (!host.is_empty()).then_some(host)
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Backend {
@@ -579,25 +623,7 @@ impl AppConfig {
         }
 
         if self.server.quack.enabled {
-            let q = &self.server.quack;
-            if q.uri.trim().is_empty() {
-                return Err(AppError::Internal(
-                    "server.quack.uri must not be empty when server.quack.enabled = true".into(),
-                ));
-            }
-            if !q.uri.starts_with("quack:") {
-                return Err(AppError::Internal(format!(
-                    "server.quack.uri must start with 'quack:' (got '{}')",
-                    q.uri
-                )));
-            }
-            if let Some(token) = q.token.as_deref()
-                && token.len() < 4
-            {
-                return Err(AppError::Internal(
-                    "server.quack.token must be at least 4 characters".into(),
-                ));
-            }
+            self.server.quack.validate_enabled()?;
         }
 
         // Validate the docs mount path even when the section is disabled,
@@ -1025,7 +1051,7 @@ mod tests {
 
             [server.quack]
             enabled = true
-            uri = "quack:127.0.0.1:9495"
+            uri = "quack:localhost:9495"
             token = "test-token"
             read_only = false
             [[dataset]]
@@ -1042,7 +1068,7 @@ mod tests {
         assert_eq!(cfg.server.max_page_size, 50_000);
         assert_eq!(cfg.server.request_timeout_ms, 0);
         assert!(cfg.server.quack.enabled);
-        assert_eq!(cfg.server.quack.uri, "quack:127.0.0.1:9495");
+        assert_eq!(cfg.server.quack.uri, "quack:localhost:9495");
         assert_eq!(cfg.server.quack.token.as_deref(), Some("test-token"));
         assert!(!cfg.server.quack.read_only);
         assert_eq!(cfg.datasets.len(), 1);
@@ -1081,6 +1107,39 @@ mod tests {
         };
         let err = cfg.validate().unwrap_err();
         assert!(matches!(err, AppError::Internal(m) if m.contains("[[dataset]]")));
+    }
+
+    #[test]
+    fn validate_rejects_quack_non_local_host_without_override() {
+        let cfg = AppConfig {
+            server: ServerConfig {
+                quack: QuackConfig {
+                    enabled: true,
+                    uri: "quack:127.0.0.1".into(),
+                    token: Some("test-token".into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            docs: DocsConfig::default(),
+            swagger: SwaggerConfig::default(),
+            metrics: MetricsConfig::default(),
+            auth: AuthConfig::default(),
+            datasets: vec![DatasetConfig {
+                name: "x".into(),
+                source: SourceConfig {
+                    kind: SourceKind::Parquet,
+                    location: "/tmp/missing.parquet".into(),
+                },
+                s3: None,
+                index: IndexConfig::default(),
+                columns: vec![],
+                dict_encode: true,
+                lazy: false,
+            }],
+        };
+        let err = cfg.validate().unwrap_err();
+        assert!(matches!(err, AppError::Internal(m) if m.contains("host must be 'localhost'")));
     }
 
     #[test]

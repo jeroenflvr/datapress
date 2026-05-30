@@ -228,6 +228,7 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
 }
 
 fn start_quack_server(conn: &Connection, cfg: &QuackConfig) -> Result<(), AppError> {
+    cfg.validate_enabled()?;
     log::warn!(
         "DuckDB Quack is experimental and exposes the DuckDB SQL surface; starting {}",
         cfg.uri
@@ -237,7 +238,10 @@ fn start_quack_server(conn: &Connection, cfg: &QuackConfig) -> Result<(), AppErr
     if cfg.read_only {
         conn.execute_batch(
             "CREATE OR REPLACE MACRO datapress_quack_read_only(sid, query) AS \
-             regexp_matches(upper(trim(query)), '^(SELECT|FROM|WITH|EXPLAIN|DESCRIBE|SHOW)\\b');\
+             regexp_matches(upper(trim(query)), '^ATTACH\\s+''QUACK:') OR NOT regexp_matches(\
+             upper(trim(query)),\
+             '^(ATTACH|CREATE|INSERT|UPDATE|DELETE|COPY|DROP|ALTER|TRUNCATE|MERGE|VACUUM|EXPORT|IMPORT|LOAD|INSTALL)\\b'\
+             );\
              SET GLOBAL quack_authorization_function = 'datapress_quack_read_only';",
         )?;
     }

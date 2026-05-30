@@ -18,10 +18,10 @@ port    = 8080
 
 [server.quack]                      # DuckDB backend only; experimental
 enabled = false
-uri = "quack:localhost"             # default port 9494
+uri = "quack:localhost"             # default port 9494; use literal localhost
 # token = "change-me"               # optional; generated and logged if omitted
 allow_other_hostname = false        # true for quack:0.0.0.0:9494 behind TLS proxy
-read_only = true                    # install read-only authorization hook
+read_only = true                    # allow reads plus Quack attach handshake
 ```
 
 ## Reference
@@ -59,6 +59,15 @@ Quack exposes the DuckDB SQL surface of the in-process database. DataPress
 therefore keeps it disabled by default, binds to localhost by default, and
 installs a read-only authorization hook by default. If `token` is omitted,
 Quack generates one at startup and DataPress logs it once.
+
+With `read_only = true`, DataPress allows read/inspection statements and
+the Quack client attach handshake, but rejects write-oriented and DDL
+statements such as `CREATE`, `INSERT`, `UPDATE`, `DELETE`, `COPY`,
+`DROP`, `ALTER`, `LOAD`, and `INSTALL`.
+
+DuckDB's Quack extension currently treats only the literal hostname
+`localhost` as local. Use `uri = "quack:localhost"`; `quack:127.0.0.1`
+is rejected unless `allow_other_hostname = true`.
 
 To listen on a non-local address, set both a non-local URI and
 `allow_other_hostname = true`, then put a TLS-terminating reverse proxy in

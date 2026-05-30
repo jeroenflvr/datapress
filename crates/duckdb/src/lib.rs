@@ -13,6 +13,6 @@ use datapress_core::config::AppConfig;
 pub async fn serve(cfg: AppConfig) -> std::io::Result<()> {
     datapress_core::banner::print();
     let registry: Arc<dyn Backend> =
-        Arc::new(db::load_registry(&cfg).expect("failed to register datasets"));
+        Arc::new(db::load_registry(&cfg).map_err(|e| std::io::Error::other(format!("{e}")))?);
     datapress_core::server::serve(cfg, registry, "DuckDB").await
 }

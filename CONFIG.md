@@ -26,10 +26,10 @@ shutdown_timeout_secs = 30    # graceful-shutdown grace period, in seconds
 
 [server.quack]                # DuckDB backend only; experimental
 enabled = false
-uri = "quack:localhost"       # default port 9494
+uri = "quack:localhost"       # default port 9494; use literal localhost
 # token = "change-me"         # optional; generated and logged if omitted
 allow_other_hostname = false  # true for quack:0.0.0.0:9494 behind TLS proxy
-read_only = true              # install read-only authorization hook
+read_only = true              # allow reads plus Quack attach handshake
 
 [[dataset]]               # one block per dataset
 name = "..."
