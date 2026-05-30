@@ -41,14 +41,14 @@ tasks:
     desc: Run the DuckDB binary (release, with embedded docs site + swagger UI)
     deps: [docs:build]
     cmds:
-      - cargo build {{.RELEASE}} -p datapress-duckdb --bin datapress-duckdb --features docs,swagger
+      - cargo build {{.RELEASE}} -p datapress-duckdb --bin datapress-duckdb --features docs,swagger,metrics
       - RUST_LOG=info ./target/release/datapress-duckdb
 
   run:datafusion:
     desc: Run the DataFusion binary (release, with embedded docs site + swagger UI)
     deps: [docs:build]
     cmds:
-      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion --features docs,swagger
+      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion --features docs,swagger,metrics
       - RUST_LOG=info ./target/release/datapress-datafusion
 
   check:
@@ -82,7 +82,7 @@ tasks:
     desc: Build a release wheel into ./target/wheels/ with the published feature set
     deps: [docs:build]
     cmds:
-      - uv tool run --with maturin maturin build --release --features docs,swagger,auth
+      - uv tool run --with maturin maturin build --release --features docs,swagger,auth,metrics
 
   # ---------------------------------------------------------------------
   # Documentation (MkDocs + Material)
