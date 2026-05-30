@@ -40,7 +40,7 @@ cargo audit                                        # RUSTSEC advisory scan
 When touching the docs site, build it in strict mode from the repo root:
 
 ```bash
-uv tool run --with mkdocs-material mkdocs build -f docs/mkdocs.yml -d site --strict
+uv tool run --with 'mkdocs>=1.6,<2' --with 'mkdocs-material>=9.6,<10' mkdocs build -f docs/mkdocs.yml -d site --strict
 ```
 
 ### Formatting

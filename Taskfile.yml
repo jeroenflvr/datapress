@@ -90,12 +90,12 @@ tasks:
   docs:build:
     desc: Build the embedded MkDocs site into docs/site/
     cmds:
-      - uv tool run --with mkdocs-material mkdocs build -f docs/mkdocs.yml -d site --strict
+      - uv tool run --with 'mkdocs>=1.6,<2' --with 'mkdocs-material>=9.6,<10' mkdocs build -f docs/mkdocs.yml -d site --strict
 
   docs:serve:
     desc: Live-reload MkDocs site at http://127.0.0.1:8001
     cmds:
-      - uv tool run --with mkdocs-material mkdocs serve -f docs/mkdocs.yml --dev-addr 127.0.0.1:8001
+      - uv tool run --with 'mkdocs>=1.6,<2' --with 'mkdocs-material>=9.6,<10' mkdocs serve -f docs/mkdocs.yml --dev-addr 127.0.0.1:8001
 
   # ---------------------------------------------------------------------
   # Changelog (git-cliff)

@@ -31,7 +31,7 @@ jobs:
         with: { python-version: '3.12' }
       - uses: astral-sh/setup-uv@v3
       - name: Build MkDocs site
-        run: uv tool run --with mkdocs-material mkdocs build -f docs/mkdocs.yml -d site --strict
+        run: uv tool run --with 'mkdocs>=1.6,<2' --with 'mkdocs-material>=9.6,<10' mkdocs build -f docs/mkdocs.yml -d site --strict
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: wheels-linux-${{ matrix.target }}
@@ -79,7 +79,7 @@ jobs:
         with: { python-version: '3.12' }
       - uses: astral-sh/setup-uv@v3
       - name: Build MkDocs site
-        run: uv tool run --with mkdocs-material mkdocs build -f docs/mkdocs.yml -d site --strict
+        run: uv tool run --with 'mkdocs>=1.6,<2' --with 'mkdocs-material>=9.6,<10' mkdocs build -f docs/mkdocs.yml -d site --strict
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: wheels-macos-aarch64
@@ -106,7 +106,7 @@ jobs:
         with: { python-version: '3.12' }
       - uses: astral-sh/setup-uv@v3
       - name: Build MkDocs site
-        run: uv tool run --with mkdocs-material mkdocs build -f docs/mkdocs.yml -d site --strict
+        run: uv tool run --with 'mkdocs>=1.6,<2' --with 'mkdocs-material>=9.6,<10' mkdocs build -f docs/mkdocs.yml -d site --strict
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: wheels-windows-x64
