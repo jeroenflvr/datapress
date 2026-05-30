@@ -18,6 +18,9 @@ HTTP API.
 - **Arrow IPC.** Paged `/query?format=arrow` responses and full
   `/query/stream` exports write DuckDB's native `query_arrow` batches
   into the HTTP response stream; no JSON round-trip on the server side.
+- **Experimental Quack server.** Opt into DuckDB's Quack remote protocol
+  with `[server.quack]` to let DuckDB clients attach to the same in-process
+  database over `quack:localhost`.
 - **Transactional reload.** Dataset reload uses DuckDB's ACID transaction
   path (`CREATE OR REPLACE TABLE ... AS SELECT ...`), so failed reloads
   leave the existing table live. See [Operations › Dataset reload](../operations/reload.md).
@@ -40,7 +43,41 @@ HTTP API.
 - You want **SQL semantics you trust** and rich type coverage.
 - You need **fast startup** on huge datasets — no full scan at boot.
 - You query datasets that **don't fit in RAM**.
+- You want DuckDB-native clients, such as the DuckDB CLI, to attach to
+  the running DataPress process via Quack.
 - You don't need sub-millisecond point lookups on indexed columns.
+
+## Quack remote protocol
+
+Quack is DuckDB's experimental remote protocol. DataPress starts it only
+when explicitly configured:
+
+```toml
+[server]
+backend = "duckdb"
+
+[server.quack]
+enabled = true
+uri = "quack:localhost"
+token = "analytics-token"
+read_only = true
+```
+
+The Quack server starts after DataPress registers datasets, so remote
+clients can query the same tables as the HTTP API. By default DataPress
+keeps Quack on localhost and installs a read-only authorization hook.
+For non-local exposure, set `allow_other_hostname = true` and place a
+TLS-terminating reverse proxy in front of the Quack port.
+
+DuckDB CLI example:
+
+```sql
+INSTALL quack;
+LOAD quack;
+
+ATTACH 'quack:localhost' AS datapress (TOKEN 'analytics-token');
+FROM datapress.accidents LIMIT 10;
+```
 
 ## When to skip DuckDB
 

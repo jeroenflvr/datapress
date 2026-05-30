@@ -97,6 +97,9 @@ pub struct ServerConfig {
     /// immediately; existing connections then have up to this many
     /// seconds to finish before workers are force-stopped. Default `30`.
     pub shutdown_timeout_secs: u64,
+    /// Optional DuckDB Quack remote SQL server. Only used by the DuckDB
+    /// backend; ignored by DataFusion.
+    pub quack: QuackConfig,
 }
 
 impl Default for ServerConfig {
@@ -112,6 +115,44 @@ impl Default for ServerConfig {
             max_page_size: 100_000,
             request_timeout_ms: 30_000,
             shutdown_timeout_secs: 30,
+            quack: QuackConfig::default(),
+        }
+    }
+}
+
+/// Experimental DuckDB Quack remote protocol server.
+///
+/// Quack exposes the DuckDB SQL surface of the in-process database. Keep it
+/// disabled unless you intentionally want DuckDB clients to attach/query this
+/// process directly.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct QuackConfig {
+    /// Install/load the Quack extension and start `quack_serve` after
+    /// datasets are registered.
+    pub enabled: bool,
+    /// Quack URI to listen on. `quack:localhost` uses DuckDB's default
+    /// port 9494.
+    pub uri: String,
+    /// Optional explicit authentication token. If omitted, Quack generates
+    /// one at startup and DataPress logs it once.
+    pub token: Option<String>,
+    /// Allow binding a non-local hostname such as `quack:0.0.0.0:9494`.
+    /// For external exposure, put a TLS-terminating reverse proxy in front.
+    pub allow_other_hostname: bool,
+    /// Install a read-only authorization macro for remote queries. Enabled
+    /// by default to match DataPress' read-oriented HTTP API.
+    pub read_only: bool,
+}
+
+impl Default for QuackConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            uri: "quack:localhost".into(),
+            token: None,
+            allow_other_hostname: false,
+            read_only: true,
         }
     }
 }
@@ -537,6 +578,28 @@ impl AppConfig {
             ));
         }
 
+        if self.server.quack.enabled {
+            let q = &self.server.quack;
+            if q.uri.trim().is_empty() {
+                return Err(AppError::Internal(
+                    "server.quack.uri must not be empty when server.quack.enabled = true".into(),
+                ));
+            }
+            if !q.uri.starts_with("quack:") {
+                return Err(AppError::Internal(format!(
+                    "server.quack.uri must start with 'quack:' (got '{}')",
+                    q.uri
+                )));
+            }
+            if let Some(token) = q.token.as_deref()
+                && token.len() < 4
+            {
+                return Err(AppError::Internal(
+                    "server.quack.token must be at least 4 characters".into(),
+                ));
+            }
+        }
+
         // Validate the docs mount path even when the section is disabled,
         // so an inactive config typo can't go unnoticed.
         {
@@ -939,6 +1002,11 @@ mod tests {
         assert_eq!(s.max_body_bytes, 1024 * 1024);
         assert_eq!(s.max_page_size, 100_000);
         assert_eq!(s.request_timeout_ms, 30_000);
+        assert!(!s.quack.enabled);
+        assert_eq!(s.quack.uri, "quack:localhost");
+        assert!(s.quack.token.is_none());
+        assert!(!s.quack.allow_other_hostname);
+        assert!(s.quack.read_only);
         assert_eq!(s.prefix, "");
         assert!(s.listen.is_loopback());
     }
@@ -954,6 +1022,12 @@ mod tests {
             max_body_bytes = 4096
             max_page_size = 50000
             request_timeout_ms = 0
+
+            [server.quack]
+            enabled = true
+            uri = "quack:127.0.0.1:9495"
+            token = "test-token"
+            read_only = false
             [[dataset]]
             name = "x"
             source.kind = "parquet"
@@ -967,6 +1041,10 @@ mod tests {
         assert_eq!(cfg.server.max_body_bytes, 4096);
         assert_eq!(cfg.server.max_page_size, 50_000);
         assert_eq!(cfg.server.request_timeout_ms, 0);
+        assert!(cfg.server.quack.enabled);
+        assert_eq!(cfg.server.quack.uri, "quack:127.0.0.1:9495");
+        assert_eq!(cfg.server.quack.token.as_deref(), Some("test-token"));
+        assert!(!cfg.server.quack.read_only);
         assert_eq!(cfg.datasets.len(), 1);
         assert_eq!(cfg.datasets[0].name, "x");
         assert!(cfg.datasets[0].dict_encode); // default

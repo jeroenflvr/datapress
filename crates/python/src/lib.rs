@@ -343,6 +343,15 @@ impl PyDatasetConfig {
 ///     shutdown_timeout_secs (int): Grace period for in-flight requests
 ///         after the server receives ``SIGTERM`` / ``SIGINT``, in
 ///         seconds. Default ``30``.
+///     quack_enabled (bool): Enable DuckDB's experimental Quack remote
+///         protocol server. DuckDB backend only. Default ``False``.
+///     quack_uri (str): Quack listen URI. Default ``"quack:localhost"``.
+///     quack_token (str | None): Optional explicit Quack auth token. If
+///         unset, Quack generates one and DataPress logs it at startup.
+///     quack_allow_other_hostname (bool): Allow non-local bind addresses.
+///         Use only behind a TLS-terminating reverse proxy. Default ``False``.
+///     quack_read_only (bool): Install a read-only Quack authorization hook.
+///         Default ``True``.
 #[pyclass(
     name = "DataPressConfig",
     module = "datap_rs.datapress",
@@ -378,6 +387,21 @@ pub struct PyDataPressConfig {
     /// Grace period for in-flight requests on shutdown, in seconds.
     #[pyo3(get, set)]
     pub shutdown_timeout_secs: u64,
+    /// Enable DuckDB's experimental Quack remote protocol server.
+    #[pyo3(get, set)]
+    pub quack_enabled: bool,
+    /// Quack listen URI, for example `"quack:localhost"`.
+    #[pyo3(get, set)]
+    pub quack_uri: String,
+    /// Optional explicit Quack authentication token.
+    #[pyo3(get, set)]
+    pub quack_token: Option<String>,
+    /// Allow Quack to bind non-local hostnames.
+    #[pyo3(get, set)]
+    pub quack_allow_other_hostname: bool,
+    /// Install a read-only Quack authorization hook.
+    #[pyo3(get, set)]
+    pub quack_read_only: bool,
     /// Expose a Prometheus metrics endpoint. Requires the wheel to be built
     /// with the ``metrics`` Cargo feature. Default ``False``.
     #[pyo3(get, set)]
@@ -411,6 +435,14 @@ impl PyDataPressConfig {
     ///     shutdown_timeout_secs (int): Grace period for in-flight
     ///         requests on ``SIGTERM``/``SIGINT``, in seconds.
     ///         Default ``30``.
+    ///     quack_enabled (bool): Enable DuckDB's experimental Quack remote
+    ///         protocol server. DuckDB backend only. Default ``False``.
+    ///     quack_uri (str): Quack listen URI. Default ``"quack:localhost"``.
+    ///     quack_token (str | None): Optional explicit Quack auth token.
+    ///     quack_allow_other_hostname (bool): Allow non-local bind addresses.
+    ///         Default ``False``.
+    ///     quack_read_only (bool): Install a read-only Quack authorization
+    ///         hook. Default ``True``.
     ///     metrics_enabled (bool): Expose a Prometheus metrics endpoint.
     ///         Requires a wheel built with the ``metrics`` feature.
     ///         Default ``False``.
@@ -429,6 +461,11 @@ impl PyDataPressConfig {
         max_page_size      = 100_000,
         request_timeout_ms = 30_000,
         shutdown_timeout_secs = 30,
+        quack_enabled     = false,
+        quack_uri         = "quack:localhost".to_string(),
+        quack_token       = None,
+        quack_allow_other_hostname = false,
+        quack_read_only   = true,
         metrics_enabled    = false,
         metrics_path       = "/metrics".to_string(),
     ))]
@@ -444,6 +481,11 @@ impl PyDataPressConfig {
         max_page_size: u64,
         request_timeout_ms: u64,
         shutdown_timeout_secs: u64,
+        quack_enabled: bool,
+        quack_uri: String,
+        quack_token: Option<String>,
+        quack_allow_other_hostname: bool,
+        quack_read_only: bool,
         metrics_enabled: bool,
         metrics_path: String,
     ) -> Self {
@@ -458,6 +500,11 @@ impl PyDataPressConfig {
             max_page_size,
             request_timeout_ms,
             shutdown_timeout_secs,
+            quack_enabled,
+            quack_uri,
+            quack_token,
+            quack_allow_other_hostname,
+            quack_read_only,
             metrics_enabled,
             metrics_path,
         }
@@ -503,6 +550,13 @@ impl PyDataPressConfig {
             max_page_size: self.max_page_size,
             request_timeout_ms: self.request_timeout_ms,
             shutdown_timeout_secs: self.shutdown_timeout_secs,
+            quack: datapress_core::config::QuackConfig {
+                enabled: self.quack_enabled,
+                uri: self.quack_uri,
+                token: self.quack_token,
+                allow_other_hostname: self.quack_allow_other_hostname,
+                read_only: self.quack_read_only,
+            },
         })
     }
 
@@ -829,6 +883,7 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
             max_page_size: cfg.server.max_page_size,
             request_timeout_ms: cfg.server.request_timeout_ms,
             shutdown_timeout_secs: cfg.server.shutdown_timeout_secs,
+            quack: cfg.server.quack.clone(),
         },
         docs: cfg.docs.clone(),
         swagger: cfg.swagger.clone(),

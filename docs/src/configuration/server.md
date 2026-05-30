@@ -15,6 +15,13 @@ port    = 8080
 # max_page_size         = 100000     # clamp query page_size above this
 # request_timeout_ms    = 30000      # 504 above this; 0 disables
 # shutdown_timeout_secs = 30         # SIGTERM grace period
+
+[server.quack]                      # DuckDB backend only; experimental
+enabled = false
+uri = "quack:localhost"             # default port 9494
+# token = "change-me"               # optional; generated and logged if omitted
+allow_other_hostname = false        # true for quack:0.0.0.0:9494 behind TLS proxy
+read_only = true                    # install read-only authorization hook
 ```
 
 ## Reference
@@ -31,6 +38,52 @@ port    = 8080
 | `max_page_size`         | `100000`    | Max rows returned by one `/query` page. Larger `page_size` values are clamped.             |
 | `request_timeout_ms`    | `30000`     | Per-request handler timeout (ms). Long handlers are cancelled and the client gets `504`. `0` disables. |
 | `shutdown_timeout_secs` | `30`        | Grace period for in-flight requests after `SIGTERM` / `SIGINT`.                           |
+
+## DuckDB Quack server
+
+DuckDB builds can optionally start DuckDB's experimental Quack remote
+protocol server after datasets are registered:
+
+```toml
+[server]
+backend = "duckdb"
+
+[server.quack]
+enabled = true
+uri = "quack:localhost"       # default port 9494
+token = "analytics-token"     # optional, but recommended
+read_only = true              # default
+```
+
+Quack exposes the DuckDB SQL surface of the in-process database. DataPress
+therefore keeps it disabled by default, binds to localhost by default, and
+installs a read-only authorization hook by default. If `token` is omitted,
+Quack generates one at startup and DataPress logs it once.
+
+To listen on a non-local address, set both a non-local URI and
+`allow_other_hostname = true`, then put a TLS-terminating reverse proxy in
+front of it:
+
+```toml
+[server.quack]
+enabled = true
+uri = "quack:0.0.0.0:9494"
+allow_other_hostname = true
+token = "analytics-token"
+```
+
+DuckDB CLI clients can connect with a Quack secret:
+
+```sql
+CREATE SECRET (
+	TYPE quack,
+	TOKEN 'analytics-token',
+	SCOPE 'quack:localhost'
+);
+
+ATTACH 'quack:localhost' AS datapress (TYPE quack);
+FROM datapress.accidents LIMIT 10;
+```
 
 ## Behind a reverse proxy
 

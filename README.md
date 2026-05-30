@@ -114,6 +114,13 @@ port    = 8080
 # request_timeout_ms = 30000    # 504 above this; 0 disables; default 30s
 # shutdown_timeout_secs = 30    # SIGTERM/SIGINT grace period, in seconds
 
+# DuckDB backend only: enable the experimental Quack remote protocol.
+# [server.quack]
+# enabled = false
+# uri = "quack:localhost"
+# token = "change-me"
+# read_only = true
+
 [[dataset]]
 name = "accidents"                    # used in the URL: /api/datasets/accidents/...
 
@@ -142,6 +149,12 @@ name = "accidents"                    # used in the URL: /api/datasets/accidents
 | `max_page_size`      | `100000`   | Maximum rows returned by one `/query` page. Larger `page_size` values are clamped. |
 | `request_timeout_ms` | `30000`    | Per-request handler timeout, in milliseconds. Long-running handlers are cancelled and the client gets `504 Gateway Timeout`. `0` disables the timeout. |
 | `shutdown_timeout_secs` | `30`     | Grace period for in-flight requests after the process receives `SIGTERM` / `SIGINT`, in seconds. The listening socket is closed immediately; existing connections then have up to this many seconds to finish before workers are force-stopped. |
+
+DuckDB builds can also opt into `[server.quack]`, DuckDB's experimental
+remote protocol server. Keep it disabled unless you intentionally want
+DuckDB clients to attach/query this process directly. It binds to
+`quack:localhost` by default, uses token authentication, and DataPress
+installs a read-only authorization hook by default.
 
 The server exposes three probe endpoints. `/healthz` and `/readyz` are
 mounted at the bare host root (regardless of `prefix`) so orchestrators

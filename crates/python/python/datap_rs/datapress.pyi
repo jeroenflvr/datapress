@@ -116,6 +116,11 @@ class DataPressConfig:
     max_page_size: int
     request_timeout_ms: int
     shutdown_timeout_secs: int
+    quack_enabled: bool
+    quack_uri: str
+    quack_token: Optional[str]
+    quack_allow_other_hostname: bool
+    quack_read_only: bool
     metrics_enabled: bool
     metrics_path: str
 
@@ -131,6 +136,11 @@ class DataPressConfig:
         max_page_size: int = 100_000,
         request_timeout_ms: int = 30_000,
         shutdown_timeout_secs: int = 30,
+        quack_enabled: bool = False,
+        quack_uri: str = "quack:localhost",
+        quack_token: Optional[str] = None,
+        quack_allow_other_hostname: bool = False,
+        quack_read_only: bool = True,
         metrics_enabled: bool = False,
         metrics_path: str = "/metrics",
     ) -> None:
@@ -159,6 +169,15 @@ class DataPressConfig:
             shutdown_timeout_secs: Grace period for in-flight requests after
                 the server receives ``SIGTERM``/``SIGINT``, in seconds.
                 Default ``30``.
+            quack_enabled: Enable DuckDB's experimental Quack remote protocol
+                server. DuckDB backend only. Default ``False``.
+            quack_uri: Quack listen URI. Default ``"quack:localhost"``.
+            quack_token: Optional explicit Quack auth token. If unset, Quack
+                generates one and DataPress logs it at startup.
+            quack_allow_other_hostname: Allow non-local bind addresses. Use
+                only behind a TLS-terminating reverse proxy. Default ``False``.
+            quack_read_only: Install a read-only Quack authorization hook.
+                Default ``True``.
             metrics_enabled: Expose a Prometheus metrics endpoint. Requires
                 the wheel to be built with the ``metrics`` Cargo feature.
                 Default ``False``.

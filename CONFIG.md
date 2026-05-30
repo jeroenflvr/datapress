@@ -24,6 +24,13 @@ max_page_size      = 100000   # max rows returned by one query page
 request_timeout_ms = 30000    # per-request timeout in ms; 0 = disabled
 shutdown_timeout_secs = 30    # graceful-shutdown grace period, in seconds
 
+[server.quack]                # DuckDB backend only; experimental
+enabled = false
+uri = "quack:localhost"       # default port 9494
+# token = "change-me"         # optional; generated and logged if omitted
+allow_other_hostname = false  # true for quack:0.0.0.0:9494 behind TLS proxy
+read_only = true              # install read-only authorization hook
+
 [[dataset]]               # one block per dataset
 name = "..."
 # source, s3, index, lazy follow

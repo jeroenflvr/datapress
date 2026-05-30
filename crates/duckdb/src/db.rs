@@ -7,7 +7,7 @@ use duckdb::Connection;
 use datapress_core::backend::{
     ArrowIpcStream, Backend, DatasetSummary, ReloadStats, arrow_ipc_stream_channel,
 };
-use datapress_core::config::{AppConfig, DatasetConfig, SourceKind};
+use datapress_core::config::{AppConfig, DatasetConfig, QuackConfig, SourceKind};
 use datapress_core::errors::AppError;
 use datapress_core::models::{CountRequest, QueryRequest};
 use datapress_core::schema::{ColumnInfo, DatasetSchema, LogicalType};
@@ -212,6 +212,10 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
         row_counts.insert(d.name.clone(), rows);
     }
 
+    if cfg.server.quack.enabled {
+        start_quack_server(&conn, &cfg.server.quack)?;
+    }
+
     let pool = init_pool(conn)?;
     Ok(Registry {
         pool,
@@ -221,6 +225,52 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
         row_counts: RwLock::new(row_counts),
         reload_locks: Mutex::new(HashMap::new()),
     })
+}
+
+fn start_quack_server(conn: &Connection, cfg: &QuackConfig) -> Result<(), AppError> {
+    log::warn!(
+        "DuckDB Quack is experimental and exposes the DuckDB SQL surface; starting {}",
+        cfg.uri
+    );
+    conn.execute_batch("INSTALL quack; LOAD quack;")?;
+
+    if cfg.read_only {
+        conn.execute_batch(
+            "CREATE OR REPLACE MACRO datapress_quack_read_only(sid, query) AS \
+             regexp_matches(upper(trim(query)), '^(SELECT|FROM|WITH|EXPLAIN|DESCRIBE|SHOW)\\b');\
+             SET GLOBAL quack_authorization_function = 'datapress_quack_read_only';",
+        )?;
+    }
+
+    let uri = sql_string(&cfg.uri);
+    let allow_other_hostname = if cfg.allow_other_hostname {
+        "true"
+    } else {
+        "false"
+    };
+    let sql = match cfg.token.as_deref() {
+        Some(token) => format!(
+            "CALL quack_serve({uri}, token => {}, allow_other_hostname => {allow_other_hostname})",
+            sql_string(token)
+        ),
+        None => format!("CALL quack_serve({uri}, allow_other_hostname => {allow_other_hostname})"),
+    };
+
+    let mut stmt = conn.prepare(&sql)?;
+    let (listen_uri, http_url, auth_token): (String, String, String) =
+        stmt.query_row([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+    if cfg.token.is_some() {
+        log::info!("DuckDB Quack listening at {listen_uri} ({http_url})");
+    } else {
+        log::warn!(
+            "DuckDB Quack listening at {listen_uri} ({http_url}); generated auth token: {auth_token}"
+        );
+    }
+    Ok(())
+}
+
+fn sql_string(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 /// Build the `SELECT` source clause for `read_parquet(…)` or
