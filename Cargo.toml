@@ -35,7 +35,7 @@ serde      = { version = "1.0.228", features = ["derive"] }
 serde_json = "1"
 env_logger = "0.11"
 log        = "0.4"
-toml       = "0.9.8"
+toml       = "1.1.2"
 
 arrow      = "58"
 parquet    = { version = "58", features = ["arrow"] }
@@ -61,7 +61,7 @@ utoipa-swagger-ui   = { version = "9.0.2", features = ["actix-web"] }
 actix-web-prom      = "0.10"
 
 # OIDC / OAuth2 enforcement (feature-gated via `auth` on datapress-core).
-jsonwebtoken        = "9"
+jsonwebtoken        = "10"
 reqwest             = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [profile.release]
