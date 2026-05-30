@@ -3,6 +3,22 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.6] - 2026-05-30
+
+### Bug Fixes
+
+- Clippy ([299a67d](https://github.com/jeroenflvr/fast-api/commit/299a67d060794c652555b7b5b66d8d49a6f63f8f))
+
+### Features
+
+- Implement quach protocol for duckdb (seriously) ([746675e](https://github.com/jeroenflvr/fast-api/commit/746675ebdef0b72a638b3689acc192a1ac292407))
+- When duckdb, allow new quack for direct connection ([fc8f845](https://github.com/jeroenflvr/fast-api/commit/fc8f845171cae66acabb706792794e7853fb2002))
+
+### Miscellaneous
+
+- *(deps)* Bump the rust-dependencies group across 1 directory with 3 updates ([df3ed0e](https://github.com/jeroenflvr/fast-api/commit/df3ed0ec85837d33efd1b0f27045031dc74f77f6))
+- *(deps)* Bump the github-actions group across 1 directory with 5 updates ([21c685f](https://github.com/jeroenflvr/fast-api/commit/21c685fc5276ea0d62eabaa8bb447427d392871b))
+
 ## [0.2.5] - 2026-05-30
 
 ### Documentation
