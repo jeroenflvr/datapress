@@ -64,9 +64,38 @@ compress = false
 max_body_bytes = 10_485_760   # 10 MiB
 ```
 
-Applies to both JSON and raw payloads (`web::JsonConfig` and
-`web::PayloadConfig`). Rejects oversized bodies before the handler is
-ever called.
+`max_body_bytes` is an **incoming request-body** limit. It applies to
+the bytes the client sends to DataPress: for example the JSON body of a
+`POST /api/v1/datasets/{name}/query` request. It is wired into both
+Actix's JSON extractor and raw payload extractor (`web::JsonConfig` and
+`web::PayloadConfig`). Oversized requests are rejected with
+`413 Payload Too Large` before the query handler runs.
+
+It is not a response-size limit. DataPress does not truncate JSON or
+Arrow IPC responses at `max_body_bytes`, and it does not drop rows to
+make a response fit that value. Response size is determined by the query
+result: selected columns, row count, Arrow/JSON encoding overhead, and
+optional HTTP compression.
+
+For query requests the order is:
+
+1. The HTTP request body must fit within `max_body_bytes`.
+2. The JSON body is parsed into the query request.
+3. `page` is normalized to at least `1`; `page_size` is clamped to the supported range.
+4. The backend applies `page`, `page_size`, and optional top-level `limit` to choose rows.
+5. The chosen rows are encoded as JSON or Arrow IPC.
+
+That means a small query body can legitimately produce a much larger
+response. If `max_body_bytes = 10_485_760` and an Arrow IPC query with
+`page_size = 1000` returns about 10 MiB, the two numbers only correlate
+by coincidence unless the client, proxy, or load balancer has its own
+separate response-size limit. DataPress itself uses `max_body_bytes` only
+on the request side.
+
+To control response size, reduce `page_size`, project fewer `columns`,
+add more selective `predicates`, or page through the result set. See
+[Arrow IPC vs JSON](../query/arrow-ipc.md#response-size-and-max_body_bytes)
+for the Arrow-specific details.
 
 ## Request timeout
 

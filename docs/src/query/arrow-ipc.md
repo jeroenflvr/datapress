@@ -27,6 +27,48 @@ same predicates, same pagination — only the response encoding differs.
   page sizes are large enough that JSON parse time shows up in
   profiles.
 
+## Response size and `max_body_bytes`
+
+`page_size` is a **row-count** control, not a byte-count control. A
+request with `"page_size": 1000` asks the backend for up to 1000 rows
+for that page. The number of bytes in the Arrow IPC response depends on
+what those rows contain:
+
+- selected columns and their data types
+- string/list/binary value lengths
+- null bitmaps and offset buffers for variable-width columns
+- Arrow stream metadata: schema, record-batch messages, and end marker
+- optional HTTP compression when enabled and negotiated
+
+`max_body_bytes` is unrelated to that response size. It limits the
+incoming JSON request body, for example the bytes in:
+
+```json
+{ "columns": ["ID", "State"], "page_size": 1000 }
+```
+
+It does **not** limit, trim, or paginate the Arrow IPC stream returned
+by the server. If your configuration says `max_body_bytes = 10_485_760`
+and a `page_size = 1000` Arrow IPC query returns exactly 10 MiB, that is
+not DataPress applying `max_body_bytes` to the response. It means those
+1000 rows, with the selected columns and Arrow encoding overhead, happen
+to serialize to about that size. No rows are silently dropped to fit the
+request-body limit.
+
+The precedence for `/query` is:
+
+1. DataPress reads the incoming request body and rejects it with `413 Payload Too Large` if it exceeds `max_body_bytes`.
+2. The query JSON is parsed.
+3. `page_size` is clamped to the supported row range and combined with `page` and optional top-level `limit`.
+4. The backend returns the selected page of rows.
+5. The response encoder writes those rows as JSON or Arrow IPC.
+
+To keep Arrow responses smaller, ask for fewer columns, lower
+`page_size`, add predicates, or continue paging with the helper below.
+Also check any reverse proxy in front of DataPress: proxies often have
+their own request and response buffering limits, independent of
+DataPress' `max_body_bytes`.
+
 ## How to ask for Arrow
 
 === "Accept header"
