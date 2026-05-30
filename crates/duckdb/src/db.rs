@@ -507,11 +507,11 @@ impl Backend for Registry {
         let (mut writer, stream) = arrow_ipc_stream_channel(8);
 
         tokio::task::spawn_blocking(move || {
-            let result = (|| -> Result<(), AppError> {
+            let result = {
                 let conn = DbPool::get(&pool);
                 DatasetRepository::new(&conn, &schema, max_page_size)
                     .query_arrow_write(&req, &mut writer)
-            })();
+            };
             if let Err(err) = result {
                 log::error!("duckdb arrow stream failed: {err}");
                 writer.send_error(err);
@@ -533,11 +533,11 @@ impl Backend for Registry {
         let (mut writer, stream) = arrow_ipc_stream_channel(8);
 
         tokio::task::spawn_blocking(move || {
-            let result = (|| -> Result<(), AppError> {
+            let result = {
                 let conn = DbPool::get(&pool);
                 DatasetRepository::new(&conn, &schema, max_page_size)
                     .query_arrow_write_all(&req, &mut writer)
-            })();
+            };
             if let Err(err) = result {
                 log::error!("duckdb arrow full stream failed: {err}");
                 writer.send_error(err);
