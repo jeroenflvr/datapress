@@ -20,7 +20,7 @@ workers = 0               # 0 / unset → one worker per CPU
 prefix  = ""              # e.g. "/datapress" if behind a reverse proxy
 compress           = true     # negotiate gzip/brotli/zstd via Accept-Encoding
 max_body_bytes     = 1048576  # max JSON request body in bytes (413 above)
-max_page_size      = 1000000  # max rows returned by one query page
+max_page_size      = 100000   # max rows returned by one query page
 request_timeout_ms = 30000    # per-request timeout in ms; 0 = disabled
 shutdown_timeout_secs = 30    # graceful-shutdown grace period, in seconds
 

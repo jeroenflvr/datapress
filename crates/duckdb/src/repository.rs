@@ -1,7 +1,8 @@
 use duckdb::{Connection, params_from_iter};
 use serde_json::Value as JsonValue;
 
-use arrow::array::RecordBatch;
+use std::io::Write;
+
 use arrow::datatypes::Schema;
 use arrow::ipc::writer::StreamWriter;
 
@@ -282,6 +283,35 @@ impl<'a> DatasetRepository<'a> {
     /// instead of `json_object(...)` rows, so the client receives proper
     /// Arrow arrays rather than a string column of JSON.
     pub fn query_arrow_bytes(&self, req: &QueryRequest) -> Result<Vec<u8>, AppError> {
+        let mut buf = Vec::with_capacity(64 * 1024);
+        self.query_arrow_write(req, &mut buf)?;
+        Ok(buf)
+    }
+
+    /// Same query shape as [`Self::query_arrow_bytes`], but writes Arrow IPC
+    /// directly to `writer` so HTTP handlers can stream chunks downstream.
+    pub fn query_arrow_write<W: Write>(
+        &self,
+        req: &QueryRequest,
+        writer: &mut W,
+    ) -> Result<(), AppError> {
+        self.query_arrow_write_inner(req, writer, true)
+    }
+
+    pub fn query_arrow_write_all<W: Write>(
+        &self,
+        req: &QueryRequest,
+        writer: &mut W,
+    ) -> Result<(), AppError> {
+        self.query_arrow_write_inner(req, writer, false)
+    }
+
+    fn query_arrow_write_inner<W: Write>(
+        &self,
+        req: &QueryRequest,
+        writer: &mut W,
+        paged: bool,
+    ) -> Result<(), AppError> {
         let agg_plan = req.agg_plan(self.schema)?;
 
         // Build the SELECT list — column refs for the row path, or
@@ -302,7 +332,14 @@ impl<'a> DatasetRepository<'a> {
                 .join(", ")
         };
 
-        let (limit, offset) = req.effective_limit_offset(self.max_page_size);
+        let limit_clause = if paged {
+            let (limit, offset) = req.effective_limit_offset(self.max_page_size);
+            format!(" LIMIT {limit} OFFSET {offset}")
+        } else {
+            req.limit
+                .map(|limit| format!(" LIMIT {limit}"))
+                .unwrap_or_default()
+        };
 
         let mut conditions: Vec<String> = Vec::new();
         let mut bind_vals: Vec<ParamVal> = Vec::new();
@@ -330,34 +367,28 @@ impl<'a> DatasetRepository<'a> {
 
         let sql = if req.distinct && agg_plan.is_none() {
             format!(
-                "SELECT DISTINCT {projection} FROM {table}{where_clause}{order_clause} \
-                 LIMIT {limit} OFFSET {offset}"
+                "SELECT DISTINCT {projection} FROM {table}{where_clause}{order_clause}{limit_clause}"
             )
         } else {
             format!(
-                "SELECT {projection} FROM {table}{where_clause}{group_clause}{order_clause} \
-                 LIMIT {limit} OFFSET {offset}"
+                "SELECT {projection} FROM {table}{where_clause}{group_clause}{order_clause}{limit_clause}"
             )
         };
 
         let mut stmt = self.conn.prepare(&sql)?;
         let arrow_iter = stmt.query_arrow(params_from_iter(bind_vals.iter()))?;
         let schema: Schema = (*arrow_iter.get_schema()).clone();
-        let batches: Vec<RecordBatch> = arrow_iter.collect();
 
         // Encode: one schema message + N batches + EOS.
-        let mut buf = Vec::with_capacity(64 * 1024);
-        {
-            let mut w = StreamWriter::try_new(&mut buf, &schema)
-                .map_err(|e| AppError::Internal(format!("arrow ipc init: {e}")))?;
-            for b in &batches {
-                w.write(b)
-                    .map_err(|e| AppError::Internal(format!("arrow ipc write: {e}")))?;
-            }
-            w.finish()
-                .map_err(|e| AppError::Internal(format!("arrow ipc finish: {e}")))?;
+        let mut w = StreamWriter::try_new(writer, &schema)
+            .map_err(|e| AppError::Internal(format!("arrow ipc init: {e}")))?;
+        for b in arrow_iter {
+            w.write(&b)
+                .map_err(|e| AppError::Internal(format!("arrow ipc write: {e}")))?;
         }
-        Ok(buf)
+        w.finish()
+            .map_err(|e| AppError::Internal(format!("arrow ipc finish: {e}")))?;
+        Ok(())
     }
 
     /// Return the number of rows matching `predicates` (empty = all rows).

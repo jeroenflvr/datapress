@@ -7,8 +7,16 @@ POST /api/v1/datasets/{name}/query
 Content-Type: application/json
 ```
 
+For one-request Arrow IPC exports, use:
+
+```
+POST /api/v1/datasets/{name}/query/stream
+Content-Type: application/json
+```
+
 The legacy un-versioned alias `POST /api/datasets/{name}/query` is also
-mounted and behaves identically.
+mounted and behaves identically. The stream endpoint is also available
+under `POST /api/datasets/{name}/query/stream`.
 
 ## Pages
 
@@ -19,6 +27,6 @@ mounted and behaves identically.
 - [Sorting & limit](sorting.md) — `order_by`, hard caps.
 - [Grouping & aggregation](grouping.md) — `group_by` + `aggregations`.
 - [Distinct](distinct.md) — `distinct: true`.
-- [Arrow IPC vs JSON](arrow-ipc.md) — response format trade-offs.
+- [Arrow IPC vs JSON](arrow-ipc.md) — paged Arrow responses and full-result streams.
 - [Counting](count.md) — `POST /count` shape.
 - [Recipes](recipes.md) — end-to-end queries combining every feature.

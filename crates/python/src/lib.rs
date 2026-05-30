@@ -337,7 +337,7 @@ impl PyDatasetConfig {
 ///         Larger bodies are rejected with ``413``. Default ``1_048_576``
 ///         (1 MiB).
 ///     max_page_size (int): Maximum rows returned by one query page.
-///         Larger ``page_size`` values are clamped. Default ``1_000_000``.
+///         Larger ``page_size`` values are clamped. Default ``100_000``.
 ///     request_timeout_ms (int): Per-request handler timeout, in
 ///         milliseconds. ``0`` disables the timeout. Default ``30_000``.
 ///     shutdown_timeout_secs (int): Grace period for in-flight requests
@@ -405,7 +405,7 @@ impl PyDataPressConfig {
     ///     max_body_bytes (int): Max accepted JSON body, in bytes.
     ///         Default ``1_048_576``.
     ///     max_page_size (int): Max rows returned by one query page.
-    ///         Default ``1_000_000``.
+    ///         Default ``100_000``.
     ///     request_timeout_ms (int): Per-request handler timeout, in ms.
     ///         ``0`` disables. Default ``30_000``.
     ///     shutdown_timeout_secs (int): Grace period for in-flight
@@ -426,7 +426,7 @@ impl PyDataPressConfig {
         prefix             = String::new(),
         compress           = true,
         max_body_bytes     = 1_048_576,
-        max_page_size      = 1_000_000,
+        max_page_size      = 100_000,
         request_timeout_ms = 30_000,
         shutdown_timeout_secs = 30,
         metrics_enabled    = false,

@@ -12,6 +12,7 @@ use std::sync::Arc;
 use arrow::array::{Float64Array, Int64Array, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
+use futures_util::StreamExt;
 use parquet::arrow::ArrowWriter;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -87,7 +88,7 @@ fn write_hive_dataset(dir: &std::path::Path) {
 }
 
 async fn make_store(location: &str, lazy: bool) -> Store {
-    make_store_with_max_page_size(location, lazy, 1_000_000).await
+    make_store_with_max_page_size(location, lazy, ServerConfig::default().max_page_size).await
 }
 
 async fn make_store_with_max_page_size(location: &str, lazy: bool, max_page_size: u64) -> Store {
@@ -273,6 +274,29 @@ async fn arrow_sql_path_clamps_to_configured_max_page_size() {
         rows, 750,
         "DataFusion SQL path must clamp to server.max_page_size"
     );
+}
+
+#[actix_web::test]
+async fn arrow_stream_all_ignores_page_size() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("people.parquet");
+    write_many_people(&file, 1500);
+    let store = make_store_with_max_page_size(&file.display().to_string(), true, 750).await;
+
+    let mut req = empty_req();
+    req.page_size = 10;
+
+    let stream = store.query_arrow_stream_all("people", &req).await.unwrap();
+    let chunks = stream.collect::<Vec<_>>().await;
+    let mut bytes = Vec::new();
+    for chunk in chunks {
+        bytes.extend_from_slice(&chunk.unwrap());
+    }
+
+    let reader =
+        arrow::ipc::reader::StreamReader::try_new(std::io::Cursor::new(bytes), None).unwrap();
+    let rows: usize = reader.map(|batch| batch.unwrap().num_rows()).sum();
+    assert_eq!(rows, 1500);
 }
 
 // ---------------------------------------------------------------------------

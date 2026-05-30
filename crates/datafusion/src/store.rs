@@ -27,7 +27,9 @@ use datafusion::scalar::ScalarValue;
 use object_store::aws::AmazonS3Builder;
 use url::Url;
 
-use datapress_core::backend::{Backend, DatasetSummary, ReloadStats};
+use datapress_core::backend::{
+    ArrowIpcStream, Backend, DatasetSummary, ReloadStats, arrow_ipc_stream_channel,
+};
 use datapress_core::config::{
     AddressingStyle, AppConfig, DatasetConfig, IndexConfig, IndexMode, ResolvedCreds, S3Config,
     SourceKind,
@@ -248,9 +250,51 @@ impl Store {
         Ok(buf)
     }
 
+    pub async fn query_arrow_stream(
+        &self,
+        name: &str,
+        req: &QueryRequest,
+    ) -> Result<ArrowIpcStream, AppError> {
+        let batches = self.query_batches(name, req).await?;
+        Ok(stream_arrow_batches(batches))
+    }
+
+    pub async fn query_arrow_stream_all(
+        &self,
+        name: &str,
+        req: &QueryRequest,
+    ) -> Result<ArrowIpcStream, AppError> {
+        let batches = self.query_batches_all(name, req).await?;
+        Ok(stream_arrow_batches(batches))
+    }
+
     /// Compute the result page as a single `RecordBatch`. Shared between
     /// the JSON and Arrow IPC encoders.
     async fn query_batch(&self, name: &str, req: &QueryRequest) -> Result<RecordBatch, AppError> {
+        let batches = self.query_batches(name, req).await?;
+        if batches.is_empty() {
+            return Ok(RecordBatch::new_empty(Arc::new(
+                arrow::datatypes::Schema::empty(),
+            )));
+        }
+        if batches.len() == 1 {
+            return Ok(batches.into_iter().next().expect("checked len"));
+        }
+        if batches.iter().all(|b| b.num_rows() == 0) {
+            return Ok(RecordBatch::new_empty(batches[0].schema()));
+        }
+        let batch = compute::concat_batches(&batches[0].schema(), batches.iter())?;
+        Ok(batch)
+    }
+
+    /// Compute the result page as Arrow batches. Arrow IPC responses can
+    /// write these directly, while JSON callers concatenate via
+    /// [`Self::query_batch`] for the existing row conversion path.
+    async fn query_batches(
+        &self,
+        name: &str,
+        req: &QueryRequest,
+    ) -> Result<Vec<RecordBatch>, AppError> {
         let st = self.dataset(name)?;
 
         let page = req.page.max(1);
@@ -258,62 +302,119 @@ impl Store {
         let offset = ((page - 1) * page_size) as usize;
         let limit = page_size as usize;
 
+        self.query_batches_inner(st, req, Some((offset, limit)))
+            .await
+    }
+
+    /// Compute all matching rows as Arrow batches for the one-request
+    /// streaming endpoint. `page` and `page_size` are intentionally ignored;
+    /// optional `limit` still caps the total result size.
+    async fn query_batches_all(
+        &self,
+        name: &str,
+        req: &QueryRequest,
+    ) -> Result<Vec<RecordBatch>, AppError> {
+        let st = self.dataset(name)?;
+        self.query_batches_inner(st, req, None).await
+    }
+
+    async fn query_batches_inner(
+        &self,
+        st: Arc<DatasetState>,
+        req: &QueryRequest,
+        page_window: Option<(usize, usize)>,
+    ) -> Result<Vec<RecordBatch>, AppError> {
+        let (offset, limit) = page_window.unwrap_or((0, req.limit.unwrap_or(u64::MAX) as usize));
+
         // In-memory hot paths only fire when:
         //   - the dataset is materialised,
         //   - the caller did not ask for ordering,
-        //   - and did not ask for a hard `limit` cap.
+        //   - and did not ask for a hard `limit` cap on a paged request.
         // Both of the latter two require sorting / capping that the SQL
         // engine handles uniformly across all data types.
         let can_fast_path = !st.lazy
             && req.order_by.is_empty()
-            && req.limit.is_none()
+            && (page_window.is_none() || req.limit.is_none())
             && req.group_by.is_empty()
             && !req.distinct;
 
         if can_fast_path {
             let total = st.num_rows();
 
-            // No predicates → O(1) raw Arrow slice across chunks, no engine overhead.
+            // No predicates -> O(1) raw Arrow slices over resident batches,
+            // no engine overhead.
             if req.predicates.is_empty() {
+                if page_window.is_none() && req.limit.is_none() {
+                    return st
+                        .data
+                        .iter()
+                        .cloned()
+                        .map(|batch| project(&st.schema, batch, &req.columns))
+                        .collect();
+                }
                 let start = offset.min(total);
                 let len = limit.min(total - start);
-                let page = slice_global(&st.data, &st.arrow_schema, start, len)?;
-                return project(&st.schema, page, &req.columns);
+                let batch = slice_global(&st.data, &st.arrow_schema, start, len)?;
+                return Ok(vec![project(&st.schema, batch, &req.columns)?]);
             }
 
             // Index fast path: if every predicate is eq/in on an indexed column,
-            // resolve via the pre-built equality index — far cheaper than a full
-            // SIMD scan over the entire dataset.
+            // resolve via the pre-built equality index.
             if let Some(rows) = try_index(&st.index, &req.predicates) {
                 let batch = take_page(&st.data, &st.arrow_schema, &rows, offset, limit)?;
-                return project(&st.schema, batch, &req.columns);
+                return Ok(vec![project(&st.schema, batch, &req.columns)?]);
             }
         }
 
-        // Fallback (and only path for lazy datasets): DataFusion SQL —
-        // multi-threaded vectorised execution covers all operators
-        // (LIKE, ILIKE, ranges, NOT NULL, …). Predicate values are bound
-        // as typed parameters, never interpolated into the SQL text.
-        let (sql, params) = build_query_sql(&st.schema, req, self.max_page_size)?;
+        // Fallback (and only path for lazy datasets): DataFusion SQL.
+        let (sql, params) = match page_window {
+            Some(_) => build_query_sql(&st.schema, req, self.max_page_size)?,
+            None => build_query_stream_sql(&st.schema, req)?,
+        };
         let mut df = self.ctx.sql(&sql).await?;
         if !params.is_empty() {
             df = df.with_param_values(params)?;
         }
         let batches = df.collect().await?;
         if batches.is_empty() || batches.iter().all(|b| b.num_rows() == 0) {
-            // Synthesize an empty batch with the SQL result schema so the
-            // Arrow IPC writer still emits a valid schema message. The
-            // shape matches what `compute::concat_batches` would return.
             let schema = batches
                 .first()
                 .map(|b| b.schema())
                 .unwrap_or_else(|| Arc::new(arrow::datatypes::Schema::empty()));
-            return Ok(RecordBatch::new_empty(schema));
+            return Ok(vec![RecordBatch::new_empty(schema)]);
         }
-        let batch = compute::concat_batches(&batches[0].schema(), batches.iter())?;
-        Ok(batch)
+        Ok(batches)
     }
+}
 
+fn stream_arrow_batches(batches: Vec<RecordBatch>) -> ArrowIpcStream {
+    let schema = batches
+        .first()
+        .map(|batch| batch.schema())
+        .unwrap_or_else(|| Arc::new(arrow::datatypes::Schema::empty()));
+    let (mut writer, stream) = arrow_ipc_stream_channel(8);
+
+    tokio::task::spawn_blocking(move || {
+        let result = (|| -> Result<(), AppError> {
+            let mut w = arrow::ipc::writer::StreamWriter::try_new(&mut writer, schema.as_ref())?;
+            for batch in batches {
+                if batch.num_rows() > 0 {
+                    w.write(&batch)?;
+                }
+            }
+            w.finish()?;
+            Ok(())
+        })();
+        if let Err(err) = result {
+            log::error!("datafusion arrow stream failed: {err}");
+            writer.send_error(err);
+        }
+    });
+
+    stream
+}
+
+impl Store {
     /// Return the number of rows matching `req.predicates`. With no
     /// predicates this is a cheap metadata lookup on materialised datasets
     /// and a `SELECT COUNT(*)` on lazy ones.
@@ -1120,6 +1221,26 @@ fn build_query_sql(
     req: &QueryRequest,
     max_page_size: u64,
 ) -> Result<(String, Vec<ScalarValue>), AppError> {
+    let (limit, offset) = req.effective_limit_offset(max_page_size);
+    build_query_sql_with_suffix(schema, req, &format!(" LIMIT {limit} OFFSET {offset}"))
+}
+
+fn build_query_stream_sql(
+    schema: &DatasetSchema,
+    req: &QueryRequest,
+) -> Result<(String, Vec<ScalarValue>), AppError> {
+    let suffix = req
+        .limit
+        .map(|limit| format!(" LIMIT {limit}"))
+        .unwrap_or_default();
+    build_query_sql_with_suffix(schema, req, &suffix)
+}
+
+fn build_query_sql_with_suffix(
+    schema: &DatasetSchema,
+    req: &QueryRequest,
+    suffix: &str,
+) -> Result<(String, Vec<ScalarValue>), AppError> {
     let agg_plan = req.agg_plan(schema)?;
 
     let cols = if let Some(plan) = &agg_plan {
@@ -1165,8 +1286,6 @@ fn build_query_sql(
         }
     };
 
-    let (limit, offset) = req.effective_limit_offset(max_page_size);
-
     let mut params = Params::new();
     let clauses: Vec<String> = req
         .predicates
@@ -1195,10 +1314,8 @@ fn build_query_sql(
         Some(s) => format!(" ORDER BY {s}"),
         None => String::new(),
     };
-    let sql = format!(
-        "SELECT {cols} FROM {table}{where_clause}{group_clause}{order_clause} \
-         LIMIT {limit} OFFSET {offset}"
-    );
+    let sql =
+        format!("SELECT {cols} FROM {table}{where_clause}{group_clause}{order_clause}{suffix}");
     Ok((sql, params.into_values()))
 }
 
@@ -2125,6 +2242,22 @@ impl Backend for Store {
 
     async fn query_arrow(&self, name: &str, req: &QueryRequest) -> Result<Vec<u8>, AppError> {
         Store::query_arrow(self, name, req).await
+    }
+
+    async fn query_arrow_stream(
+        &self,
+        name: &str,
+        req: &QueryRequest,
+    ) -> Result<ArrowIpcStream, AppError> {
+        Store::query_arrow_stream(self, name, req).await
+    }
+
+    async fn query_arrow_stream_all(
+        &self,
+        name: &str,
+        req: &QueryRequest,
+    ) -> Result<ArrowIpcStream, AppError> {
+        Store::query_arrow_stream_all(self, name, req).await
     }
 
     async fn count(&self, name: &str, req: &CountRequest) -> Result<i64, AppError> {

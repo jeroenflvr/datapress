@@ -22,7 +22,7 @@ The body is a JSON object with these optional fields:
 | `aggregations` | `list[object]` | `[]`    | `{ col?, op, alias? }`; ops: `count\|sum\|avg\|min\|max`. Requires `group_by`. |
 | `limit`      | `int` or null   | `null`  | Hard cap on total rows across all pages. `null` = unlimited.             |
 | `page`       | `int` (≥ 1)     | `1`     | 1-based page number.                                                     |
-| `page_size`  | `int` (1–1_000_000)  | `1000`   | Rows per page. Hard cap is 1,000,000.                                         |
+| `page_size`  | `int >= 1`           | `1000`   | Rows per page. Clamped to `server.max_page_size` (`100_000` by default).      |
 
 The response is a JSON array of row objects. There is no envelope and no
 total-count — pagination is offset/limit only.
@@ -223,7 +223,7 @@ There is **no row count** in the response. To know if more pages exist, ask
 for `page_size + 1` and check whether you got the extra row, or stop when a
 page returns fewer rows than `page_size`.
 
-`page_size` is clamped to `[1, 1_000_000]` server-side. `page < 1` is treated as
+`page_size` is clamped to `[1, server.max_page_size]` server-side (`100_000` by default). `page < 1` is treated as
 `page = 1`.
 
 Page numbers are 1-based — `page=1` returns rows `[0, page_size)`.

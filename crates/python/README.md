@@ -168,7 +168,7 @@ DataPressConfig(
     backend="datafusion",
     port=8000,
     max_body_bytes=1_048_576,    # 413 above this; default 1 MiB
-    max_page_size=1_000_000,     # clamp query page_size above this
+    max_page_size=100_000,       # clamp query page_size above this
     request_timeout_ms=30_000,   # 504 above this; 0 disables; default 30s
     shutdown_timeout_secs=30,    # SIGTERM/SIGINT grace period, in seconds
 )
@@ -271,7 +271,7 @@ Same five routes for both backends.
 | `distinct`   | `bool`          | `false` | Dedup the projected columns. Mutually exclusive with `group_by` / `aggregations`. |
 | `limit`      | `int` or null   | `null`  | Hard cap on total rows across pages. |
 | `page`       | `int >= 1`      | `1`     | 1-based.                    |
-| `page_size`  | `int >= 1`      | `1000`   | Clamped to `DataPressConfig.max_page_size` (`1_000_000` by default). |
+| `page_size`  | `int >= 1`      | `1000`   | Clamped to `DataPressConfig.max_page_size` (`100_000` by default). |
 
 ### Predicate operators
 

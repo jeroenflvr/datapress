@@ -4,7 +4,9 @@ use std::sync::{Arc, Condvar, Mutex, RwLock};
 use async_trait::async_trait;
 use duckdb::Connection;
 
-use datapress_core::backend::{Backend, DatasetSummary, ReloadStats};
+use datapress_core::backend::{
+    ArrowIpcStream, Backend, DatasetSummary, ReloadStats, arrow_ipc_stream_channel,
+};
 use datapress_core::config::{AppConfig, DatasetConfig, SourceKind};
 use datapress_core::errors::AppError;
 use datapress_core::models::{CountRequest, QueryRequest};
@@ -491,6 +493,58 @@ impl Backend for Registry {
         })
         .await
         .map_err(|e| AppError::Internal(format!("join error: {e}")))?
+    }
+
+    async fn query_arrow_stream(
+        &self,
+        name: &str,
+        req: &QueryRequest,
+    ) -> Result<ArrowIpcStream, AppError> {
+        let schema = self.get(name)?;
+        let pool = self.pool.clone();
+        let req = req.clone();
+        let max_page_size = self.max_page_size;
+        let (mut writer, stream) = arrow_ipc_stream_channel(8);
+
+        tokio::task::spawn_blocking(move || {
+            let result = (|| -> Result<(), AppError> {
+                let conn = DbPool::get(&pool);
+                DatasetRepository::new(&conn, &schema, max_page_size)
+                    .query_arrow_write(&req, &mut writer)
+            })();
+            if let Err(err) = result {
+                log::error!("duckdb arrow stream failed: {err}");
+                writer.send_error(err);
+            }
+        });
+
+        Ok(stream)
+    }
+
+    async fn query_arrow_stream_all(
+        &self,
+        name: &str,
+        req: &QueryRequest,
+    ) -> Result<ArrowIpcStream, AppError> {
+        let schema = self.get(name)?;
+        let pool = self.pool.clone();
+        let req = req.clone();
+        let max_page_size = self.max_page_size;
+        let (mut writer, stream) = arrow_ipc_stream_channel(8);
+
+        tokio::task::spawn_blocking(move || {
+            let result = (|| -> Result<(), AppError> {
+                let conn = DbPool::get(&pool);
+                DatasetRepository::new(&conn, &schema, max_page_size)
+                    .query_arrow_write_all(&req, &mut writer)
+            })();
+            if let Err(err) = result {
+                log::error!("duckdb arrow full stream failed: {err}");
+                writer.send_error(err);
+            }
+        });
+
+        Ok(stream)
     }
 
     async fn count(&self, name: &str, req: &CountRequest) -> Result<i64, AppError> {

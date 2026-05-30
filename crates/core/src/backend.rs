@@ -5,14 +5,56 @@
 //! [`crate::handlers`] and the [`crate::server::serve`] helper then drive
 //! either backend through the same code path.
 
+use std::io::{self, Write};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bytes::Bytes;
+use futures_util::stream::{self, BoxStream, StreamExt};
 use serde::Serialize;
+use tokio::sync::mpsc;
 
 use crate::errors::AppError;
 use crate::models::{CountRequest, QueryRequest};
 use crate::schema::DatasetSchema;
+
+/// Stream of Arrow IPC response chunks emitted by a backend.
+pub type ArrowIpcStream = BoxStream<'static, Result<Bytes, AppError>>;
+
+/// Writer used by backend encoders to push Arrow IPC bytes into an HTTP
+/// response stream without accumulating one full response buffer.
+pub struct ArrowIpcChunkWriter {
+    tx: mpsc::Sender<Result<Bytes, AppError>>,
+}
+
+impl ArrowIpcChunkWriter {
+    pub fn send_error(&self, err: AppError) {
+        let _ = self.tx.blocking_send(Err(err));
+    }
+}
+
+impl Write for ArrowIpcChunkWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.tx
+            .blocking_send(Ok(Bytes::copy_from_slice(buf)))
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "response stream closed"))?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+pub fn arrow_ipc_stream_channel(capacity: usize) -> (ArrowIpcChunkWriter, ArrowIpcStream) {
+    let (tx, rx) = mpsc::channel(capacity);
+    let writer = ArrowIpcChunkWriter { tx };
+    let stream = stream::unfold(rx, |mut rx| async move {
+        rx.recv().await.map(|item| (item, rx))
+    })
+    .boxed();
+    (writer, stream)
+}
 
 /// Outcome of a successful [`Backend::reload`].
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -76,6 +118,35 @@ pub trait Backend: Send + Sync + 'static {
         Err(AppError::InvalidValue(
             "Arrow IPC response format is not supported by this backend".into(),
         ))
+    }
+
+    /// Execute `req` and stream the Arrow IPC bytes. The default adapter
+    /// preserves compatibility for backends that only implement
+    /// [`Backend::query_arrow`], but high-throughput backends should
+    /// override this to avoid building one full response buffer.
+    async fn query_arrow_stream(
+        &self,
+        name: &str,
+        req: &QueryRequest,
+    ) -> Result<ArrowIpcStream, AppError> {
+        let bytes = self.query_arrow(name, req).await?;
+        Ok(Box::pin(stream::once(
+            async move { Ok(Bytes::from(bytes)) },
+        )))
+    }
+
+    /// Execute `req` and stream all matching Arrow IPC batches in one HTTP
+    /// response. Unlike [`Backend::query_arrow_stream`], this is not page
+    /// scoped; `limit` may still cap the total rows returned.
+    async fn query_arrow_stream_all(
+        &self,
+        name: &str,
+        req: &QueryRequest,
+    ) -> Result<ArrowIpcStream, AppError> {
+        let bytes = self.query_arrow(name, req).await?;
+        Ok(Box::pin(stream::once(
+            async move { Ok(Bytes::from(bytes)) },
+        )))
     }
 
     /// Count rows in `name` matching `req.predicates`.

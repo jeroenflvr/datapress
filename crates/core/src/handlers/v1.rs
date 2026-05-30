@@ -8,6 +8,7 @@
 //! | GET    | `/datasets`                       | List datasets with summaries         |
 //! | GET    | `/datasets/{name}/schema`         | Schema + rows + indexed cols + sample |
 //! | POST   | `/datasets/{name}/query`          | Query (JSON or Arrow IPC)            |
+//! | POST   | `/datasets/{name}/query/stream`   | Stream full query result as Arrow IPC |
 //! | POST   | `/datasets/{name}/count`          | Count matching rows                  |
 //! | POST   | `/datasets/{name}/reload`         | Rebuild dataset (admin-only)         |
 //!
@@ -80,6 +81,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/datasets", web::get().to(list_datasets))
         .route("/datasets/{name}/schema", web::get().to(get_schema))
         .route("/datasets/{name}/query", web::post().to(query_dataset))
+        .route(
+            "/datasets/{name}/query/stream",
+            web::post().to(stream_dataset),
+        )
         .route("/datasets/{name}/count", web::post().to(count_dataset))
         .route("/datasets/{name}/reload", web::post().to(reload_dataset));
 }
@@ -90,6 +95,7 @@ pub const ROUTES: &[(&str, &str)] = &[
     ("GET", "/datasets"),
     ("GET", "/datasets/{name}/schema"),
     ("POST", "/datasets/{name}/query"),
+    ("POST", "/datasets/{name}/query/stream"),
     ("POST", "/datasets/{name}/count"),
     ("POST", "/datasets/{name}/reload"),
 ];
@@ -171,12 +177,12 @@ pub async fn query_dataset(
     // header or `?format=arrow`. Anything else (including no header)
     // gets the historical JSON envelope.
     if wants_arrow(&http) {
-        return match backend.query_arrow(&name, &req).await {
-            Ok(bytes) => HttpResponse::Ok()
+        return match backend.query_arrow_stream(&name, &req).await {
+            Ok(stream) => HttpResponse::Ok()
                 .content_type(ARROW_IPC_MIME)
                 .insert_header(("X-Page", page.to_string()))
                 .insert_header(("X-Page-Size", page_size.to_string()))
-                .body(bytes),
+                .streaming(stream),
             Err(e) => e.error_response(),
         };
     }
@@ -188,6 +194,27 @@ pub async fn query_dataset(
                 .content_type("application/json")
                 .body(body)
         }
+        Err(e) => e.error_response(),
+    }
+}
+
+pub async fn stream_dataset(
+    http: HttpRequest,
+    backend: BackendData,
+    path: web::Path<String>,
+    body: web::Json<QueryRequest>,
+) -> HttpResponse {
+    if let Err(e) = require_read(&http) {
+        return e.error_response();
+    }
+    let name = path.into_inner();
+    let req = body.into_inner();
+
+    match backend.query_arrow_stream_all(&name, &req).await {
+        Ok(stream) => HttpResponse::Ok()
+            .content_type(ARROW_IPC_MIME)
+            .insert_header(("X-Query-Mode", "stream"))
+            .streaming(stream),
         Err(e) => e.error_response(),
     }
 }

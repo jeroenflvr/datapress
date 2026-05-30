@@ -11,6 +11,7 @@ under `/api/v1/` and `/api/` is shifted by `prefix` when set.
 | GET    | `/api/v1/datasets`                                | —               | List configured datasets and metadata.                               |
 | GET    | `/api/v1/datasets/{name}/schema`                  | —               | Inferred schema + one sample row.                                    |
 | POST   | `/api/v1/datasets/{name}/query`                   | [Query body](../query/request-body.md) | Filter / project / sort / paginate.                |
+| POST   | `/api/v1/datasets/{name}/query/stream`            | [Arrow IPC](../query/arrow-ipc.md) | Stream all matching rows as Arrow IPC.             |
 | POST   | `/api/v1/datasets/{name}/count`                   | `{ predicates? }` | Total or filtered row count.                                       |
 | POST   | `/api/v1/datasets/{name}/reload`                  | —               | Atomic dataset reload. Requires `X-Admin-Token`.                     |
 | GET    | `{prefix}/health`                                 | —               | Liveness, prefix-aware.                                              |
@@ -24,6 +25,7 @@ Same handlers, no `/v1`:
 | GET    | `/api/datasets`                            |
 | GET    | `/api/datasets/{name}/schema`              |
 | POST   | `/api/datasets/{name}/query`               |
+| POST   | `/api/datasets/{name}/query/stream`        |
 | POST   | `/api/datasets/{name}/count`               |
 | POST   | `/api/datasets/{name}/reload`              |
 

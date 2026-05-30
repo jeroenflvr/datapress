@@ -48,7 +48,7 @@ pub struct QueryLimits {
 impl Default for QueryLimits {
     fn default() -> Self {
         Self {
-            max_page_size: 1_000_000,
+            max_page_size: 100_000,
         }
     }
 }

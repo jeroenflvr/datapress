@@ -28,6 +28,8 @@ datapress-datafusion = { path = "crates/datafusion", version = "0.2.4" }
 # Shared third-party deps. Pinning versions here keeps every crate aligned.
 actix-web   = { version = "4.12.1", features = ["compress-gzip", "compress-brotli", "compress-zstd"] }
 async-trait = "0.1"
+bytes       = "1"
+futures-util = "0.3"
 tokio       = { version = "1.52.3", features = ["full"] }
 serde      = { version = "1.0.228", features = ["derive"] }
 serde_json = "1"

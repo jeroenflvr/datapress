@@ -86,7 +86,7 @@ pub struct ServerConfig {
     pub max_body_bytes: usize,
     /// Maximum rows returned by a single `/query` page. Larger
     /// `page_size` values are clamped before the backend runs.
-    /// Default `1_000_000`.
+    /// Default `100_000`.
     pub max_page_size: u64,
     /// Per-request handler timeout, in milliseconds. If a handler hasn't
     /// produced a response within this budget the request is aborted with
@@ -109,7 +109,7 @@ impl Default for ServerConfig {
             prefix: String::new(),
             compress: true,
             max_body_bytes: 1024 * 1024,
-            max_page_size: 1_000_000,
+            max_page_size: 100_000,
             request_timeout_ms: 30_000,
             shutdown_timeout_secs: 30,
         }
@@ -937,7 +937,7 @@ mod tests {
         assert_eq!(s.port, 8080);
         assert!(s.compress);
         assert_eq!(s.max_body_bytes, 1024 * 1024);
-        assert_eq!(s.max_page_size, 1_000_000);
+        assert_eq!(s.max_page_size, 100_000);
         assert_eq!(s.request_timeout_ms, 30_000);
         assert_eq!(s.prefix, "");
         assert!(s.listen.is_loopback());

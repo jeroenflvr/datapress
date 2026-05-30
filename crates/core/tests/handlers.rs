@@ -318,6 +318,28 @@ async fn query_arrow_via_format_query_param() {
 }
 
 #[actix_web::test]
+async fn query_stream_returns_arrow_without_paging_envelope() {
+    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+    let req = test::TestRequest::post()
+        .uri("/api/datasets/people/query/stream")
+        .set_json(serde_json::json!({"columns": ["id", "name"]}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers().get("content-type").unwrap(),
+        "application/vnd.apache.arrow.stream",
+    );
+    assert_eq!(resp.headers().get("x-query-mode").unwrap(), "stream");
+    assert!(resp.headers().get("x-page").is_none());
+
+    let bytes = test::read_body(resp).await;
+    let reader = StreamReader::try_new(std::io::Cursor::new(bytes.to_vec()), None).unwrap();
+    let batches: Vec<RecordBatch> = reader.collect::<Result<_, _>>().unwrap();
+    assert_eq!(batches[0].num_rows(), 2);
+}
+
+#[actix_web::test]
 async fn count_with_and_without_predicates() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
 

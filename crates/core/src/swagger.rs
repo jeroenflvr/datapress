@@ -217,6 +217,39 @@ fn openapi(oauth2: Option<&SwaggerOAuth2Config>) -> OpenApi {
                     }
                 }
             },
+            "/api/v1/datasets/{name}/query/stream": {
+                "post": {
+                    "tags":    ["datasets"],
+                    "summary": "Stream a full query result as Arrow IPC",
+                    "description": "Runs the same query shape as `/query`, but returns one Arrow IPC stream for all matching rows in a single HTTP response. `page` and `page_size` are ignored; optional `limit` caps the total rows returned.",
+                    "parameters": [ dataset_name_param ],
+                    "requestBody": {
+                        "required": true,
+                        "content": {
+                            "application/json": {
+                                "schema":  { "$ref": "#/components/schemas/QueryRequest" },
+                                "example": {
+                                    "columns":    ["state", "severity"],
+                                    "predicates": [
+                                        { "col": "state", "op": "eq", "val": "CA" }
+                                    ],
+                                    "limit": 100000
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Arrow IPC stream for the full query result",
+                            "content": {
+                                "application/vnd.apache.arrow.stream": { "schema": { "type": "string", "format": "binary" } }
+                            }
+                        },
+                        "400": { "description": "Invalid query" },
+                        "404": { "description": "Unknown dataset" }
+                    }
+                }
+            },
             "/api/v1/datasets/{name}/count": {
                 "post": {
                     "tags":    ["datasets"],
@@ -332,7 +365,7 @@ fn openapi(oauth2: Option<&SwaggerOAuth2Config>) -> OpenApi {
                         "order_by":     { "type": "array", "items": { "$ref": "#/components/schemas/OrderBy" } },
                         "limit":        { "type": "integer", "format": "int64" },
                         "page":         { "type": "integer", "format": "int64", "default": 1 },
-                        "page_size":    { "type": "integer", "format": "int64", "default": 1000, "description": "Rows per page. Clamped to [1, server.max_page_size]; default cap is 1,000,000." }
+                        "page_size":    { "type": "integer", "format": "int64", "default": 1000, "description": "Rows per page. Clamped to [1, server.max_page_size]; default cap is 100,000." }
                     }
                 },
                 "CountRequest": {

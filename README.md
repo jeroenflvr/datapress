@@ -110,7 +110,7 @@ port    = 8080
 # workers = 8            # omit for one worker per CPU
 # compress = true        # negotiate gzip/brotli/zstd via Accept-Encoding (default)
 # max_body_bytes     = 1048576  # 413 above this; default 1 MiB
-# max_page_size      = 1000000  # clamp query page_size above this
+# max_page_size      = 100000   # clamp query page_size above this
 # request_timeout_ms = 30000    # 504 above this; 0 disables; default 30s
 # shutdown_timeout_secs = 30    # SIGTERM/SIGINT grace period, in seconds
 
@@ -139,7 +139,7 @@ name = "accidents"                    # used in the URL: /api/datasets/accidents
 | `prefix`  | `""`          | URL path prefix mounted in front of every route (e.g. `"/datapress"`) — useful behind a reverse proxy that passes the path through unchanged. Must start with `/` and not end with `/`. |
 | `compress`           | `true`     | Negotiate response compression via `Accept-Encoding` (gzip / brotli / zstd). Disable when sitting behind a proxy that compresses for you. |
 | `max_body_bytes`     | `1048576`  | Maximum accepted JSON request body, in bytes. Bigger bodies are rejected with `413 Payload Too Large`. |
-| `max_page_size`      | `1000000`  | Maximum rows returned by one `/query` page. Larger `page_size` values are clamped. |
+| `max_page_size`      | `100000`   | Maximum rows returned by one `/query` page. Larger `page_size` values are clamped. |
 | `request_timeout_ms` | `30000`    | Per-request handler timeout, in milliseconds. Long-running handlers are cancelled and the client gets `504 Gateway Timeout`. `0` disables the timeout. |
 | `shutdown_timeout_secs` | `30`     | Grace period for in-flight requests after the process receives `SIGTERM` / `SIGINT`, in seconds. The listening socket is closed immediately; existing connections then have up to this many seconds to finish before workers are force-stopped. |
 
@@ -389,7 +389,7 @@ Response:
 | `distinct`   | `bool`              | `false` | Dedup the projected columns. Mutually exclusive with `group_by` / `aggregations`. |
 | `limit`      | `int >= 0` or null  | `null`  | Hard cap on total rows across all pages. `null` = unlimited. |
 | `page`       | `int >= 1`          | `1`     | 1-based.                               |
-| `page_size`  | `int 1..=1_000_000`      | `1000`   | Clamped to the inclusive range.        |
+| `page_size`  | `int >= 1`               | `1000`   | Clamped to `server.max_page_size` (`100_000` by default). |
 
 #### Predicate shape
 

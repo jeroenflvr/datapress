@@ -12,7 +12,7 @@ The body is a JSON object. Every field is optional.
 | `distinct`     | `bool`                | `false` | Deduplicate the projected rows. Mutually exclusive with `group_by` / `aggregations`.   |
 | `limit`        | `int >= 0` or `null`  | `null`  | Hard cap on total rows across all pages. `null` = unlimited.                           |
 | `page`         | `int >= 1`            | `1`     | 1-based page number.                                                                   |
-| `page_size`    | `int >= 1`            | `1000`  | Rows per page. Clamped to `[1, server.max_page_size]`; default cap is `1_000_000`.      |
+| `page_size`    | `int >= 1`            | `1000`  | Rows per page. Clamped to `[1, server.max_page_size]`; default cap is `100_000`.        |
 
 ## Response — JSON
 

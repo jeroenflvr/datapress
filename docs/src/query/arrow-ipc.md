@@ -1,7 +1,12 @@
 # Arrow IPC vs JSON
 
-`/query` can return its result set in two wire formats. Same body,
-same predicates, same pagination — only the response encoding differs.
+`/query` can return one page in two wire formats. Same body, same
+predicates, same pagination — only the response encoding differs.
+
+For one-request dataframe exports, `/query/stream` returns a single
+Arrow IPC response for all matching rows. It uses the same request shape
+for `columns`, `predicates`, `order_by`, `group_by`, `aggregations`,
+`distinct`, and optional `limit`, but ignores `page` and `page_size`.
 
 ## Comparison
 
@@ -12,8 +17,9 @@ same predicates, same pagination — only the response encoding differs.
 | Shape               | `{ "data": [{...}, ...], "page": N, "page_size": M }` | Self-describing stream: 1 schema message + N `RecordBatch` messages + EOS        |
 | Layout              | Row-oriented; column names repeated on every row     | Columnar; one contiguous buffer per column per batch                             |
 | Types preserved     | JSON scalars only (`int`/`float`/`bool`/`string`); temporals stringified to ISO-8601 | Native Arrow types — `Int32`, `Timestamp(ns)`, `Decimal128`, dictionary, etc. retained end-to-end |
-| Page metadata       | In the body                                          | In headers: `X-Page`, `X-Page-Size`                                              |
+| Page metadata       | In the body                                          | Paged `/query`: headers `X-Page`, `X-Page-Size`; `/query/stream`: none           |
 | Empty result        | `{ "data": [], "page": ..., "page_size": ... }`      | Valid stream with the schema message only, zero batches                          |
+| Transfer            | One JSON response body                               | Streamed HTTP body carrying Arrow IPC chunks                                     |
 | Compression         | Big win — JSON is text                               | Smaller starting point; gzip/brotli/zstd can still help on wide / repetitive cols; clients must decode HTTP compression before handing bytes to Arrow |
 | Client cost         | `json.loads` + per-row dict construction             | `pyarrow.ipc.open_stream(...).read_all()` → zero-copy `pyarrow.Table`            |
 | Best for            | Small responses, browsers, ad-hoc `curl`, dashboards | Bulk data into Polars / pandas / DuckDB-on-the-client, ML feature pipelines      |
@@ -22,10 +28,12 @@ same predicates, same pagination — only the response encoding differs.
 
 - **JSON** when the consumer is JavaScript, the response is small
   (≲ 10 k rows), or you're poking at the API by hand.
-- **Arrow IPC** when you're moving result pages into a dataframe
+- **Paged Arrow IPC** when you're moving result pages into a dataframe
   library, the schema has non-string types you want preserved, or
   page sizes are large enough that JSON parse time shows up in
   profiles.
+- **`/query/stream`** when you want one HTTP request for the full
+    filtered result set and can consume an Arrow IPC stream on the client.
 
 ## Response size and `max_body_bytes`
 
@@ -65,9 +73,33 @@ The precedence for `/query` is:
 
 To keep Arrow responses smaller, ask for fewer columns, lower
 `page_size`, add predicates, or continue paging with the helper below.
+For `/query/stream`, use `limit` to cap the total rows returned by the
+single streaming response.
 Also check any reverse proxy in front of DataPress: proxies often have
 their own request and response buffering limits, independent of
 DataPress' `max_body_bytes`.
+
+## Full-result stream
+
+Use `/query/stream` when you want one request that streams the full
+matching result set as Arrow IPC:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/datasets/accidents/query/stream \
+    -H 'Content-Type: application/json' \
+    --output result.arrow \
+    -d '{
+        "columns": ["ID", "State", "Severity", "Start_Time"],
+        "predicates": [{ "col": "State", "op": "in", "val": ["CA", "TX"] }],
+        "order_by": [{ "col": "ID" }],
+        "limit": 100000
+    }'
+```
+
+`/query/stream` always returns `application/vnd.apache.arrow.stream`.
+It does not include `X-Page` or `X-Page-Size`, because there is no
+server-side page boundary. The optional top-level `limit` still caps the
+total number of rows in the stream.
 
 ## HTTP compression
 
@@ -122,8 +154,8 @@ almost certainly still holding compressed bytes.
 
 ## Reading Arrow IPC in Python
 
-For a single page, read the Arrow IPC stream and pass the resulting
-`pyarrow.Table` to Polars. When requesting Brotli with
+For a single page or a full-result stream, read the Arrow IPC stream and
+pass the resulting `pyarrow.Table` to Polars. When requesting Brotli with
 `Accept-Encoding: br`, make sure your HTTP client has Brotli support so
 `response.content` contains decompressed Arrow IPC bytes.
 
@@ -167,6 +199,29 @@ response = httpx.post(
     headers={
         "Accept": ARROW,
         "Accept-Encoding": "br",
+    },
+    timeout=60.0,
+)
+response.raise_for_status()
+
+table = ipc.open_stream(response.content).read_all()
+df = pl.from_arrow(table)
+```
+
+### One-request stream with `httpx`
+
+```python
+import httpx
+import pyarrow.ipc as ipc
+import polars as pl
+
+response = httpx.post(
+    "http://localhost:8080/api/v1/datasets/accidents/query/stream",
+    json={
+        "columns": ["ID", "State", "Severity", "Start_Time"],
+        "predicates": [{"col": "State", "op": "in", "val": ["CA", "TX"]}],
+        "order_by": [{"col": "ID"}],
+        "limit": 100_000,
     },
     timeout=60.0,
 )
@@ -266,8 +321,10 @@ df_async = asyncio.run(query_all_polars_httpx(
 
 Both backends support Arrow IPC:
 
-- **DuckDB** streams batches out via its native `query_arrow` API.
-- **DataFusion** uses its Arrow plan directly.
+- **DuckDB** streams batches out via its native `query_arrow` API and
+    writes them directly into the HTTP response stream.
+- **DataFusion** uses its Arrow plan directly and writes Arrow IPC bytes
+    through the same HTTP streaming response path.
 
 Empty results still produce a valid stream (schema message only).
 `Compress` middleware applies normally. `count`, `schema`, and the

@@ -10,6 +10,7 @@ use std::sync::Arc;
 use arrow::array::{Array, Int32Array, StringArray};
 use arrow::datatypes::DataType;
 use arrow::ipc::reader::StreamReader;
+use futures_util::StreamExt;
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -475,6 +476,30 @@ async fn arrow_ipc_roundtrip() {
         .expect("utf8");
     assert_eq!(ids.value(0), 1);
     assert_eq!(names.value(0), "Anna");
+}
+
+#[actix_web::test]
+async fn arrow_stream_all_ignores_page_size() {
+    let tmp = TempDir::new().unwrap();
+    let parquet = write_sample_parquet(tmp.path());
+    let reg = make_registry(&parquet);
+
+    let mut req = empty_req();
+    req.page_size = 2;
+
+    let stream = reg
+        .query_arrow_stream_all("people", &req)
+        .await
+        .expect("arrow stream");
+    let chunks = stream.collect::<Vec<_>>().await;
+    let mut bytes = Vec::new();
+    for chunk in chunks {
+        bytes.extend_from_slice(&chunk.unwrap());
+    }
+
+    let reader = StreamReader::try_new(std::io::Cursor::new(bytes), None).unwrap();
+    let rows: usize = reader.map(|batch| batch.unwrap().num_rows()).sum();
+    assert_eq!(rows, 5);
 }
 
 #[actix_web::test]

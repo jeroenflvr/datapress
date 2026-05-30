@@ -12,7 +12,7 @@ port    = 8080
 # prefix  = "/datapress"  # mount every route under this path
 # compress = true
 # max_body_bytes        = 1048576    # 413 above this
-# max_page_size         = 1000000    # clamp query page_size above this
+# max_page_size         = 100000     # clamp query page_size above this
 # request_timeout_ms    = 30000      # 504 above this; 0 disables
 # shutdown_timeout_secs = 30         # SIGTERM grace period
 ```
@@ -28,7 +28,7 @@ port    = 8080
 | `prefix`                | `""`        | URL prefix in front of every app route. Must start with `/` and not end with `/`.         |
 | `compress`              | `true`      | Negotiate gzip / brotli / zstd via `Accept-Encoding`.                                     |
 | `max_body_bytes`        | `1048576`   | Max accepted JSON request body. Larger → `413 Payload Too Large`.                         |
-| `max_page_size`         | `1000000`   | Max rows returned by one `/query` page. Larger `page_size` values are clamped.             |
+| `max_page_size`         | `100000`    | Max rows returned by one `/query` page. Larger `page_size` values are clamped.             |
 | `request_timeout_ms`    | `30000`     | Per-request handler timeout (ms). Long handlers are cancelled and the client gets `504`. `0` disables. |
 | `shutdown_timeout_secs` | `30`        | Grace period for in-flight requests after `SIGTERM` / `SIGINT`.                           |
 
@@ -103,11 +103,11 @@ for the Arrow-specific details.
 
 ```toml
 [server]
-max_page_size = 1_000_000
+max_page_size = 100_000
 ```
 
 `max_page_size` controls the largest row page a `/query` request can
-ask for. The default is `1_000_000`. If a client sends a larger
+ask for. The default is `100_000`. If a client sends a larger
 `page_size`, DataPress clamps it to `max_page_size`; the response reports
 the effective value in the JSON body or Arrow IPC `X-Page-Size` header.
 
