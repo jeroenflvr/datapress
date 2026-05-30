@@ -3,6 +3,24 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.5] - 2026-05-30
+
+### Documentation
+
+- Updating arrow ipc ([6a21946](https://github.com/jeroenflvr/fast-api/commit/6a2194672a548e981254be25113d6145a64f864a))
+- Clarify different compression handlers: gzip/deflate mostly handled automatically, brotli needs additional handling ([5053a4d](https://github.com/jeroenflvr/fast-api/commit/5053a4d631d17ff5ad88735c7c31dfe835877573))
+- Clarify request and response config ([ac9aa30](https://github.com/jeroenflvr/fast-api/commit/ac9aa30f5c60fb3ac372dc709f026306218418b9))
+- Update mkdocs and add logo ([b6661ca](https://github.com/jeroenflvr/fast-api/commit/b6661ca5b91bcd4cb862599d89350d1f749b5763))
+- Update on double buffer handling ([5aa28c8](https://github.com/jeroenflvr/fast-api/commit/5aa28c8141e837a8f644c991e734ff965bbaabfe))
+
+### Features
+
+- Update to full stream support (first step) ([58a6b47](https://github.com/jeroenflvr/fast-api/commit/58a6b479dd274614d546125bbf3c9d1840f50a81))
+
+### Miscellaneous
+
+- Rust fmt ([9eddee4](https://github.com/jeroenflvr/fast-api/commit/9eddee4bd0f0392969b814a49b9610fa34c84f52))
+
 ## [0.2.4] - 2026-05-30
 
 ### Miscellaneous
