@@ -1,0 +1,7 @@
+.datapress-ascii-logo {
+  display: block;
+  width: min(100%, 52rem);
+  height: auto;
+  margin: 1.1rem 0 1.5rem;
+  color: var(--md-default-fg-color--light);
+}

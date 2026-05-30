@@ -1,5 +1,7 @@
 # DataPress
 
+<img class="datapress-ascii-logo" src="assets/images/datapress-logo.svg" alt="DataPress ASCII wordmark">
+
 A Rust **Cargo workspace** that exposes one or more **Parquet / Delta
 datasets** over a JSON HTTP API. The same surface area is implemented
 twice — once on top of **DuckDB**, once on top of **Apache Arrow +
