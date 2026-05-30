@@ -36,26 +36,57 @@ struct MockBackend {
 }
 
 impl MockBackend {
-    fn new() -> Self { Self { empty: false, calls: Mutex::default() } }
-    fn empty() -> Self { Self { empty: true,  calls: Mutex::default() } }
+    fn new() -> Self {
+        Self {
+            empty: false,
+            calls: Mutex::default(),
+        }
+    }
+    fn empty() -> Self {
+        Self {
+            empty: true,
+            calls: Mutex::default(),
+        }
+    }
 
     fn schema_obj() -> Arc<DatasetSchema> {
-        Arc::new(DatasetSchema::new("people", vec![
-            ColumnInfo { name: "id".into(),   logical: LogicalType::Int,  sql_type: "BIGINT".into(),  nullable: false },
-            ColumnInfo { name: "name".into(), logical: LogicalType::Utf8, sql_type: "VARCHAR".into(), nullable: false },
-        ]))
+        Arc::new(DatasetSchema::new(
+            "people",
+            vec![
+                ColumnInfo {
+                    name: "id".into(),
+                    logical: LogicalType::Int,
+                    sql_type: "BIGINT".into(),
+                    nullable: false,
+                },
+                ColumnInfo {
+                    name: "name".into(),
+                    logical: LogicalType::Utf8,
+                    sql_type: "VARCHAR".into(),
+                    nullable: false,
+                },
+            ],
+        ))
     }
 }
 
 #[async_trait]
 impl Backend for MockBackend {
     fn names(&self) -> Vec<String> {
-        if self.empty { vec![] } else { vec!["people".into()] }
+        if self.empty {
+            vec![]
+        } else {
+            vec!["people".into()]
+        }
     }
 
     fn summary(&self, name: &str) -> Result<DatasetSummary, AppError> {
         if name == "people" {
-            Ok(DatasetSummary { name: name.into(), columns: 2, rows: 5 })
+            Ok(DatasetSummary {
+                name: name.into(),
+                columns: 2,
+                rows: 5,
+            })
         } else {
             Err(AppError::NotFound(format!("dataset '{name}' not found")))
         }
@@ -79,20 +110,22 @@ impl Backend for MockBackend {
 
     async fn query_arrow(&self, _name: &str, _req: &QueryRequest) -> Result<Vec<u8>, AppError> {
         let schema = ArrowSchema::new(vec![
-            Field::new("id",   DataType::Int32, false),
-            Field::new("name", DataType::Utf8,  false),
+            Field::new("id", DataType::Int32, false),
+            Field::new("name", DataType::Utf8, false),
         ]);
-        let ids   = Int32Array::from(vec![1, 2]);
+        let ids = Int32Array::from(vec![1, 2]);
         let names = StringArray::from(vec!["Anna", "Bob"]);
         let batch = RecordBatch::try_new(
             Arc::new(schema.clone()),
             vec![Arc::new(ids), Arc::new(names)],
-        ).map_err(|e| AppError::Internal(e.to_string()))?;
+        )
+        .map_err(|e| AppError::Internal(e.to_string()))?;
         let mut buf = Vec::new();
         {
             let mut w = StreamWriter::try_new(&mut buf, &schema)
                 .map_err(|e| AppError::Internal(e.to_string()))?;
-            w.write(&batch).map_err(|e| AppError::Internal(e.to_string()))?;
+            w.write(&batch)
+                .map_err(|e| AppError::Internal(e.to_string()))?;
             w.finish().map_err(|e| AppError::Internal(e.to_string()))?;
         }
         Ok(buf)
@@ -109,13 +142,18 @@ impl Backend for MockBackend {
             return Err(AppError::NotFound(name.into()));
         }
         self.calls.lock().unwrap().reload += 1;
-        Ok(ReloadStats { rows: 5, elapsed_ms: 1 })
+        Ok(ReloadStats {
+            rows: 5,
+            elapsed_ms: 1,
+        })
     }
 }
 
 // --------------------------------------------------------------- helpers --
 
-fn mount(backend: Arc<dyn Backend>) -> App<
+fn mount(
+    backend: Arc<dyn Backend>,
+) -> App<
     impl actix_web::dev::ServiceFactory<
         actix_web::dev::ServiceRequest,
         Config = (),
@@ -141,24 +179,24 @@ fn mount(backend: Arc<dyn Backend>) -> App<
 
 #[actix_web::test]
 async fn healthz_always_ok() {
-    let app  = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-    let req  = test::TestRequest::get().uri("/healthz").to_request();
+    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+    let req = test::TestRequest::get().uri("/healthz").to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
 #[actix_web::test]
 async fn readyz_503_when_no_datasets() {
-    let app  = test::init_service(mount(Arc::new(MockBackend::empty()))).await;
-    let req  = test::TestRequest::get().uri("/readyz").to_request();
+    let app = test::init_service(mount(Arc::new(MockBackend::empty()))).await;
+    let req = test::TestRequest::get().uri("/readyz").to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
 #[actix_web::test]
 async fn readyz_200_with_dataset_count() {
-    let app  = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-    let req  = test::TestRequest::get().uri("/readyz").to_request();
+    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+    let req = test::TestRequest::get().uri("/readyz").to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = test::read_body_json(resp).await;
@@ -168,12 +206,12 @@ async fn readyz_200_with_dataset_count() {
 
 #[actix_web::test]
 async fn version_returns_build_info() {
-    let app  = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-    let req  = test::TestRequest::get().uri("/version").to_request();
+    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+    let req = test::TestRequest::get().uri("/version").to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["name"],    "datapress-core");
+    assert_eq!(body["name"], "datapress-core");
     assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(body["backend"], "Mock");
     // `profile` is "debug" under `cargo test` but assert it's set.
@@ -182,35 +220,37 @@ async fn version_returns_build_info() {
 
 #[actix_web::test]
 async fn list_datasets_returns_summaries() {
-    let app  = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-    let req  = test::TestRequest::get().uri("/api/datasets").to_request();
+    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+    let req = test::TestRequest::get().uri("/api/datasets").to_request();
     let body: Value = test::call_and_read_body_json(&app, req).await;
     let ds = &body["datasets"];
-    assert_eq!(ds[0]["name"],    "people");
+    assert_eq!(ds[0]["name"], "people");
     assert_eq!(ds[0]["columns"], 2);
-    assert_eq!(ds[0]["rows"],    5);
+    assert_eq!(ds[0]["rows"], 5);
 }
 
 #[actix_web::test]
 async fn schema_returns_columns_and_sample() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::get()
-        .uri("/api/datasets/people/schema").to_request();
+        .uri("/api/datasets/people/schema")
+        .to_request();
     let body: Value = test::call_and_read_body_json(&app, req).await;
     assert_eq!(body["name"], "people");
     assert_eq!(body["rows"], 5);
     assert_eq!(body["columns"][0]["name"], "id");
     // Default Backend::indexed_columns impl returns an empty list.
     assert_eq!(body["indexed"], serde_json::json!([]));
-    assert_eq!(body["sample"]["id"],   1);
+    assert_eq!(body["sample"]["id"], 1);
     assert_eq!(body["sample"]["name"], "Anna");
 }
 
 #[actix_web::test]
 async fn schema_unknown_dataset_returns_404() {
-    let app  = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-    let req  = test::TestRequest::get()
-        .uri("/api/datasets/nope/schema").to_request();
+    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+    let req = test::TestRequest::get()
+        .uri("/api/datasets/nope/schema")
+        .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
@@ -224,10 +264,15 @@ async fn query_json_envelope() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let ct = resp.headers().get("content-type").unwrap().to_str().unwrap();
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert!(ct.starts_with("application/json"));
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["page"],      1);
+    assert_eq!(body["page"], 1);
     assert_eq!(body["page_size"], 1000);
     assert_eq!(body["data"][0]["name"], "Anna");
 }
@@ -250,7 +295,11 @@ async fn query_arrow_via_accept_header() {
     let reader = StreamReader::try_new(std::io::Cursor::new(bytes.to_vec()), None).unwrap();
     let batches: Vec<RecordBatch> = reader.collect::<Result<_, _>>().unwrap();
     assert_eq!(batches.len(), 1);
-    let ids = batches[0].column(0).as_any().downcast_ref::<Int32Array>().unwrap();
+    let ids = batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int32Array>()
+        .unwrap();
     assert_eq!(ids.values(), &[1, 2]);
 }
 
@@ -272,14 +321,14 @@ async fn query_arrow_via_format_query_param() {
 async fn count_with_and_without_predicates() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
 
-    let req  = test::TestRequest::post()
+    let req = test::TestRequest::post()
         .uri("/api/datasets/people/count")
         .set_json(serde_json::json!({}))
         .to_request();
     let body: Value = test::call_and_read_body_json(&app, req).await;
     assert_eq!(body["count"], 5);
 
-    let req  = test::TestRequest::post()
+    let req = test::TestRequest::post()
         .uri("/api/datasets/people/count")
         .set_json(serde_json::json!({
             "predicates": [{"col": "name", "op": "eq", "value": "Anna"}],
@@ -293,9 +342,10 @@ async fn count_with_and_without_predicates() {
 async fn reload_requires_admin_token() {
     // ADMIN_TOKEN unset (default in test process) → admin endpoints are
     // disabled and return 403 regardless of headers.
-    let app  = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-    let req  = test::TestRequest::post()
-        .uri("/api/datasets/people/reload").to_request();
+    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+    let req = test::TestRequest::post()
+        .uri("/api/datasets/people/reload")
+        .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
@@ -310,7 +360,12 @@ async fn arbitrary_accept_does_not_force_arrow() {
         .set_json(serde_json::json!({}))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    let ct = resp.headers().get("content-type").unwrap().to_str().unwrap();
+    let ct = resp
+        .headers()
+        .get("content-type")
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert!(ct.starts_with("application/json"));
 }
 
@@ -322,17 +377,20 @@ async fn arbitrary_accept_does_not_force_arrow() {
 
 #[actix_web::test]
 async fn v1_list_datasets() {
-    let app  = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-    let req  = test::TestRequest::get().uri("/api/v1/datasets").to_request();
+    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+    let req = test::TestRequest::get()
+        .uri("/api/v1/datasets")
+        .to_request();
     let body: Value = test::call_and_read_body_json(&app, req).await;
     assert_eq!(body["datasets"][0]["name"], "people");
 }
 
 #[actix_web::test]
 async fn v1_schema() {
-    let app  = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-    let req  = test::TestRequest::get()
-        .uri("/api/v1/datasets/people/schema").to_request();
+    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+    let req = test::TestRequest::get()
+        .uri("/api/v1/datasets/people/schema")
+        .to_request();
     let body: Value = test::call_and_read_body_json(&app, req).await;
     assert_eq!(body["name"], "people");
 }
@@ -365,15 +423,16 @@ async fn v1_query_json_and_arrow() {
 async fn v1_count_and_reload_guard() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
 
-    let req  = test::TestRequest::post()
+    let req = test::TestRequest::post()
         .uri("/api/v1/datasets/people/count")
         .set_json(serde_json::json!({}))
         .to_request();
     let body: Value = test::call_and_read_body_json(&app, req).await;
     assert_eq!(body["count"], 5);
 
-    let req  = test::TestRequest::post()
-        .uri("/api/v1/datasets/people/reload").to_request();
+    let req = test::TestRequest::post()
+        .uri("/api/v1/datasets/people/reload")
+        .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }

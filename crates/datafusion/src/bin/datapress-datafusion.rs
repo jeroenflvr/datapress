@@ -4,8 +4,8 @@ use datapress_core::config::{AppConfig, Backend};
 async fn main() -> std::io::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let config_path = std::env::var("DATASETS_CONFIG")
-        .unwrap_or_else(|_| "datasets.toml".to_string());
+    let config_path =
+        std::env::var("DATASETS_CONFIG").unwrap_or_else(|_| "datasets.toml".to_string());
     let cfg = AppConfig::load(&config_path).expect("failed to load datasets config");
 
     if cfg.server.backend != Backend::Datafusion {

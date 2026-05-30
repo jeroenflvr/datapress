@@ -87,21 +87,28 @@ fn write_hive_dataset(dir: &std::path::Path) {
 }
 
 async fn make_store(location: &str, lazy: bool) -> Store {
+    make_store_with_max_page_size(location, lazy, 1_000_000).await
+}
+
+async fn make_store_with_max_page_size(location: &str, lazy: bool, max_page_size: u64) -> Store {
     let cfg = AppConfig {
-        server:   ServerConfig::default(),
-        docs:     datapress_core::config::DocsConfig::default(),
-        swagger:  datapress_core::config::SwaggerConfig::default(),
-        auth:     datapress_core::config::AuthConfig::default(),
-        metrics:  datapress_core::config::MetricsConfig::default(),
+        server: ServerConfig {
+            max_page_size,
+            ..ServerConfig::default()
+        },
+        docs: datapress_core::config::DocsConfig::default(),
+        swagger: datapress_core::config::SwaggerConfig::default(),
+        auth: datapress_core::config::AuthConfig::default(),
+        metrics: datapress_core::config::MetricsConfig::default(),
         datasets: vec![DatasetConfig {
-            name:    "people".into(),
-            source:  SourceConfig {
-                kind:     SourceKind::Parquet,
+            name: "people".into(),
+            source: SourceConfig {
+                kind: SourceKind::Parquet,
                 location: location.to_string(),
             },
-            s3:          None,
-            index:       IndexConfig::default(),
-            columns:     vec![],
+            s3: None,
+            index: IndexConfig::default(),
+            columns: vec![],
             dict_encode: true,
             lazy,
         }],
@@ -115,11 +122,18 @@ fn parse_rows(s: &str) -> Vec<Value> {
 }
 
 fn pred(col: &str, op: &str, val: Value) -> Predicate {
-    Predicate { col: col.into(), op: op.into(), val: Some(val) }
+    Predicate {
+        col: col.into(),
+        op: op.into(),
+        val: Some(val),
+    }
 }
 
 fn req_with(preds: Vec<Predicate>) -> QueryRequest {
-    QueryRequest { predicates: preds, ..empty_req() }
+    QueryRequest {
+        predicates: preds,
+        ..empty_req()
+    }
 }
 
 /// Single parquet file whose `name` column includes a value with an
@@ -131,6 +145,31 @@ fn write_people(path: &std::path::Path) {
         &["Anna", "O'Brien", "Bob", "' OR '1'='1"],
         &[10.0, 20.0, 30.0, 40.0],
     );
+}
+
+fn write_many_people(path: &std::path::Path, rows: usize) {
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Int64, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("score", DataType::Float64, false),
+    ]));
+    let ids = (0..rows).map(|i| i as i64).collect::<Vec<_>>();
+    let names = (0..rows).map(|i| format!("person-{i}")).collect::<Vec<_>>();
+    let scores = (0..rows).map(|i| i as f64).collect::<Vec<_>>();
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(Int64Array::from(ids)),
+            Arc::new(StringArray::from(names)),
+            Arc::new(Float64Array::from(scores)),
+        ],
+    )
+    .unwrap();
+
+    let file = std::fs::File::create(path).unwrap();
+    let mut writer = ArrowWriter::try_new(file, schema, None).unwrap();
+    writer.write(&batch).unwrap();
+    writer.close().unwrap();
 }
 
 // ---------------------------------------------------------------------------
@@ -156,11 +195,16 @@ async fn hive_partition_column_eager() {
     let store = make_store(&glob, false).await;
 
     let rows = parse_rows(&store.query("people", &empty_req()).await.unwrap());
-    let has_city = rows.first().map(|r| r.get("city").is_some()).unwrap_or(false);
+    let has_city = rows
+        .first()
+        .map(|r| r.get("city").is_some())
+        .unwrap_or(false);
     assert!(
         has_city,
         "hive partition column `city` was not surfaced (eager). row keys: {:?}",
-        rows.first().and_then(|r| r.as_object()).map(|o| o.keys().collect::<Vec<_>>())
+        rows.first()
+            .and_then(|r| r.as_object())
+            .map(|o| o.keys().collect::<Vec<_>>())
     );
 }
 
@@ -173,12 +217,61 @@ async fn hive_partition_column_lazy() {
     let store = make_store(&root, true).await;
 
     let rows = parse_rows(&store.query("people", &empty_req()).await.unwrap());
-    assert_eq!(rows.len(), 5, "lazy: expected union of both partition files");
-    let has_city = rows.first().map(|r| r.get("city").is_some()).unwrap_or(false);
+    assert_eq!(
+        rows.len(),
+        5,
+        "lazy: expected union of both partition files"
+    );
+    let has_city = rows
+        .first()
+        .map(|r| r.get("city").is_some())
+        .unwrap_or(false);
     assert!(
         has_city,
         "hive partition column `city` was not surfaced (lazy). row keys: {:?}",
-        rows.first().and_then(|r| r.as_object()).map(|o| o.keys().collect::<Vec<_>>())
+        rows.first()
+            .and_then(|r| r.as_object())
+            .map(|o| o.keys().collect::<Vec<_>>())
+    );
+}
+
+#[actix_web::test]
+async fn arrow_sql_path_honours_page_size_above_1000() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("people.parquet");
+    write_many_people(&file, 1500);
+    let store = make_store(&file.display().to_string(), true).await;
+
+    let mut req = empty_req();
+    req.page_size = 1200;
+
+    let bytes = store.query_arrow("people", &req).await.unwrap();
+    let reader =
+        arrow::ipc::reader::StreamReader::try_new(std::io::Cursor::new(bytes), None).unwrap();
+    let rows: usize = reader.map(|batch| batch.unwrap().num_rows()).sum();
+    assert_eq!(
+        rows, 1200,
+        "DataFusion SQL path must not clamp pages to 1000 rows"
+    );
+}
+
+#[actix_web::test]
+async fn arrow_sql_path_clamps_to_configured_max_page_size() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("people.parquet");
+    write_many_people(&file, 1500);
+    let store = make_store_with_max_page_size(&file.display().to_string(), true, 750).await;
+
+    let mut req = empty_req();
+    req.page_size = 1200;
+
+    let bytes = store.query_arrow("people", &req).await.unwrap();
+    let reader =
+        arrow::ipc::reader::StreamReader::try_new(std::io::Cursor::new(bytes), None).unwrap();
+    let rows: usize = reader.map(|batch| batch.unwrap().num_rows()).sum();
+    assert_eq!(
+        rows, 750,
+        "DataFusion SQL path must clamp to server.max_page_size"
     );
 }
 
@@ -216,12 +309,21 @@ async fn predicate_injection_is_treated_as_literal() {
     let inject = Value::String("' OR '1'='1".into());
     let req = req_with(vec![pred("name", "eq", inject.clone())]);
     let rows = parse_rows(&store.query("people", &req).await.unwrap());
-    assert_eq!(rows.len(), 1, "must match only the literal row, not the whole table");
+    assert_eq!(
+        rows.len(),
+        1,
+        "must match only the literal row, not the whole table"
+    );
     assert_eq!(rows[0]["name"], inject);
 
     // count() shares the same parameterised path.
     let n = store
-        .count("people", &datapress_core::models::CountRequest { predicates: req.predicates })
+        .count(
+            "people",
+            &datapress_core::models::CountRequest {
+                predicates: req.predicates,
+            },
+        )
         .await
         .unwrap();
     assert_eq!(n, 1);
@@ -238,7 +340,10 @@ async fn predicate_in_binds_each_element() {
     let req = req_with(vec![pred(
         "name",
         "in",
-        Value::Array(vec![Value::String("Anna".into()), Value::String("Bob".into())]),
+        Value::Array(vec![
+            Value::String("Anna".into()),
+            Value::String("Bob".into()),
+        ]),
     )]);
     let rows = parse_rows(&store.query("people", &req).await.unwrap());
     assert_eq!(rows.len(), 2);

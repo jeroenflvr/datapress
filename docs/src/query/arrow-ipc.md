@@ -59,7 +59,7 @@ The precedence for `/query` is:
 
 1. DataPress reads the incoming request body and rejects it with `413 Payload Too Large` if it exceeds `max_body_bytes`.
 2. The query JSON is parsed.
-3. `page_size` is clamped to the supported row range and combined with `page` and optional top-level `limit`.
+3. `page_size` is clamped to `[1, server.max_page_size]` and combined with `page` and optional top-level `limit`.
 4. The backend returns the selected page of rows.
 5. The response encoder writes those rows as JSON or Arrow IPC.
 
@@ -87,10 +87,11 @@ are compressed. Therefore the client must pass **decompressed** bytes to
 PyArrow, it will fail because the first bytes no longer look like an
 Arrow IPC stream.
 
-With `requests`, `response.content` is decompressed automatically for
-supported `Content-Encoding` values. `gzip` and `deflate` work out of
-the box. Brotli requires a Brotli decoder package in the Python
-environment, such as `brotli` or `brotlicffi`. Without one, do not send
+With `requests` and `httpx`, `response.content` is decompressed
+automatically for supported `Content-Encoding` values. `gzip` and
+`deflate` work out of the box. Brotli requires a Brotli decoder package
+in the Python environment, such as `brotli` or `brotlicffi`, or an HTTP
+client install that includes its Brotli extra. Without one, do not send
 `Accept-Encoding: br`; request `gzip` or `identity`, or decompress the
 body yourself before calling `ipc.open_stream()`.
 
@@ -122,82 +123,143 @@ almost certainly still holding compressed bytes.
 ## Reading Arrow IPC in Python
 
 For a single page, read the Arrow IPC stream and pass the resulting
-`pyarrow.Table` to Polars:
+`pyarrow.Table` to Polars. When requesting Brotli with
+`Accept-Encoding: br`, make sure your HTTP client has Brotli support so
+`response.content` contains decompressed Arrow IPC bytes.
+
+### Small `requests` example
 
 ```python
-import requests, pyarrow.ipc as ipc, polars as pl
-
-r = requests.post(
-    "http://localhost:8080/api/v1/datasets/accidents/query",
-    json={"columns": ["ID","State"], "page_size": 1000},
-    headers={"Accept": "application/vnd.apache.arrow.stream"},
-)
-table = ipc.open_stream(r.content).read_all()     # → pyarrow.Table
-df    = pl.from_arrow(table)                      # zero-copy → Polars
-page, size = int(r.headers["X-Page"]), int(r.headers["X-Page-Size"])
-```
-
-To pull the complete result set, request pages until the server returns
-fewer rows than `page_size`, then concatenate the Arrow tables before
-creating the Polars dataframe. When exporting a changing dataset, include
-a deterministic `order_by` so page boundaries stay stable.
-
-```python
-import pyarrow as pa
 import pyarrow.ipc as ipc
 import polars as pl
 import requests
 
 ARROW = "application/vnd.apache.arrow.stream"
 
+response = requests.post(
+    "http://localhost:8080/api/v1/datasets/accidents/query",
+    json={"columns": ["ID", "State"], "page_size": 1000},
+    headers={
+        "Accept": ARROW,
+        "Accept-Encoding": "br",
+    },
+)
+response.raise_for_status()
 
-def query_all_polars(
+table = ipc.open_stream(response.content).read_all()
+df = pl.from_arrow(table)
+page = int(response.headers["X-Page"])
+size = int(response.headers["X-Page-Size"])
+```
+
+### Small `httpx` example
+
+```python
+import httpx
+import pyarrow.ipc as ipc
+import polars as pl
+
+ARROW = "application/vnd.apache.arrow.stream"
+
+response = httpx.post(
+    "http://localhost:8080/api/v1/datasets/accidents/query",
+    json={"columns": ["ID", "State"], "page_size": 1000},
+    headers={
+        "Accept": ARROW,
+        "Accept-Encoding": "br",
+    },
+    timeout=60.0,
+)
+response.raise_for_status()
+
+table = ipc.open_stream(response.content).read_all()
+df = pl.from_arrow(table)
+```
+
+### Async `httpx` with count + gather
+
+For a complete result set, first call `/count` with the same predicates,
+compute the page numbers, then fetch those pages with `asyncio.gather`.
+This works well for bounded fan-out, such as 30-100 pages.
+`asyncio.gather` preserves result order, so concatenating the returned
+tables keeps pages in ascending order. Include a deterministic `order_by`
+so page boundaries stay stable.
+
+```python
+import asyncio
+import math
+
+import httpx
+import pyarrow as pa
+import pyarrow.ipc as ipc
+import polars as pl
+
+ARROW = "application/vnd.apache.arrow.stream"
+
+
+async def query_all_polars_httpx(
     base_url: str,
     dataset: str,
     body: dict,
     *,
-    page_size: int = 100_000,
+    page_size: int,
 ) -> pl.DataFrame:
-    tables: list[pa.Table] = []
-    page = 1
+    base = base_url.rstrip("/")
+    count_body = {"predicates": body.get("predicates", [])}
 
-    with requests.Session() as session:
-        while True:
-            request_body = {**body, "page": page, "page_size": page_size}
-            response = session.post(
-                f"{base_url.rstrip('/')}/api/v1/datasets/{dataset}/query",
-                json=request_body,
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        count_response = await client.post(
+            f"{base}/api/v1/datasets/{dataset}/count",
+            json=count_body,
+        )
+        count_response.raise_for_status()
+
+        total_rows = int(count_response.json()["count"])
+        if total_rows == 0:
+            return pl.DataFrame()
+
+        page_count = math.ceil(total_rows / page_size)
+
+        async def fetch_page(page: int) -> pa.Table:
+            response = await client.post(
+                f"{base}/api/v1/datasets/{dataset}/query",
+                json={**body, "page": page, "page_size": page_size},
                 headers={
                     "Accept": ARROW,
-                    # Requires a Brotli decoder package for requests,
-                    # for example brotli or brotlicffi.
+                    # Requires httpx Brotli support, for example the
+                    # httpx brotli extra, brotli, or brotlicffi.
                     "Accept-Encoding": "br",
                 },
             )
             response.raise_for_status()
 
             # response.content must be decompressed before PyArrow sees it.
-            # requests does this for Brotli only when brotli/brotlicffi is installed.
-            table = ipc.open_stream(response.content).read_all()
-            tables.append(table)
+            # httpx does this for Brotli only when Brotli support is installed.
+            return ipc.open_stream(response.content).read_all()
 
-            if table.num_rows < page_size:
-                break
-            page += 1
+        tables = await asyncio.gather(
+            *(fetch_page(page) for page in range(1, page_count + 1))
+        )
 
     table = tables[0] if len(tables) == 1 else pa.concat_tables(tables)
     return pl.from_arrow(table)
 
 
-df = query_all_polars(
+# Fully async version: the /count docs show this predicate at about
+# 418k rows, so page_size=10_000 produces roughly 42 Arrow IPC requests.
+df_async = asyncio.run(query_all_polars_httpx(
     "http://localhost:8080",
     "accidents",
     {
-        "columns": ["ID", "State", "Severity"],
-        "predicates": [{"col": "State", "op": "eq", "val": "TX"}],
+        "columns": ["ID", "State", "Severity", "Start_Time"],
+        "predicates": [
+            {"col": "State", "op": "in", "val": ["CA", "TX"]},
+            {"col": "Severity", "op": "gte", "val": 3},
+        ],
         "order_by": [{"col": "ID"}],
     },
-)
+    page_size=10_000,
+))
 ```
 
 ## Backend support

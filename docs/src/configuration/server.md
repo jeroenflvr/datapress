@@ -12,6 +12,7 @@ port    = 8080
 # prefix  = "/datapress"  # mount every route under this path
 # compress = true
 # max_body_bytes        = 1048576    # 413 above this
+# max_page_size         = 1000000    # clamp query page_size above this
 # request_timeout_ms    = 30000      # 504 above this; 0 disables
 # shutdown_timeout_secs = 30         # SIGTERM grace period
 ```
@@ -27,6 +28,7 @@ port    = 8080
 | `prefix`                | `""`        | URL prefix in front of every app route. Must start with `/` and not end with `/`.         |
 | `compress`              | `true`      | Negotiate gzip / brotli / zstd via `Accept-Encoding`.                                     |
 | `max_body_bytes`        | `1048576`   | Max accepted JSON request body. Larger → `413 Payload Too Large`.                         |
+| `max_page_size`         | `1000000`   | Max rows returned by one `/query` page. Larger `page_size` values are clamped.             |
 | `request_timeout_ms`    | `30000`     | Per-request handler timeout (ms). Long handlers are cancelled and the client gets `504`. `0` disables. |
 | `shutdown_timeout_secs` | `30`        | Grace period for in-flight requests after `SIGTERM` / `SIGINT`.                           |
 
@@ -81,7 +83,7 @@ For query requests the order is:
 
 1. The HTTP request body must fit within `max_body_bytes`.
 2. The JSON body is parsed into the query request.
-3. `page` is normalized to at least `1`; `page_size` is clamped to the supported range.
+3. `page` is normalized to at least `1`; `page_size` is clamped to `[1, max_page_size]`.
 4. The backend applies `page`, `page_size`, and optional top-level `limit` to choose rows.
 5. The chosen rows are encoded as JSON or Arrow IPC.
 
@@ -96,6 +98,22 @@ To control response size, reduce `page_size`, project fewer `columns`,
 add more selective `predicates`, or page through the result set. See
 [Arrow IPC vs JSON](../query/arrow-ipc.md#response-size-and-max_body_bytes)
 for the Arrow-specific details.
+
+## Query page-size limit
+
+```toml
+[server]
+max_page_size = 1_000_000
+```
+
+`max_page_size` controls the largest row page a `/query` request can
+ask for. The default is `1_000_000`. If a client sends a larger
+`page_size`, DataPress clamps it to `max_page_size`; the response reports
+the effective value in the JSON body or Arrow IPC `X-Page-Size` header.
+
+This is separate from `max_body_bytes`: `max_page_size` limits rows in
+the response page, while `max_body_bytes` limits bytes in the incoming
+request body.
 
 ## Request timeout
 

@@ -18,9 +18,7 @@ static EXPECTED: OnceLock<Option<String>> = OnceLock::new();
 
 fn expected() -> Option<&'static str> {
     EXPECTED
-        .get_or_init(|| {
-            std::env::var("ADMIN_TOKEN").ok().filter(|s| !s.is_empty())
-        })
+        .get_or_init(|| std::env::var("ADMIN_TOKEN").ok().filter(|s| !s.is_empty()))
         .as_deref()
 }
 
@@ -46,7 +44,9 @@ pub fn require_admin(req: &HttpRequest) -> Result<(), AppError> {
     if constant_time_eq(presented.as_bytes(), expected.as_bytes()) {
         Ok(())
     } else {
-        Err(AppError::Forbidden("invalid or missing X-Admin-Token".into()))
+        Err(AppError::Forbidden(
+            "invalid or missing X-Admin-Token".into(),
+        ))
     }
 }
 

@@ -26,7 +26,8 @@ projected Arrow arrays.
 
 - `page` is 1-based. `page = 1` returns rows `[0, page_size)`.
   Values `< 1` are treated as `1`.
-- `page_size` is clamped to `[1, 1_000_000]` server-side.
+- `page_size` is clamped to `[1, server.max_page_size]` server-side.
+  The default `max_page_size` is `1_000_000`.
 
 There is no row count in the response. To detect "is there more?" use
 one of these patterns:

@@ -17,7 +17,7 @@ use crate::repository::DatasetRepository;
 // ---------------------------------------------------------------------------
 
 pub struct DbPool {
-    conns:     Mutex<Vec<Connection>>,
+    conns: Mutex<Vec<Connection>>,
     available: Condvar,
 }
 
@@ -29,7 +29,9 @@ pub struct PooledConn {
 
 impl std::ops::Deref for PooledConn {
     type Target = Connection;
-    fn deref(&self) -> &Connection { self.conn.as_ref().unwrap() }
+    fn deref(&self) -> &Connection {
+        self.conn.as_ref().unwrap()
+    }
 }
 
 impl Drop for PooledConn {
@@ -47,7 +49,10 @@ impl DbPool {
         let mut guard = pool.conns.lock().unwrap();
         loop {
             if let Some(conn) = guard.pop() {
-                return PooledConn { pool: Arc::clone(pool), conn: Some(conn) };
+                return PooledConn {
+                    pool: Arc::clone(pool),
+                    conn: Some(conn),
+                };
             }
             guard = pool.available.wait(guard).unwrap();
         }
@@ -61,19 +66,20 @@ pub type DbPoolRef = Arc<DbPool>;
 // ---------------------------------------------------------------------------
 
 pub struct Registry {
-    pub pool:     DbPoolRef,
+    pub pool: DbPoolRef,
+    max_page_size: u64,
     /// Original dataset configs, indexed by name. Reload reads the source
     /// path from here — clients can't redirect a reload at an arbitrary file.
-    configs:      HashMap<String, DatasetConfig>,
+    configs: HashMap<String, DatasetConfig>,
     /// Hot-swappable schema map. `RwLock` is enough here: reads are very
     /// short (clone an `Arc`); writes happen only on reload.
-    datasets:     RwLock<HashMap<String, Arc<DatasetSchema>>>,
+    datasets: RwLock<HashMap<String, Arc<DatasetSchema>>>,
     /// Cached row counts per dataset, kept in lock-step with `datasets`.
     /// Populated at load and refreshed on reload — DuckDB's `count(*)`
     /// against a parquet file or native table is metadata-only and very
     /// cheap, but caching avoids repeating it for every `/api/datasets`
     /// listing call.
-    row_counts:   RwLock<HashMap<String, i64>>,
+    row_counts: RwLock<HashMap<String, i64>>,
     /// Per-name reload mutex. Serialises concurrent reloads of the same
     /// dataset; reloads of different datasets proceed in parallel.
     reload_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
@@ -118,17 +124,18 @@ impl Registry {
         let _guard = lock.lock().await;
 
         let started = std::time::Instant::now();
-        let pool    = self.pool.clone();
+        let pool = self.pool.clone();
 
-        let (schema, rows) = actix_web::web::block(move || -> Result<(DatasetSchema, i64), AppError> {
-            let conn = DbPool::get(&pool);
-            replace_table(&conn, &cfg)?;
-            let schema = introspect_schema(&conn, &cfg.name)?;
-            let rows   = count_rows(&conn, &cfg.name)?;
-            Ok((schema, rows))
-        })
-        .await
-        .map_err(|e| AppError::Internal(format!("join error: {e}")))??;
+        let (schema, rows) =
+            actix_web::web::block(move || -> Result<(DatasetSchema, i64), AppError> {
+                let conn = DbPool::get(&pool);
+                replace_table(&conn, &cfg)?;
+                let schema = introspect_schema(&conn, &cfg.name)?;
+                let rows = count_rows(&conn, &cfg.name)?;
+                Ok((schema, rows))
+            })
+            .await
+            .map_err(|e| AppError::Internal(format!("join error: {e}")))??;
 
         self.datasets
             .write()
@@ -141,7 +148,10 @@ impl Registry {
 
         let elapsed_ms = started.elapsed().as_millis();
         log::info!("reloaded dataset '{name}': {rows} rows in {elapsed_ms} ms");
-        Ok(ReloadStats { rows: rows as usize, elapsed_ms })
+        Ok(ReloadStats {
+            rows: rows as usize,
+            elapsed_ms,
+        })
     }
 }
 
@@ -156,7 +166,10 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
     // INSTALL is a no-op when the extension is already cached on disk;
     // the first run downloads from the DuckDB extension repo.
     let needs_httpfs = cfg.datasets.iter().any(|d| d.source.is_s3());
-    let needs_delta  = cfg.datasets.iter().any(|d| d.source.kind == SourceKind::Delta);
+    let needs_delta = cfg
+        .datasets
+        .iter()
+        .any(|d| d.source.kind == SourceKind::Delta);
     if needs_httpfs {
         log::info!("DuckDB: installing/loading httpfs extension (S3 support)");
         conn.execute_batch("INSTALL httpfs; LOAD httpfs;")?;
@@ -174,17 +187,19 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
         }
     }
 
-    let mut datasets   = HashMap::new();
-    let mut configs    = HashMap::new();
+    let mut datasets = HashMap::new();
+    let mut configs = HashMap::new();
     let mut row_counts = HashMap::new();
 
     for d in &cfg.datasets {
         log::info!(
             "Loading dataset '{}' ({} @ {})",
-            d.name, d.source.kind.as_str(), d.source.location
+            d.name,
+            d.source.kind.as_str(),
+            d.source.location
         );
         let schema = register_dataset(&conn, d)?;
-        let rows   = count_rows(&conn, &d.name)?;
+        let rows = count_rows(&conn, &d.name)?;
         log::info!(
             "  → {} columns ({} rows in-memory)",
             schema.columns.len(),
@@ -198,9 +213,10 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
     let pool = init_pool(conn)?;
     Ok(Registry {
         pool,
+        max_page_size: cfg.server.max_page_size.max(1),
         configs,
-        datasets:     RwLock::new(datasets),
-        row_counts:   RwLock::new(row_counts),
+        datasets: RwLock::new(datasets),
+        row_counts: RwLock::new(row_counts),
         reload_locks: Mutex::new(HashMap::new()),
     })
 }
@@ -213,7 +229,8 @@ fn build_scan_clause(cfg: &DatasetConfig) -> Result<String, AppError> {
     match (cfg.source.kind, cfg.source.is_s3()) {
         (SourceKind::Parquet, false) => {
             let files = cfg.resolve_local_parquet_files()?;
-            let file_list = files.iter()
+            let file_list = files
+                .iter()
                 .map(|p| format!("'{}'", p.display().to_string().replace('\'', "''")))
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -247,14 +264,19 @@ fn apply_s3_secret(conn: &Connection, cfg: &DatasetConfig) -> Result<(), AppErro
     parts.push(format!("REGION '{}'", region.replace('\'', "''")));
     if let Some(ep) = s3.endpoint.as_deref().filter(|s| !s.is_empty()) {
         // DuckDB wants endpoint *without* the scheme.
-        let bare = ep.trim_start_matches("http://").trim_start_matches("https://");
+        let bare = ep
+            .trim_start_matches("http://")
+            .trim_start_matches("https://");
         parts.push(format!("ENDPOINT '{}'", bare.replace('\'', "''")));
     }
     parts.push(format!("URL_STYLE '{}'", s3.addressing_style.as_str()));
     if s3.allow_http {
         parts.push("USE_SSL false".to_string());
     }
-    if let (Some(k), Some(s)) = (creds.access_key_id.as_deref(), creds.secret_access_key.as_deref()) {
+    if let (Some(k), Some(s)) = (
+        creds.access_key_id.as_deref(),
+        creds.secret_access_key.as_deref(),
+    ) {
         parts.push(format!("KEY_ID '{}'", k.replace('\'', "''")));
         parts.push(format!("SECRET '{}'", s.replace('\'', "''")));
         if let Some(t) = creds.session_token.as_deref() {
@@ -269,13 +291,17 @@ fn apply_s3_secret(conn: &Connection, cfg: &DatasetConfig) -> Result<(), AppErro
         // No explicit keys — ask DuckDB to use its credential chain.
         parts.push("PROVIDER credential_chain".to_string());
     }
-    parts.push(format!("SCOPE '{}'", cfg.source.location.replace('\'', "''")));
+    parts.push(format!(
+        "SCOPE '{}'",
+        cfg.source.location.replace('\'', "''")
+    ));
 
     // Secret name: dataset name normalised. DuckDB identifiers are
     // case-insensitive and accept alphanum + underscore.
     let secret_name = format!(
         "ds_{}",
-        cfg.name.chars()
+        cfg.name
+            .chars()
             .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
             .collect::<String>()
     );
@@ -291,7 +317,7 @@ fn apply_s3_secret(conn: &Connection, cfg: &DatasetConfig) -> Result<(), AppErro
 /// `CREATE OR REPLACE TABLE ... AS SELECT ...` is a single DuckDB transaction:
 /// if the source read fails, the existing table is preserved.
 fn replace_table(conn: &Connection, cfg: &DatasetConfig) -> Result<(), AppError> {
-    let scan  = build_scan_clause(cfg)?;
+    let scan = build_scan_clause(cfg)?;
     let table = DatasetSchema::quote_ident(&cfg.name);
     conn.execute_batch(&format!(
         "CREATE OR REPLACE TABLE {table} AS SELECT * FROM {scan};"
@@ -302,34 +328,31 @@ fn replace_table(conn: &Connection, cfg: &DatasetConfig) -> Result<(), AppError>
 /// Materialise the source as an in-memory table named `cfg.name` and
 /// introspect its schema via DuckDB's `DESCRIBE`.
 fn register_dataset(conn: &Connection, cfg: &DatasetConfig) -> Result<DatasetSchema, AppError> {
-    let scan  = build_scan_clause(cfg)?;
+    let scan = build_scan_clause(cfg)?;
     let table = DatasetSchema::quote_ident(&cfg.name);
-    conn.execute_batch(&format!(
-        "CREATE TABLE {table} AS SELECT * FROM {scan};"
-    ))?;
+    conn.execute_batch(&format!("CREATE TABLE {table} AS SELECT * FROM {scan};"))?;
     introspect_schema(conn, &cfg.name)
 }
 
 fn introspect_schema(conn: &Connection, table: &str) -> Result<DatasetSchema, AppError> {
-    let mut stmt = conn.prepare(&format!(
-        "DESCRIBE {}",
-        DatasetSchema::quote_ident(table)
-    ))?;
+    let mut stmt = conn.prepare(&format!("DESCRIBE {}", DatasetSchema::quote_ident(table)))?;
     let rows = stmt.query_map([], |row| {
         // DESCRIBE columns: column_name, column_type, null, key, default, extra
-        let name:     String = row.get(0)?;
+        let name: String = row.get(0)?;
         let sql_type: String = row.get(1)?;
         let nullable: String = row.get::<_, String>(2).unwrap_or_else(|_| "YES".into());
         Ok((name, sql_type, nullable))
     })?;
 
     let columns = rows
-        .map(|r| r.map(|(name, sql_type, nullable)| ColumnInfo {
-            logical:  classify_duckdb_type(&sql_type),
-            sql_type,
-            nullable: nullable.eq_ignore_ascii_case("YES"),
-            name,
-        }))
+        .map(|r| {
+            r.map(|(name, sql_type, nullable)| ColumnInfo {
+                logical: classify_duckdb_type(&sql_type),
+                sql_type,
+                nullable: nullable.eq_ignore_ascii_case("YES"),
+                name,
+            })
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(DatasetSchema::new(table, columns))
@@ -340,19 +363,25 @@ fn classify_duckdb_type(sql_type: &str) -> LogicalType {
     // UTINYINT…, FLOAT, DOUBLE, DECIMAL(.., ..), VARCHAR, TEXT, BOOLEAN,
     // DATE, TIME, TIMESTAMP, TIMESTAMP_S, TIMESTAMP_NS, TIMESTAMPTZ, …
     let t = sql_type.to_ascii_uppercase();
-    if t.starts_with("BOOL")                       { LogicalType::Bool }
-    else if t == "FLOAT" || t == "DOUBLE"
-         || t == "REAL"  || t.starts_with("DECIMAL")
-                                                    { LogicalType::Float }
-    else if t.ends_with("INT") || t.starts_with("UINT")
-         || t == "HUGEINT"                          { LogicalType::Int }
-    else if t == "VARCHAR" || t == "TEXT"
-         || t == "STRING"  || t == "CHAR"
-         || t.starts_with("VARCHAR(")               { LogicalType::Utf8 }
-    else if t.starts_with("TIMESTAMP")
-         || t == "DATE" || t == "TIME"
-         || t.starts_with("INTERVAL")               { LogicalType::Temporal }
-    else                                            { LogicalType::Other }
+    if t.starts_with("BOOL") {
+        LogicalType::Bool
+    } else if t == "FLOAT" || t == "DOUBLE" || t == "REAL" || t.starts_with("DECIMAL") {
+        LogicalType::Float
+    } else if t.ends_with("INT") || t.starts_with("UINT") || t == "HUGEINT" {
+        LogicalType::Int
+    } else if t == "VARCHAR"
+        || t == "TEXT"
+        || t == "STRING"
+        || t == "CHAR"
+        || t.starts_with("VARCHAR(")
+    {
+        LogicalType::Utf8
+    } else if t.starts_with("TIMESTAMP") || t == "DATE" || t == "TIME" || t.starts_with("INTERVAL")
+    {
+        LogicalType::Temporal
+    } else {
+        LogicalType::Other
+    }
 }
 
 fn count_rows(conn: &Connection, table: &str) -> Result<i64, AppError> {
@@ -371,9 +400,15 @@ fn init_pool(conn: Connection) -> Result<DbPoolRef, AppError> {
     let size = std::env::var("DB_POOL_SIZE")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4));
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4)
+        });
 
-    let total_cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    let total_cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
     let threads_per_conn = (total_cpus / size).max(1);
     conn.execute_batch(&format!("SET threads={threads_per_conn};"))?;
     log::info!(
@@ -385,7 +420,7 @@ fn init_pool(conn: Connection) -> Result<DbPoolRef, AppError> {
         conns.push(conn.try_clone()?);
     }
     Ok(Arc::new(DbPool {
-        conns:     Mutex::new(conns),
+        conns: Mutex::new(conns),
         available: Condvar::new(),
     }))
 }
@@ -402,16 +437,17 @@ impl Backend for Registry {
 
     fn summary(&self, name: &str) -> Result<DatasetSummary, AppError> {
         let schema = self.get(name)?;
-        let rows   = self.row_counts
+        let rows = self
+            .row_counts
             .read()
             .unwrap()
             .get(name)
             .copied()
             .unwrap_or(0);
         Ok(DatasetSummary {
-            name:    schema.name.clone(),
+            name: schema.name.clone(),
             columns: schema.columns.len(),
-            rows:    rows.max(0) as usize,
+            rows: rows.max(0) as usize,
         })
     }
 
@@ -421,10 +457,11 @@ impl Backend for Registry {
 
     async fn sample(&self, name: &str) -> Result<String, AppError> {
         let schema = self.get(name)?;
-        let pool   = self.pool.clone();
+        let pool = self.pool.clone();
+        let max_page_size = self.max_page_size;
         actix_web::web::block(move || -> Result<String, AppError> {
             let conn = DbPool::get(&pool);
-            DatasetRepository::new(&conn, &schema).sample()
+            DatasetRepository::new(&conn, &schema, max_page_size).sample()
         })
         .await
         .map_err(|e| AppError::Internal(format!("join error: {e}")))?
@@ -432,11 +469,12 @@ impl Backend for Registry {
 
     async fn query(&self, name: &str, req: &QueryRequest) -> Result<String, AppError> {
         let schema = self.get(name)?;
-        let pool   = self.pool.clone();
-        let req    = req.clone();
+        let pool = self.pool.clone();
+        let req = req.clone();
+        let max_page_size = self.max_page_size;
         actix_web::web::block(move || -> Result<String, AppError> {
             let conn = DbPool::get(&pool);
-            DatasetRepository::new(&conn, &schema).query(&req)
+            DatasetRepository::new(&conn, &schema, max_page_size).query(&req)
         })
         .await
         .map_err(|e| AppError::Internal(format!("join error: {e}")))?
@@ -444,11 +482,12 @@ impl Backend for Registry {
 
     async fn query_arrow(&self, name: &str, req: &QueryRequest) -> Result<Vec<u8>, AppError> {
         let schema = self.get(name)?;
-        let pool   = self.pool.clone();
-        let req    = req.clone();
+        let pool = self.pool.clone();
+        let req = req.clone();
+        let max_page_size = self.max_page_size;
         actix_web::web::block(move || -> Result<Vec<u8>, AppError> {
             let conn = DbPool::get(&pool);
-            DatasetRepository::new(&conn, &schema).query_arrow_bytes(&req)
+            DatasetRepository::new(&conn, &schema, max_page_size).query_arrow_bytes(&req)
         })
         .await
         .map_err(|e| AppError::Internal(format!("join error: {e}")))?
@@ -456,11 +495,12 @@ impl Backend for Registry {
 
     async fn count(&self, name: &str, req: &CountRequest) -> Result<i64, AppError> {
         let schema = self.get(name)?;
-        let pool   = self.pool.clone();
-        let preds  = req.predicates.clone();
+        let pool = self.pool.clone();
+        let preds = req.predicates.clone();
+        let max_page_size = self.max_page_size;
         actix_web::web::block(move || -> Result<i64, AppError> {
             let conn = DbPool::get(&pool);
-            DatasetRepository::new(&conn, &schema).count(&preds)
+            DatasetRepository::new(&conn, &schema, max_page_size).count(&preds)
         })
         .await
         .map_err(|e| AppError::Internal(format!("join error: {e}")))?
@@ -470,4 +510,3 @@ impl Backend for Registry {
         Registry::reload(self, name).await
     }
 }
-

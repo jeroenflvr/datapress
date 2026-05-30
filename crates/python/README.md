@@ -101,7 +101,7 @@ Six public classes, no module-level state:
 
 | Class             | Purpose                                                              |
 |-------------------|----------------------------------------------------------------------|
-| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `request_timeout_ms`, `shutdown_timeout_secs`, `metrics_enabled`, `metrics_path`. |
+| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `max_page_size`, `request_timeout_ms`, `shutdown_timeout_secs`, `metrics_enabled`, `metrics_path`. |
 | `DatasetConfig`   | One dataset: `name`, `source`, `format`, `mode`, optional S3 + index.|
 | `S3Config`        | S3 / S3-compatible credentials and endpoint config.                  |
 | `DataPress`       | Built from a `DataPressConfig` + list of `DatasetConfig` + optional `AuthConfig`. `await .run()`. |
@@ -168,15 +168,18 @@ DataPressConfig(
     backend="datafusion",
     port=8000,
     max_body_bytes=1_048_576,    # 413 above this; default 1 MiB
+    max_page_size=1_000_000,     # clamp query page_size above this
     request_timeout_ms=30_000,   # 504 above this; 0 disables; default 30s
     shutdown_timeout_secs=30,    # SIGTERM/SIGINT grace period, in seconds
 )
 ```
 
 Bodies larger than `max_body_bytes` are rejected with `413 Payload Too
-Large`. Handlers that take longer than `request_timeout_ms` are cancelled
-and the client sees `504 Gateway Timeout`. Set the timeout to `0` to
-disable it entirely (useful behind a proxy that already enforces one).
+Large`. Query `page_size` values larger than `max_page_size` are clamped
+before the backend runs. Handlers that take longer than
+`request_timeout_ms` are cancelled and the client sees `504 Gateway
+Timeout`. Set the timeout to `0` to disable it entirely (useful behind a
+proxy that already enforces one).
 
 ### Graceful shutdown
 
@@ -268,7 +271,7 @@ Same five routes for both backends.
 | `distinct`   | `bool`          | `false` | Dedup the projected columns. Mutually exclusive with `group_by` / `aggregations`. |
 | `limit`      | `int` or null   | `null`  | Hard cap on total rows across pages. |
 | `page`       | `int >= 1`      | `1`     | 1-based.                    |
-| `page_size`  | `int 1..=1_000_000`  | `1000`   | Clamped.                    |
+| `page_size`  | `int >= 1`      | `1000`   | Clamped to `DataPressConfig.max_page_size` (`1_000_000` by default). |
 
 ### Predicate operators
 

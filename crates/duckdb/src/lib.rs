@@ -12,8 +12,7 @@ use datapress_core::config::AppConfig;
 /// the process receives SIGINT.
 pub async fn serve(cfg: AppConfig) -> std::io::Result<()> {
     datapress_core::banner::print();
-    let registry: Arc<dyn Backend> = Arc::new(
-        db::load_registry(&cfg).expect("failed to register datasets"),
-    );
+    let registry: Arc<dyn Backend> =
+        Arc::new(db::load_registry(&cfg).expect("failed to register datasets"));
     datapress_core::server::serve(cfg, registry, "DuckDB").await
 }

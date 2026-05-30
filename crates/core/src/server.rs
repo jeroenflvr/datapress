@@ -20,16 +20,13 @@ use crate::timeout::Timeout;
 ///
 /// `label` is the human-readable backend name used in the startup log
 /// line (e.g. `"DuckDB"`, `"DataFusion"`).
-pub async fn serve(
-    cfg:     AppConfig,
-    backend: Arc<dyn Backend>,
-    label:   &str,
-) -> std::io::Result<()> {
-    let addr    = (cfg.server.listen, cfg.server.port);
+pub async fn serve(cfg: AppConfig, backend: Arc<dyn Backend>, label: &str) -> std::io::Result<()> {
+    let addr = (cfg.server.listen, cfg.server.port);
     let workers = cfg.server.workers;
-    let prefix  = cfg.server.prefix.clone();
+    let prefix = cfg.server.prefix.clone();
     let compress = cfg.server.compress;
     let max_body = cfg.server.max_body_bytes;
+    let max_page_size = cfg.server.max_page_size;
     let timeout_ms = cfg.server.request_timeout_ms;
     let shutdown_secs = cfg.server.shutdown_timeout_secs;
     let docs_cfg = cfg.docs.clone();
@@ -73,17 +70,22 @@ pub async fn serve(
     // process exits non-zero.
     #[cfg(feature = "auth")]
     let auth_state = if cfg.auth.enabled {
-        let jwks = crate::auth::JwksCache::boot(&cfg.auth).await
+        let jwks = crate::auth::JwksCache::boot(&cfg.auth)
+            .await
             .map_err(|e| std::io::Error::other(format!("auth bootstrap failed: {e}")))?;
         log::info!(
             "[auth] OIDC enforcement enabled (issuer = {}, audience = {}, read_scopes = {:?}, reload_scopes = {:?})",
             cfg.auth.issuer,
-            if cfg.auth.audience.is_empty() { "<none>" } else { cfg.auth.audience.as_str() },
+            if cfg.auth.audience.is_empty() {
+                "<none>"
+            } else {
+                cfg.auth.audience.as_str()
+            },
             cfg.auth.read_scopes,
             cfg.auth.reload_scopes,
         );
         Some(crate::auth::AuthState {
-            cfg:  Arc::new(cfg.auth.clone()),
+            cfg: Arc::new(cfg.auth.clone()),
             jwks,
         })
     } else {
@@ -91,14 +93,26 @@ pub async fn serve(
     };
 
     log::info!(
-        "Listening on http://{}:{}{} ({} backend, {} workers, compression {}, max-body {} bytes, timeout {}, shutdown grace {}s)",
-        cfg.server.listen, cfg.server.port,
-        if prefix.is_empty() { "".into() } else { format!("{prefix}/") },
+        "Listening on http://{}:{}{} ({} backend, {} workers, compression {}, max-body {} bytes, max-page-size {}, timeout {}, shutdown grace {}s)",
+        cfg.server.listen,
+        cfg.server.port,
+        if prefix.is_empty() {
+            "".into()
+        } else {
+            format!("{prefix}/")
+        },
         label,
-        workers.map(|w| w.to_string()).unwrap_or_else(|| "auto".into()),
+        workers
+            .map(|w| w.to_string())
+            .unwrap_or_else(|| "auto".into()),
         if compress { "on" } else { "off" },
         max_body,
-        if timeout_ms == 0 { "off".into() } else { format!("{timeout_ms} ms") },
+        max_page_size,
+        if timeout_ms == 0 {
+            "off".into()
+        } else {
+            format!("{timeout_ms} ms")
+        },
         shutdown_secs,
     );
 
@@ -143,18 +157,19 @@ pub async fn serve(
         // `&'static str` so it fits BuildInfo's compile-time fields.
         // The match keeps this generic enough for future backends.
         match label {
-            "DuckDB"     => "DuckDB",
+            "DuckDB" => "DuckDB",
             "DataFusion" => "DataFusion",
-            _            => "unknown",
+            _ => "unknown",
         },
     ));
 
     let mut server = HttpServer::new(move || {
-        let backend  = backend.clone();
-        let prefix   = prefix.clone();
+        let backend = backend.clone();
+        let prefix = prefix.clone();
         let json_cfg = web::JsonConfig::default().limit(max_body);
-        let pay_cfg  = web::PayloadConfig::default().limit(max_body);
-        let timeout  = Timeout::new(Duration::from_millis(timeout_ms.max(1)));
+        let pay_cfg = web::PayloadConfig::default().limit(max_body);
+        let query_limits = handlers::QueryLimits { max_page_size };
+        let timeout = Timeout::new(Duration::from_millis(timeout_ms.max(1)));
         #[cfg(feature = "docs")]
         let docs_cfg = docs_cfg.clone();
         #[cfg(feature = "swagger")]
@@ -166,10 +181,14 @@ pub async fn serve(
         let app = App::new()
             .app_data(web::Data::new(backend))
             .app_data(build_info.clone())
+            .app_data(web::Data::new(query_limits))
             .app_data(json_cfg)
             .app_data(pay_cfg)
             .wrap(middleware::Condition::new(timeout_ms > 0, timeout))
-            .wrap(middleware::Condition::new(compress, middleware::Compress::default()))
+            .wrap(middleware::Condition::new(
+                compress,
+                middleware::Compress::default(),
+            ))
             .wrap(middleware::Logger::new("%a \"%r\" %s %b bytes %Dms"));
         // Auth middleware wraps everything below — including the docs +
         // swagger services and the prefix scope. Health/version probes
@@ -208,7 +227,9 @@ pub async fn serve(
         };
         #[cfg(feature = "swagger")]
         let app = if swagger_cfg.enabled {
-            app.configure(|c| crate::swagger::configure(&swagger_cfg.path, swagger_cfg.oauth2.as_ref(), c))
+            app.configure(|c| {
+                crate::swagger::configure(&swagger_cfg.path, swagger_cfg.oauth2.as_ref(), c)
+            })
         } else {
             app
         };
@@ -258,10 +279,8 @@ async fn wait_for_signal() -> &'static str {
     use tokio::signal::unix::{SignalKind, signal};
     // `expect` is OK here: failing to install a signal handler at startup
     // is a misconfigured runtime, not a recoverable condition.
-    let mut sigterm = signal(SignalKind::terminate())
-        .expect("install SIGTERM handler");
-    let mut sigint  = signal(SignalKind::interrupt())
-        .expect("install SIGINT handler");
+    let mut sigterm = signal(SignalKind::terminate()).expect("install SIGTERM handler");
+    let mut sigint = signal(SignalKind::interrupt()).expect("install SIGINT handler");
     tokio::select! {
         _ = sigterm.recv() => "SIGTERM",
         _ = sigint.recv()  => "SIGINT",
@@ -289,10 +308,10 @@ fn log_routes(prefix: &str, backend: &dyn Backend) {
     log::info!("Routes:");
     log::info!("  general:");
     for (method, path) in [
-        ("GET",  "/healthz".to_string()),
-        ("GET",  "/readyz".to_string()),
-        ("GET",  "/version".to_string()),
-        ("GET",  format!("{p}/health")),
+        ("GET", "/healthz".to_string()),
+        ("GET", "/readyz".to_string()),
+        ("GET", "/version".to_string()),
+        ("GET", format!("{p}/health")),
     ] {
         log::info!("    {:<width$} {}", method, path, width = METHOD_W);
     }
@@ -301,7 +320,7 @@ fn log_routes(prefix: &str, backend: &dyn Backend) {
     // also expose v1 under the un-versioned `/api` for back-compat.
     let mounts: &[(&str, &[(&str, &str)])] = &[
         ("/api/v1", handlers::v1::ROUTES),
-        ("/api",    handlers::v1::ROUTES), // legacy alias
+        ("/api", handlers::v1::ROUTES), // legacy alias
     ];
 
     let names = backend.names();
@@ -312,7 +331,8 @@ fn log_routes(prefix: &str, backend: &dyn Backend) {
             if !suffix.contains("{name}") {
                 log::info!(
                     "    {:<width$} {p}{mount}{suffix}",
-                    method, width = METHOD_W,
+                    method,
+                    width = METHOD_W,
                 );
             }
         }
@@ -325,7 +345,8 @@ fn log_routes(prefix: &str, backend: &dyn Backend) {
                 if let Some(rest) = suffix.strip_prefix("/datasets/{name}") {
                     log::info!(
                         "    {:<width$} {p}{mount}/datasets/{name}{rest}",
-                        method, width = METHOD_W,
+                        method,
+                        width = METHOD_W,
                     );
                 }
             }

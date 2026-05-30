@@ -24,10 +24,10 @@ pub enum ParamVal {
 impl duckdb::ToSql for ParamVal {
     fn to_sql(&self) -> duckdb::Result<duckdb::types::ToSqlOutput<'_>> {
         match self {
-            ParamVal::Text(s)  => s.to_sql(),
-            ParamVal::Int(i)   => i.to_sql(),
+            ParamVal::Text(s) => s.to_sql(),
+            ParamVal::Int(i) => i.to_sql(),
             ParamVal::Float(f) => f.to_sql(),
-            ParamVal::Bool(b)  => b.to_sql(),
+            ParamVal::Bool(b) => b.to_sql(),
         }
     }
 }
@@ -36,9 +36,13 @@ fn json_to_param(v: &JsonValue) -> Result<ParamVal, AppError> {
     match v {
         JsonValue::String(s) => Ok(ParamVal::Text(s.clone())),
         JsonValue::Number(n) => {
-            if let Some(i) = n.as_i64()      { Ok(ParamVal::Int(i)) }
-            else if let Some(f) = n.as_f64() { Ok(ParamVal::Float(f)) }
-            else                              { Err(AppError::InvalidValue(n.to_string())) }
+            if let Some(i) = n.as_i64() {
+                Ok(ParamVal::Int(i))
+            } else if let Some(f) = n.as_f64() {
+                Ok(ParamVal::Float(f))
+            } else {
+                Err(AppError::InvalidValue(n.to_string()))
+            }
         }
         JsonValue::Bool(b) => Ok(ParamVal::Bool(*b)),
         other => Err(AppError::InvalidValue(format!("unsupported type: {other}"))),
@@ -85,7 +89,10 @@ fn group_json_obj_pairs(schema: &DatasetSchema, plan: &AggPlan) -> String {
             .map(|c| c.logical.needs_cast())
             .unwrap_or(false);
         if needs_cast {
-            parts.push(format!("'{}', CAST({q} AS VARCHAR)", name.replace('\'', "''")));
+            parts.push(format!(
+                "'{}', CAST({q} AS VARCHAR)",
+                name.replace('\'', "''")
+            ));
         } else {
             parts.push(format!("'{}', {q}", name.replace('\'', "''")));
         }
@@ -109,10 +116,13 @@ fn agg_select_list(plan: &AggPlan) -> String {
     for a in &plan.aggs {
         let expr = match (a.op, a.col.as_deref()) {
             (AggOp::Count, None) => "COUNT(*)".to_string(),
-            (op, Some(c))        => format!("{}({})", op.as_sql(), DatasetSchema::quote_ident(c)),
+            (op, Some(c)) => format!("{}({})", op.as_sql(), DatasetSchema::quote_ident(c)),
             _ => unreachable!(),
         };
-        parts.push(format!("{expr} AS {}", DatasetSchema::quote_ident(&a.alias)));
+        parts.push(format!(
+            "{expr} AS {}",
+            DatasetSchema::quote_ident(&a.alias)
+        ));
     }
     parts.join(", ")
 }
@@ -130,7 +140,9 @@ fn stream_as_json_array(
     let mut first = true;
     while let Some(row) = rows.next()? {
         let obj: String = row.get(0)?;
-        if !first { buf.push(','); }
+        if !first {
+            buf.push(',');
+        }
         buf.push_str(&obj);
         first = false;
     }
@@ -144,7 +156,11 @@ fn build_where<S: AsRef<str>>(conditions: &[S]) -> String {
     } else {
         format!(
             " WHERE {}",
-            conditions.iter().map(|c| c.as_ref()).collect::<Vec<_>>().join(" AND ")
+            conditions
+                .iter()
+                .map(|c| c.as_ref())
+                .collect::<Vec<_>>()
+                .join(" AND ")
         )
     }
 }
@@ -154,22 +170,27 @@ fn build_where<S: AsRef<str>>(conditions: &[S]) -> String {
 // ---------------------------------------------------------------------------
 
 pub struct DatasetRepository<'a> {
-    conn:   &'a Connection,
+    conn: &'a Connection,
     schema: &'a DatasetSchema,
+    max_page_size: u64,
 }
 
 impl<'a> DatasetRepository<'a> {
-    pub fn new(conn: &'a Connection, schema: &'a DatasetSchema) -> Self {
-        Self { conn, schema }
+    pub fn new(conn: &'a Connection, schema: &'a DatasetSchema, max_page_size: u64) -> Self {
+        Self {
+            conn,
+            schema,
+            max_page_size: max_page_size.max(1),
+        }
     }
 
     pub fn query(&self, req: &QueryRequest) -> Result<String, AppError> {
         let agg_plan = req.agg_plan(self.schema)?;
 
-        let (limit, offset) = req.effective_limit_offset(1_000_000);
+        let (limit, offset) = req.effective_limit_offset(self.max_page_size);
 
-        let mut conditions: Vec<String>   = Vec::new();
-        let mut bind_vals:  Vec<ParamVal> = Vec::new();
+        let mut conditions: Vec<String> = Vec::new();
+        let mut bind_vals: Vec<ParamVal> = Vec::new();
 
         for pred in &req.predicates {
             self.apply_predicate(pred, &mut conditions, &mut bind_vals)?;
@@ -178,7 +199,7 @@ impl<'a> DatasetRepository<'a> {
         let where_clause = build_where(&conditions);
         let order_clause = match req.order_by_sql(self.schema, agg_plan.as_ref())? {
             Some(s) => format!(" ORDER BY {s}"),
-            None    => String::new(),
+            None => String::new(),
         };
         let table = DatasetSchema::quote_ident(&self.schema.name);
 
@@ -190,7 +211,9 @@ impl<'a> DatasetRepository<'a> {
             // would hide them from the outer scope and DuckDB would reject
             // `ORDER BY <alias>`.
             let inner_select = agg_select_list(plan);
-            let group_by = plan.group_cols.iter()
+            let group_by = plan
+                .group_cols
+                .iter()
                 .map(|c| DatasetSchema::quote_ident(c))
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -212,8 +235,13 @@ impl<'a> DatasetRepository<'a> {
             let projection: String = if req.columns.is_empty() {
                 "*".into()
             } else {
-                req.columns.iter()
-                    .map(|n| self.schema.find(n).map(|c| DatasetSchema::quote_ident(&c.name)))
+                req.columns
+                    .iter()
+                    .map(|n| {
+                        self.schema
+                            .find(n)
+                            .map(|c| DatasetSchema::quote_ident(&c.name))
+                    })
                     .collect::<Result<Vec<_>, _>>()?
                     .join(", ")
             };
@@ -265,15 +293,19 @@ impl<'a> DatasetRepository<'a> {
         } else {
             req.columns
                 .iter()
-                .map(|n| self.schema.find(n).map(|c| DatasetSchema::quote_ident(&c.name)))
+                .map(|n| {
+                    self.schema
+                        .find(n)
+                        .map(|c| DatasetSchema::quote_ident(&c.name))
+                })
                 .collect::<Result<Vec<_>, _>>()?
                 .join(", ")
         };
 
-        let (limit, offset) = req.effective_limit_offset(1_000_000);
+        let (limit, offset) = req.effective_limit_offset(self.max_page_size);
 
-        let mut conditions: Vec<String>   = Vec::new();
-        let mut bind_vals:  Vec<ParamVal> = Vec::new();
+        let mut conditions: Vec<String> = Vec::new();
+        let mut bind_vals: Vec<ParamVal> = Vec::new();
         for pred in &req.predicates {
             self.apply_predicate(pred, &mut conditions, &mut bind_vals)?;
         }
@@ -282,7 +314,8 @@ impl<'a> DatasetRepository<'a> {
         let group_clause = match &agg_plan {
             Some(p) => format!(
                 " GROUP BY {}",
-                p.group_cols.iter()
+                p.group_cols
+                    .iter()
                     .map(|c| DatasetSchema::quote_ident(c))
                     .collect::<Vec<_>>()
                     .join(", "),
@@ -291,7 +324,7 @@ impl<'a> DatasetRepository<'a> {
         };
         let order_clause = match req.order_by_sql(self.schema, agg_plan.as_ref())? {
             Some(s) => format!(" ORDER BY {s}"),
-            None    => String::new(),
+            None => String::new(),
         };
         let table = DatasetSchema::quote_ident(&self.schema.name);
 
@@ -307,7 +340,7 @@ impl<'a> DatasetRepository<'a> {
             )
         };
 
-        let mut stmt   = self.conn.prepare(&sql)?;
+        let mut stmt = self.conn.prepare(&sql)?;
         let arrow_iter = stmt.query_arrow(params_from_iter(bind_vals.iter()))?;
         let schema: Schema = (*arrow_iter.get_schema()).clone();
         let batches: Vec<RecordBatch> = arrow_iter.collect();
@@ -329,14 +362,14 @@ impl<'a> DatasetRepository<'a> {
 
     /// Return the number of rows matching `predicates` (empty = all rows).
     pub fn count(&self, predicates: &[Predicate]) -> Result<i64, AppError> {
-        let mut conditions: Vec<String>   = Vec::new();
-        let mut bind_vals:  Vec<ParamVal> = Vec::new();
+        let mut conditions: Vec<String> = Vec::new();
+        let mut bind_vals: Vec<ParamVal> = Vec::new();
         for pred in predicates {
             self.apply_predicate(pred, &mut conditions, &mut bind_vals)?;
         }
         let where_clause = build_where(&conditions);
         let table = DatasetSchema::quote_ident(&self.schema.name);
-        let sql   = format!("SELECT COUNT(*) FROM {table}{where_clause}");
+        let sql = format!("SELECT COUNT(*) FROM {table}{where_clause}");
 
         let mut stmt = self.conn.prepare(&sql)?;
         let n: i64 = stmt.query_row(params_from_iter(bind_vals.iter()), |r| r.get(0))?;
@@ -360,23 +393,32 @@ impl<'a> DatasetRepository<'a> {
 
     fn apply_predicate(
         &self,
-        pred:       &Predicate,
+        pred: &Predicate,
         conditions: &mut Vec<String>,
-        bind_vals:  &mut Vec<ParamVal>,
+        bind_vals: &mut Vec<ParamVal>,
     ) -> Result<(), AppError> {
         let col = self.schema.find(&pred.col)?;
         let cref = DatasetSchema::quote_ident(&col.name);
 
         match pred.op.as_str() {
-            "is_null"     => { conditions.push(format!("{cref} IS NULL")); }
-            "is_not_null" => { conditions.push(format!("{cref} IS NOT NULL")); }
+            "is_null" => {
+                conditions.push(format!("{cref} IS NULL"));
+            }
+            "is_not_null" => {
+                conditions.push(format!("{cref} IS NOT NULL"));
+            }
             "in" => {
-                let arr = pred.val.as_ref()
+                let arr = pred
+                    .val
+                    .as_ref()
                     .and_then(|v| v.as_array())
                     .filter(|a| !a.is_empty())
-                    .ok_or_else(|| AppError::InvalidValue(
-                        format!("'in' requires a non-empty array for column {}", col.name),
-                    ))?;
+                    .ok_or_else(|| {
+                        AppError::InvalidValue(format!(
+                            "'in' requires a non-empty array for column {}",
+                            col.name
+                        ))
+                    })?;
                 let placeholders = arr.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
                 conditions.push(format!("{cref} IN ({placeholders})"));
                 for v in arr {
@@ -385,19 +427,22 @@ impl<'a> DatasetRepository<'a> {
             }
             op => {
                 let sql_op = match op {
-                    "eq"    => "=",
-                    "neq"   => "<>",
-                    "gt"    => ">",
-                    "gte"   => ">=",
-                    "lt"    => "<",
-                    "lte"   => "<=",
-                    "like"  => "LIKE",
+                    "eq" => "=",
+                    "neq" => "<>",
+                    "gt" => ">",
+                    "gte" => ">=",
+                    "lt" => "<",
+                    "lte" => "<=",
+                    "like" => "LIKE",
                     "ilike" => "ILIKE",
-                    other   => return Err(AppError::UnknownOperator(other.into())),
+                    other => return Err(AppError::UnknownOperator(other.into())),
                 };
-                let val = pred.val.as_ref().ok_or_else(|| AppError::InvalidValue(
-                    format!("operator '{op}' requires a value for column {}", col.name),
-                ))?;
+                let val = pred.val.as_ref().ok_or_else(|| {
+                    AppError::InvalidValue(format!(
+                        "operator '{op}' requires a value for column {}",
+                        col.name
+                    ))
+                })?;
                 conditions.push(format!("{cref} {sql_op} ?"));
                 bind_vals.push(json_to_param(val)?);
             }

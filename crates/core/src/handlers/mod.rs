@@ -39,6 +39,20 @@ pub mod v1;
 /// Convenience alias — every handler extracts the backend through this.
 pub type BackendData = web::Data<Arc<dyn Backend>>;
 
+/// Query-related limits copied from `[server]` config into Actix app data.
+#[derive(Debug, Clone, Copy)]
+pub struct QueryLimits {
+    pub max_page_size: u64,
+}
+
+impl Default for QueryLimits {
+    fn default() -> Self {
+        Self {
+            max_page_size: 1_000_000,
+        }
+    }
+}
+
 /// MIME type used for Arrow IPC stream responses.
 pub const ARROW_IPC_MIME: &str = "application/vnd.apache.arrow.stream";
 
@@ -69,7 +83,9 @@ pub async fn readyz(backend: BackendData) -> HttpResponse {
             .body(r#"{"status":"not ready","reason":"no datasets registered"}"#)
     } else {
         let body = format!(r#"{{"status":"ready","datasets":{}}}"#, names.len());
-        HttpResponse::Ok().content_type("application/json").body(body)
+        HttpResponse::Ok()
+            .content_type("application/json")
+            .body(body)
     }
 }
 
@@ -82,26 +98,26 @@ pub async fn readyz(backend: BackendData) -> HttpResponse {
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct BuildInfo {
     /// Crate name (e.g. `"datapress-core"`).
-    pub name:        &'static str,
+    pub name: &'static str,
     /// Crate version from `CARGO_PKG_VERSION` (e.g. `"0.1.17"`).
-    pub version:     &'static str,
+    pub version: &'static str,
     /// Human-readable backend label — `"DuckDB"` or `"DataFusion"`.
-    pub backend:     &'static str,
+    pub backend: &'static str,
     /// Git commit SHA the binary was built from. `None` when
     /// `DATAPRESS_GIT_SHA` was not set at build time.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub git_sha:     Option<&'static str>,
+    pub git_sha: Option<&'static str>,
     /// ISO-8601 build timestamp. `None` when `DATAPRESS_BUILD_TIME`
     /// was not set at build time.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub build_time:  Option<&'static str>,
+    pub build_time: Option<&'static str>,
     /// `"debug"` or `"release"`, derived from `cfg!(debug_assertions)`.
-    pub profile:     &'static str,
+    pub profile: &'static str,
     /// Rust target triple the binary was built for (e.g.
     /// `"aarch64-apple-darwin"`). `None` when `DATAPRESS_TARGET` was
     /// not set at build time.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub target:      Option<&'static str>,
+    pub target: Option<&'static str>,
 }
 
 impl BuildInfo {
@@ -110,13 +126,17 @@ impl BuildInfo {
     /// they are; this crate doesn't).
     pub fn new(backend: &'static str) -> Self {
         Self {
-            name:       env!("CARGO_PKG_NAME"),
-            version:    env!("CARGO_PKG_VERSION"),
+            name: env!("CARGO_PKG_NAME"),
+            version: env!("CARGO_PKG_VERSION"),
             backend,
-            git_sha:    option_env!("DATAPRESS_GIT_SHA"),
+            git_sha: option_env!("DATAPRESS_GIT_SHA"),
             build_time: option_env!("DATAPRESS_BUILD_TIME"),
-            profile:    if cfg!(debug_assertions) { "debug" } else { "release" },
-            target:     option_env!("DATAPRESS_TARGET"),
+            profile: if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            },
+            target: option_env!("DATAPRESS_TARGET"),
         }
     }
 }
@@ -142,8 +162,14 @@ pub(crate) fn wants_arrow(http: &HttpRequest) -> bool {
     http.headers()
         .get(actix_web::http::header::ACCEPT)
         .and_then(|h| h.to_str().ok())
-        .map(|s| s.split(',').any(|part| {
-            part.split(';').next().unwrap_or("").trim().eq_ignore_ascii_case(ARROW_IPC_MIME)
-        }))
+        .map(|s| {
+            s.split(',').any(|part| {
+                part.split(';')
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .eq_ignore_ascii_case(ARROW_IPC_MIME)
+            })
+        })
         .unwrap_or(false)
 }

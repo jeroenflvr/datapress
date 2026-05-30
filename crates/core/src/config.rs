@@ -43,15 +43,15 @@ const RESERVED_MOUNTS: &[&str] = &[
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
-    pub server:   ServerConfig,
+    pub server: ServerConfig,
     #[serde(default)]
-    pub docs:     DocsConfig,
+    pub docs: DocsConfig,
     #[serde(default)]
-    pub swagger:  SwaggerConfig,
+    pub swagger: SwaggerConfig,
     #[serde(default)]
-    pub metrics:  MetricsConfig,
+    pub metrics: MetricsConfig,
     #[serde(default)]
-    pub auth:     AuthConfig,
+    pub auth: AuthConfig,
     #[serde(rename = "dataset", default)]
     pub datasets: Vec<DatasetConfig>,
 }
@@ -63,9 +63,9 @@ pub struct ServerConfig {
     pub backend: Backend,
     /// Listen address. Defaults to loopback (127.0.0.1) — explicitly opt in
     /// to 0.0.0.0 if you want to expose the port.
-    pub listen:  IpAddr,
+    pub listen: IpAddr,
     /// TCP port.
-    pub port:    u16,
+    pub port: u16,
     /// Number of actix worker threads. `None` (= unset) → one per CPU.
     pub workers: Option<usize>,
     /// Optional URL path prefix — useful when sitting behind a reverse
@@ -73,7 +73,7 @@ pub struct ServerConfig {
     /// route is mounted under this prefix (so the proxy can pass the URL
     /// through unchanged). Must start with `/` and not end with `/`; the
     /// empty string (default) means no prefix.
-    pub prefix:  String,
+    pub prefix: String,
     /// Negotiate response compression (gzip / brotli / zstd) via the
     /// `Accept-Encoding` request header. Enabled by default. Disable when
     /// running behind a proxy that already compresses, or when the extra
@@ -84,6 +84,10 @@ pub struct ServerConfig {
     /// Default `1 MiB`. Most query bodies are well under 10 KiB; this is
     /// a DoS guard, not a tuning knob.
     pub max_body_bytes: usize,
+    /// Maximum rows returned by a single `/query` page. Larger
+    /// `page_size` values are clamped before the backend runs.
+    /// Default `1_000_000`.
+    pub max_page_size: u64,
     /// Per-request handler timeout, in milliseconds. If a handler hasn't
     /// produced a response within this budget the request is aborted with
     /// `504 Gateway Timeout`. Default `30_000` (30 s). Set `0` to disable.
@@ -99,12 +103,13 @@ impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             backend: Backend::default(),
-            listen:  IpAddr::from([127, 0, 0, 1]),
-            port:    8080,
+            listen: IpAddr::from([127, 0, 0, 1]),
+            port: 8080,
             workers: None,
-            prefix:  String::new(),
+            prefix: String::new(),
             compress: true,
-            max_body_bytes:     1024 * 1024,
+            max_body_bytes: 1024 * 1024,
+            max_page_size: 1_000_000,
             request_timeout_ms: 30_000,
             shutdown_timeout_secs: 30,
         }
@@ -132,14 +137,14 @@ pub enum Backend {
 #[serde(default, deny_unknown_fields)]
 pub struct DocsConfig {
     pub enabled: bool,
-    pub path:    String,
+    pub path: String,
 }
 
 impl Default for DocsConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            path:    "/mkdocs".into(),
+            path: "/mkdocs".into(),
         }
     }
 }
@@ -164,16 +169,16 @@ impl Default for DocsConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct SwaggerConfig {
     pub enabled: bool,
-    pub path:    String,
-    pub oauth2:  Option<SwaggerOAuth2Config>,
+    pub path: String,
+    pub oauth2: Option<SwaggerOAuth2Config>,
 }
 
 impl Default for SwaggerConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            path:    "/docs".into(),
-            oauth2:  None,
+            path: "/docs".into(),
+            oauth2: None,
         }
     }
 }
@@ -233,14 +238,14 @@ pub struct SwaggerOAuth2Config {
 #[serde(default, deny_unknown_fields)]
 pub struct MetricsConfig {
     pub enabled: bool,
-    pub path:    String,
+    pub path: String,
 }
 
 impl Default for MetricsConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            path:    "/metrics".into(),
+            path: "/metrics".into(),
         }
     }
 }
@@ -316,41 +321,40 @@ pub struct AuthConfig {
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
-            enabled:              false,
-            issuer:               String::new(),
-            audience:             String::new(),
-            read_scopes:          Vec::new(),
-            reload_scopes:        Vec::new(),
-            anonymous_read:       false,
-            start_degraded:       true,
-            algorithms:           vec!["RS256".into()],
-            leeway_secs:          60,
-            jwks_refresh_secs:    3600,
-            tenant_claim:         String::new(),
-            allowed_tenants:      Vec::new(),
+            enabled: false,
+            issuer: String::new(),
+            audience: String::new(),
+            read_scopes: Vec::new(),
+            reload_scopes: Vec::new(),
+            anonymous_read: false,
+            start_degraded: true,
+            algorithms: vec!["RS256".into()],
+            leeway_secs: 60,
+            jwks_refresh_secs: 3600,
+            tenant_claim: String::new(),
+            allowed_tenants: Vec::new(),
             admin_token_fallback: true,
         }
     }
 }
 
-
 impl Backend {
     pub fn as_str(self) -> &'static str {
         match self {
             Backend::Datafusion => "datafusion",
-            Backend::Duckdb     => "duckdb",
+            Backend::Duckdb => "duckdb",
         }
     }
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct DatasetConfig {
-    pub name:   String,
+    pub name: String,
     pub source: SourceConfig,
     #[serde(default)]
-    pub s3:     Option<S3Config>,
+    pub s3: Option<S3Config>,
     #[serde(default)]
-    pub index:  IndexConfig,
+    pub index: IndexConfig,
     /// Optional column projection applied at load time. When non-empty,
     /// only the listed columns are read from the parquet/delta source —
     /// every other column is skipped entirely (no decode, no allocation,
@@ -372,14 +376,16 @@ pub struct DatasetConfig {
     /// for bounded memory use on large / multi-file sources. Currently
     /// honoured by the DataFusion backend for local parquet.
     #[serde(default)]
-    pub lazy:   bool,
+    pub lazy: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SourceConfig {
-    pub kind:     SourceKind,
+    pub kind: SourceKind,
     /// Either a local filesystem path or an `s3://bucket/key` URL.
     pub location: String,
 }
@@ -396,7 +402,7 @@ impl SourceKind {
     pub fn as_str(self) -> &'static str {
         match self {
             SourceKind::Parquet => "parquet",
-            SourceKind::Delta   => "delta",
+            SourceKind::Delta => "delta",
         }
     }
 }
@@ -406,31 +412,31 @@ impl SourceKind {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct S3Config {
-    pub region:           Option<String>,
+    pub region: Option<String>,
     /// Custom endpoint (MinIO, R2, Wasabi, LocalStack, …). Omit for AWS.
-    pub endpoint:         Option<String>,
+    pub endpoint: Option<String>,
     /// `virtual` (default — `bucket.host`) or `path` (`host/bucket/`).
     /// MinIO and most non-AWS providers require `path`.
     pub addressing_style: AddressingStyle,
     /// Allow plain-HTTP endpoints. Required for local MinIO over `http://…`.
-    pub allow_http:       bool,
+    pub allow_http: bool,
     /// Inline credentials. Strongly discouraged in production — prefer env
     /// vars (see module docs).
-    pub access_key_id:     Option<String>,
+    pub access_key_id: Option<String>,
     pub secret_access_key: Option<String>,
-    pub session_token:     Option<String>,
+    pub session_token: Option<String>,
 }
 
 impl Default for S3Config {
     fn default() -> Self {
         Self {
-            region:            None,
-            endpoint:          None,
-            addressing_style:  AddressingStyle::Virtual,
-            allow_http:        false,
-            access_key_id:     None,
+            region: None,
+            endpoint: None,
+            addressing_style: AddressingStyle::Virtual,
+            allow_http: false,
+            access_key_id: None,
             secret_access_key: None,
-            session_token:     None,
+            session_token: None,
         }
     }
 }
@@ -447,7 +453,7 @@ impl AddressingStyle {
     pub fn as_str(self) -> &'static str {
         match self {
             AddressingStyle::Virtual => "virtual",
-            AddressingStyle::Path    => "path",
+            AddressingStyle::Path => "path",
         }
     }
 }
@@ -455,16 +461,16 @@ impl AddressingStyle {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct IndexConfig {
-    pub mode:            IndexMode,
-    pub columns:         Vec<String>,
+    pub mode: IndexMode,
+    pub columns: Vec<String>,
     pub max_cardinality: usize,
 }
 
 impl Default for IndexConfig {
     fn default() -> Self {
         Self {
-            mode:            IndexMode::Auto,
-            columns:         Vec::new(),
+            mode: IndexMode::Auto,
+            columns: Vec::new(),
             max_cardinality: 100_000,
         }
     }
@@ -483,9 +489,9 @@ pub enum IndexMode {
 /// provider chain figure it out".
 #[derive(Debug, Clone, Default)]
 pub struct ResolvedCreds {
-    pub access_key_id:     Option<String>,
+    pub access_key_id: Option<String>,
     pub secret_access_key: Option<String>,
-    pub session_token:     Option<String>,
+    pub session_token: Option<String>,
 }
 
 impl ResolvedCreds {
@@ -503,8 +509,8 @@ impl AppConfig {
     pub fn load(path: &str) -> Result<Self, AppError> {
         let raw = std::fs::read_to_string(path)
             .map_err(|e| AppError::Internal(format!("failed to read {path}: {e}")))?;
-        let cfg: AppConfig = toml::from_str(&raw)
-            .map_err(|e| AppError::Internal(format!("invalid {path}: {e}")))?;
+        let cfg: AppConfig =
+            toml::from_str(&raw).map_err(|e| AppError::Internal(format!("invalid {path}: {e}")))?;
         cfg.validate()?;
         Ok(cfg)
     }
@@ -660,13 +666,14 @@ impl AppConfig {
             }
             for alg in &a.algorithms {
                 match alg.as_str() {
-                    "RS256" | "RS384" | "RS512"
-                  | "ES256" | "ES384"
-                  | "PS256" | "PS384" | "PS512" => {},
-                    other => return Err(AppError::Internal(format!(
-                        "auth.algorithms[{other}] is not allowed; pick one of \
+                    "RS256" | "RS384" | "RS512" | "ES256" | "ES384" | "PS256" | "PS384"
+                    | "PS512" => {}
+                    other => {
+                        return Err(AppError::Internal(format!(
+                            "auth.algorithms[{other}] is not allowed; pick one of \
                          RS256/RS384/RS512, ES256/ES384, PS256/PS384/PS512"
-                    ))),
+                        )));
+                    }
                 }
             }
             if a.algorithms.is_empty() {
@@ -683,7 +690,8 @@ impl AppConfig {
             if !a.allowed_tenants.is_empty() && a.tenant_claim.is_empty() {
                 return Err(AppError::Internal(
                     "auth.allowed_tenants is set but auth.tenant_claim is empty — \
-                     can't enforce a tenant allow-list without a claim to extract from".into(),
+                     can't enforce a tenant allow-list without a claim to extract from"
+                        .into(),
                 ));
             }
         }
@@ -697,12 +705,14 @@ impl AppConfig {
                 )));
             }
             if d.name.is_empty() {
-                return Err(AppError::Internal(
-                    "dataset name must not be empty".into(),
-                ));
+                return Err(AppError::Internal("dataset name must not be empty".into()));
             }
             // URL-safe: alphanum + _ - .
-            if !d.name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.')) {
+            if !d
+                .name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+            {
                 return Err(AppError::Internal(format!(
                     "dataset name '{}' must be alphanumeric (plus _ - .)",
                     d.name
@@ -735,8 +745,10 @@ impl AppConfig {
                 // list up front; for delta we only check that the directory
                 // exists (delta has its own layout — _delta_log/, …).
                 match d.source.kind {
-                    SourceKind::Parquet => { d.resolve_local_parquet_files()?; }
-                    SourceKind::Delta   => {
+                    SourceKind::Parquet => {
+                        d.resolve_local_parquet_files()?;
+                    }
+                    SourceKind::Delta => {
                         let p = Path::new(&d.source.location);
                         if !p.exists() {
                             return Err(AppError::Internal(format!(
@@ -759,17 +771,18 @@ impl SourceConfig {
 
     /// Returns `(bucket, key_prefix_or_empty)` for an `s3://…` location.
     pub fn s3_bucket(&self) -> Result<(&str, &str), AppError> {
-        let rest = self.location.strip_prefix("s3://")
-            .ok_or_else(|| AppError::Internal(format!(
-                "not an s3:// URL: {}", self.location
-            )))?;
+        let rest = self
+            .location
+            .strip_prefix("s3://")
+            .ok_or_else(|| AppError::Internal(format!("not an s3:// URL: {}", self.location)))?;
         let (bucket, key) = match rest.split_once('/') {
             Some((b, k)) => (b, k),
-            None         => (rest, ""),
+            None => (rest, ""),
         };
         if bucket.is_empty() {
             return Err(AppError::Internal(format!(
-                "s3 URL missing bucket: {}", self.location
+                "s3 URL missing bucket: {}",
+                self.location
             )));
         }
         Ok((bucket, key))
@@ -798,12 +811,16 @@ impl DatasetConfig {
         // Glob pattern? Expand and require at least one match.
         if loc.contains('*') || loc.contains('?') || loc.contains('[') {
             let mut files: Vec<PathBuf> = glob::glob(loc)
-                .map_err(|e| AppError::Internal(format!(
-                    "dataset '{}': bad glob pattern '{loc}': {e}", self.name
-                )))?
+                .map_err(|e| {
+                    AppError::Internal(format!(
+                        "dataset '{}': bad glob pattern '{loc}': {e}",
+                        self.name
+                    ))
+                })?
                 .filter_map(|r| r.ok())
-                .filter(|p| p.is_file()
-                    && p.extension().and_then(|e| e.to_str()) == Some("parquet"))
+                .filter(|p| {
+                    p.is_file() && p.extension().and_then(|e| e.to_str()) == Some("parquet")
+                })
                 .collect();
             files.sort();
             if files.is_empty() {
@@ -818,7 +835,8 @@ impl DatasetConfig {
         let path = Path::new(loc);
         if !path.exists() {
             return Err(AppError::Internal(format!(
-                "dataset '{}': source path does not exist: {loc}", self.name
+                "dataset '{}': source path does not exist: {loc}",
+                self.name
             )));
         }
 
@@ -853,7 +871,13 @@ impl DatasetConfig {
     pub fn env_prefix(&self) -> String {
         self.name
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_uppercase() } else { '_' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() {
+                    c.to_ascii_uppercase()
+                } else {
+                    '_'
+                }
+            })
             .collect()
     }
 
@@ -864,13 +888,12 @@ impl DatasetConfig {
     pub fn resolved_creds(&self) -> ResolvedCreds {
         let prefix = self.env_prefix();
         let from_env = |suffix: &str| {
-            std::env::var(format!("{prefix}_{suffix}")).ok()
+            std::env::var(format!("{prefix}_{suffix}"))
+                .ok()
                 .filter(|s| !s.is_empty())
         };
         let inline = self.s3.as_ref();
-        let plain_env = |k: &str| {
-            std::env::var(k).ok().filter(|s| !s.is_empty())
-        };
+        let plain_env = |k: &str| std::env::var(k).ok().filter(|s| !s.is_empty());
 
         ResolvedCreds {
             access_key_id: from_env("AWS_ACCESS_KEY_ID")
@@ -889,11 +912,16 @@ impl DatasetConfig {
     /// → inline → `AWS_REGION` → `AWS_DEFAULT_REGION` → `us-east-1`.
     pub fn resolved_region(&self) -> String {
         let prefix = self.env_prefix();
-        std::env::var(format!("{prefix}_AWS_REGION")).ok()
+        std::env::var(format!("{prefix}_AWS_REGION"))
+            .ok()
             .filter(|s| !s.is_empty())
             .or_else(|| self.s3.as_ref().and_then(|s| s.region.clone()))
             .or_else(|| std::env::var("AWS_REGION").ok().filter(|s| !s.is_empty()))
-            .or_else(|| std::env::var("AWS_DEFAULT_REGION").ok().filter(|s| !s.is_empty()))
+            .or_else(|| {
+                std::env::var("AWS_DEFAULT_REGION")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+            })
             .unwrap_or_else(|| "us-east-1".to_string())
     }
 }
@@ -909,6 +937,7 @@ mod tests {
         assert_eq!(s.port, 8080);
         assert!(s.compress);
         assert_eq!(s.max_body_bytes, 1024 * 1024);
+        assert_eq!(s.max_page_size, 1_000_000);
         assert_eq!(s.request_timeout_ms, 30_000);
         assert_eq!(s.prefix, "");
         assert!(s.listen.is_loopback());
@@ -923,6 +952,7 @@ mod tests {
             prefix = "/datapress"
             compress = false
             max_body_bytes = 4096
+            max_page_size = 50000
             request_timeout_ms = 0
             [[dataset]]
             name = "x"
@@ -935,6 +965,7 @@ mod tests {
         assert_eq!(cfg.server.prefix, "/datapress");
         assert!(!cfg.server.compress);
         assert_eq!(cfg.server.max_body_bytes, 4096);
+        assert_eq!(cfg.server.max_page_size, 50_000);
         assert_eq!(cfg.server.request_timeout_ms, 0);
         assert_eq!(cfg.datasets.len(), 1);
         assert_eq!(cfg.datasets[0].name, "x");
@@ -946,11 +977,14 @@ mod tests {
         let bad = ["no-leading-slash", "/trailing/"];
         for p in bad {
             let cfg = AppConfig {
-                server: ServerConfig { prefix: p.to_string(), ..Default::default() },
-                docs:     DocsConfig::default(),
-                swagger:  SwaggerConfig::default(),
-                metrics:  MetricsConfig::default(),
-                auth:     AuthConfig::default(),
+                server: ServerConfig {
+                    prefix: p.to_string(),
+                    ..Default::default()
+                },
+                docs: DocsConfig::default(),
+                swagger: SwaggerConfig::default(),
+                metrics: MetricsConfig::default(),
+                auth: AuthConfig::default(),
                 datasets: vec![],
             };
             assert!(cfg.validate().is_err(), "prefix {p:?} should fail");
@@ -961,10 +995,10 @@ mod tests {
     fn validate_rejects_no_datasets() {
         let cfg = AppConfig {
             server: ServerConfig::default(),
-            docs:     DocsConfig::default(),
-            swagger:  SwaggerConfig::default(),
-            metrics:  MetricsConfig::default(),
-            auth:     AuthConfig::default(),
+            docs: DocsConfig::default(),
+            swagger: SwaggerConfig::default(),
+            metrics: MetricsConfig::default(),
+            auth: AuthConfig::default(),
             datasets: vec![],
         };
         let err = cfg.validate().unwrap_err();
@@ -973,12 +1007,15 @@ mod tests {
 
     #[test]
     fn validate_rejects_bad_dataset_name() {
-        let cfg: AppConfig = toml::from_str(r#"
+        let cfg: AppConfig = toml::from_str(
+            r#"
             [[dataset]]
             name = "bad name!"
             source.kind = "parquet"
             source.location = "/tmp/whatever"
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         let err = cfg.validate().unwrap_err();
         assert!(matches!(err, AppError::Internal(m) if m.contains("alphanumeric")));
     }
@@ -986,16 +1023,15 @@ mod tests {
     #[test]
     fn validate_rejects_duplicate_names() {
         use std::io::Write;
-        let dir = std::env::temp_dir().join(format!(
-            "dp-dup-test-{}", std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("dp-dup-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let f = dir.join("a.parquet");
         std::fs::File::create(&f).unwrap().write_all(b"x").unwrap();
         let path = f.to_str().unwrap();
 
-        let cfg: AppConfig = toml::from_str(&format!(r#"
+        let cfg: AppConfig = toml::from_str(&format!(
+            r#"
             [[dataset]]
             name = "a"
             source.kind = "parquet"
@@ -1004,7 +1040,9 @@ mod tests {
             name = "a"
             source.kind = "parquet"
             source.location = "{path}"
-        "#)).unwrap();
+        "#
+        ))
+        .unwrap();
         let err = cfg.validate().expect_err("expected error");
         assert!(matches!(err, AppError::Internal(m) if m.contains("duplicate")));
 
@@ -1013,7 +1051,10 @@ mod tests {
 
     #[test]
     fn s3_bucket_parsing() {
-        let mk = |loc: &str| SourceConfig { kind: SourceKind::Parquet, location: loc.into() };
+        let mk = |loc: &str| SourceConfig {
+            kind: SourceKind::Parquet,
+            location: loc.into(),
+        };
         let s1 = mk("s3://bucket/path/key");
         assert_eq!(s1.s3_bucket().unwrap(), ("bucket", "path/key"));
         let s2 = mk("s3://only-bucket");
@@ -1026,24 +1067,25 @@ mod tests {
     fn env_prefix_sanitises_name() {
         let mk = |name: &str| DatasetConfig {
             name: name.into(),
-            source: SourceConfig { kind: SourceKind::Parquet, location: "x".into() },
+            source: SourceConfig {
+                kind: SourceKind::Parquet,
+                location: "x".into(),
+            },
             s3: None,
             index: IndexConfig::default(),
             columns: vec![],
             dict_encode: true,
             lazy: false,
         };
-        assert_eq!(mk("accidents").env_prefix(),  "ACCIDENTS");
+        assert_eq!(mk("accidents").env_prefix(), "ACCIDENTS");
         assert_eq!(mk("sales.eu-1").env_prefix(), "SALES_EU_1");
-        assert_eq!(mk("a_b.c-d").env_prefix(),    "A_B_C_D");
+        assert_eq!(mk("a_b.c-d").env_prefix(), "A_B_C_D");
     }
 
     #[test]
     fn resolve_local_parquet_single_file_and_dir() {
         use std::io::Write;
-        let dir = std::env::temp_dir().join(format!(
-            "dp-cfg-test-{}", std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("dp-cfg-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let f = dir.join("a.parquet");
@@ -1052,7 +1094,10 @@ mod tests {
 
         let mk = |loc: &str| DatasetConfig {
             name: "ds".into(),
-            source: SourceConfig { kind: SourceKind::Parquet, location: loc.into() },
+            source: SourceConfig {
+                kind: SourceKind::Parquet,
+                location: loc.into(),
+            },
             s3: None,
             index: IndexConfig::default(),
             columns: vec![],
@@ -1061,15 +1106,23 @@ mod tests {
         };
 
         // Direct file.
-        let files = mk(f.to_str().unwrap()).resolve_local_parquet_files().unwrap();
+        let files = mk(f.to_str().unwrap())
+            .resolve_local_parquet_files()
+            .unwrap();
         assert_eq!(files, vec![f.clone()]);
 
         // Directory.
-        let files = mk(dir.to_str().unwrap()).resolve_local_parquet_files().unwrap();
+        let files = mk(dir.to_str().unwrap())
+            .resolve_local_parquet_files()
+            .unwrap();
         assert_eq!(files, vec![f.clone()]);
 
         // Missing path.
-        assert!(mk("/no/such/place.parquet").resolve_local_parquet_files().is_err());
+        assert!(
+            mk("/no/such/place.parquet")
+                .resolve_local_parquet_files()
+                .is_err()
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

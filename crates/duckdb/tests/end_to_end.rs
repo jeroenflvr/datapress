@@ -18,7 +18,7 @@ use datapress_core::config::{
     AppConfig, DatasetConfig, IndexConfig, ServerConfig, SourceConfig, SourceKind,
 };
 use datapress_core::models::{Aggregation, CountRequest, OrderBy, Predicate, QueryRequest};
-use datapress_duckdb::db::{load_registry, Registry};
+use datapress_duckdb::db::{Registry, load_registry};
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -72,22 +72,22 @@ fn make_registry(parquet: &std::path::Path) -> Arc<Registry> {
 /// (file, directory, or glob) so tests can exercise multi-file datasets.
 fn make_registry_at(location: &str) -> Arc<Registry> {
     let cfg = AppConfig {
-        server:   ServerConfig::default(),
-        docs:     datapress_core::config::DocsConfig::default(),
-        swagger:  datapress_core::config::SwaggerConfig::default(),
-        auth:     datapress_core::config::AuthConfig::default(),
-        metrics:  datapress_core::config::MetricsConfig::default(),
+        server: ServerConfig::default(),
+        docs: datapress_core::config::DocsConfig::default(),
+        swagger: datapress_core::config::SwaggerConfig::default(),
+        auth: datapress_core::config::AuthConfig::default(),
+        metrics: datapress_core::config::MetricsConfig::default(),
         datasets: vec![DatasetConfig {
-            name:    "people".into(),
-            source:  SourceConfig {
-                kind:     SourceKind::Parquet,
+            name: "people".into(),
+            source: SourceConfig {
+                kind: SourceKind::Parquet,
                 location: location.to_string(),
             },
-            s3:          None,
-            index:       IndexConfig::default(),
-            columns:     vec![],
+            s3: None,
+            index: IndexConfig::default(),
+            columns: vec![],
             dict_encode: true,
-            lazy:        false,
+            lazy: false,
         }],
     };
     Arc::new(load_registry(&cfg).expect("load_registry"))
@@ -100,20 +100,23 @@ fn make_registry_at(location: &str) -> Arc<Registry> {
 /// inside the parquet files. Returns the dataset root `dir`.
 fn write_hive_dataset(dir: &std::path::Path) {
     for (city, rows) in [
-        ("NYC", "SELECT 1 AS id, 'Anna' AS name, 10.5 AS score
+        (
+            "NYC",
+            "SELECT 1 AS id, 'Anna' AS name, 10.5 AS score
                  UNION ALL SELECT 3, 'Cara', 30.0
-                 UNION ALL SELECT 4, 'Dan',  40.0"),
-        ("LA",  "SELECT 2 AS id, 'Bob' AS name, 20.0 AS score
-                 UNION ALL SELECT 5, 'Eve', 50.5"),
+                 UNION ALL SELECT 4, 'Dan',  40.0",
+        ),
+        (
+            "LA",
+            "SELECT 2 AS id, 'Bob' AS name, 20.0 AS score
+                 UNION ALL SELECT 5, 'Eve', 50.5",
+        ),
     ] {
         let part_dir = dir.join(format!("city={city}"));
         std::fs::create_dir_all(&part_dir).unwrap();
         let parquet = part_dir.join("part.parquet");
         let conn = duckdb::Connection::open_in_memory().unwrap();
-        let sql = format!(
-            "COPY ({rows}) TO '{}' (FORMAT PARQUET);",
-            parquet.display()
-        );
+        let sql = format!("COPY ({rows}) TO '{}' (FORMAT PARQUET);", parquet.display());
         conn.execute_batch(&sql).expect("write hive parquet");
     }
 }
@@ -148,7 +151,10 @@ async fn full_scan_returns_all_rows() {
     let reg = make_registry(&parquet);
 
     let mut req = empty_req();
-    req.order_by = vec![OrderBy { col: "id".into(), dir: Some("asc".into()) }];
+    req.order_by = vec![OrderBy {
+        col: "id".into(),
+        dir: Some("asc".into()),
+    }];
     let rows = parse_rows(&reg.query("people", &req).await.unwrap());
     assert_eq!(rows.len(), 5);
     assert_eq!(rows[0]["id"], Value::from(1));
@@ -162,18 +168,102 @@ async fn predicate_matrix() {
     let reg = make_registry(&parquet);
 
     let cases: Vec<(Predicate, usize)> = vec![
-        (Predicate { col: "name".into(),  op: "eq".into(),     val: Some("Bob".into()) }, 1),
-        (Predicate { col: "name".into(),  op: "neq".into(),    val: Some("Bob".into()) }, 4),
-        (Predicate { col: "id".into(),    op: "gt".into(),     val: Some(2.into())     }, 3),
-        (Predicate { col: "id".into(),    op: "gte".into(),    val: Some(2.into())     }, 4),
-        (Predicate { col: "id".into(),    op: "lt".into(),     val: Some(3.into())     }, 2),
-        (Predicate { col: "id".into(),    op: "lte".into(),    val: Some(3.into())     }, 3),
-        (Predicate { col: "name".into(),  op: "like".into(),   val: Some("A%".into())  }, 1),
-        (Predicate { col: "name".into(),  op: "ilike".into(),  val: Some("a%".into())  }, 1),
-        (Predicate { col: "city".into(),  op: "in".into(),     val: Some(serde_json::json!(["NYC", "LA"])) }, 5),
-        (Predicate { col: "city".into(),  op: "in".into(),     val: Some(serde_json::json!(["LA"]))        }, 2),
-        (Predicate { col: "score".into(), op: "is_null".into(),     val: None }, 1),
-        (Predicate { col: "score".into(), op: "is_not_null".into(), val: None }, 4),
+        (
+            Predicate {
+                col: "name".into(),
+                op: "eq".into(),
+                val: Some("Bob".into()),
+            },
+            1,
+        ),
+        (
+            Predicate {
+                col: "name".into(),
+                op: "neq".into(),
+                val: Some("Bob".into()),
+            },
+            4,
+        ),
+        (
+            Predicate {
+                col: "id".into(),
+                op: "gt".into(),
+                val: Some(2.into()),
+            },
+            3,
+        ),
+        (
+            Predicate {
+                col: "id".into(),
+                op: "gte".into(),
+                val: Some(2.into()),
+            },
+            4,
+        ),
+        (
+            Predicate {
+                col: "id".into(),
+                op: "lt".into(),
+                val: Some(3.into()),
+            },
+            2,
+        ),
+        (
+            Predicate {
+                col: "id".into(),
+                op: "lte".into(),
+                val: Some(3.into()),
+            },
+            3,
+        ),
+        (
+            Predicate {
+                col: "name".into(),
+                op: "like".into(),
+                val: Some("A%".into()),
+            },
+            1,
+        ),
+        (
+            Predicate {
+                col: "name".into(),
+                op: "ilike".into(),
+                val: Some("a%".into()),
+            },
+            1,
+        ),
+        (
+            Predicate {
+                col: "city".into(),
+                op: "in".into(),
+                val: Some(serde_json::json!(["NYC", "LA"])),
+            },
+            5,
+        ),
+        (
+            Predicate {
+                col: "city".into(),
+                op: "in".into(),
+                val: Some(serde_json::json!(["LA"])),
+            },
+            2,
+        ),
+        (
+            Predicate {
+                col: "score".into(),
+                op: "is_null".into(),
+                val: None,
+            },
+            1,
+        ),
+        (
+            Predicate {
+                col: "score".into(),
+                op: "is_not_null".into(),
+                val: None,
+            },
+            4,
+        ),
     ];
 
     for (pred, expected) in cases {
@@ -183,7 +273,8 @@ async fn predicate_matrix() {
         req.predicates = vec![pred];
         let rows = parse_rows(&reg.query("people", &req).await.unwrap());
         assert_eq!(
-            rows.len(), expected,
+            rows.len(),
+            expected,
             "predicate {op} on {col} returned {} rows (expected {expected})",
             rows.len()
         );
@@ -198,7 +289,9 @@ async fn unknown_column_is_rejected() {
 
     let mut req = empty_req();
     req.predicates = vec![Predicate {
-        col: "nope".into(), op: "eq".into(), val: Some(1.into()),
+        col: "nope".into(),
+        op: "eq".into(),
+        val: Some(1.into()),
     }];
     let err = reg.query("people", &req).await.expect_err("error");
     let msg = err.to_string();
@@ -211,12 +304,25 @@ async fn count_endpoint_matches_predicates() {
     let parquet = write_sample_parquet(tmp.path());
     let reg = make_registry(&parquet);
 
-    let n = reg.count("people", &CountRequest { predicates: vec![] }).await.unwrap();
+    let n = reg
+        .count("people", &CountRequest { predicates: vec![] })
+        .await
+        .unwrap();
     assert_eq!(n, 5);
 
-    let n = reg.count("people", &CountRequest {
-        predicates: vec![Predicate { col: "city".into(), op: "eq".into(), val: Some("NYC".into()) }],
-    }).await.unwrap();
+    let n = reg
+        .count(
+            "people",
+            &CountRequest {
+                predicates: vec![Predicate {
+                    col: "city".into(),
+                    op: "eq".into(),
+                    val: Some("NYC".into()),
+                }],
+            },
+        )
+        .await
+        .unwrap();
     assert_eq!(n, 3);
 }
 
@@ -229,12 +335,15 @@ async fn group_by_with_default_count_and_named_aggs() {
     // Implicit COUNT(*) AS count.
     let mut req = empty_req();
     req.group_by = vec!["city".into()];
-    req.order_by = vec![OrderBy { col: "city".into(), dir: Some("asc".into()) }];
+    req.order_by = vec![OrderBy {
+        col: "city".into(),
+        dir: Some("asc".into()),
+    }];
     let rows = parse_rows(&reg.query("people", &req).await.unwrap());
     assert_eq!(rows.len(), 2);
-    let la  = rows.iter().find(|r| r["city"] == "LA").unwrap();
+    let la = rows.iter().find(|r| r["city"] == "LA").unwrap();
     let nyc = rows.iter().find(|r| r["city"] == "NYC").unwrap();
-    assert_eq!(la["count"],  Value::from(2));
+    assert_eq!(la["count"], Value::from(2));
     assert_eq!(nyc["count"], Value::from(3));
 
     // Explicit SUM + AVG + MIN + MAX with custom alias, ordered by an
@@ -243,11 +352,26 @@ async fn group_by_with_default_count_and_named_aggs() {
     let mut req = empty_req();
     req.group_by = vec!["city".into()];
     req.aggregations = vec![
-        Aggregation { col: Some("score".into()), op: "sum".into(),   alias: Some("total".into()) },
-        Aggregation { col: Some("score".into()), op: "min".into(),   alias: None },
-        Aggregation { col: Some("score".into()), op: "max".into(),   alias: None },
+        Aggregation {
+            col: Some("score".into()),
+            op: "sum".into(),
+            alias: Some("total".into()),
+        },
+        Aggregation {
+            col: Some("score".into()),
+            op: "min".into(),
+            alias: None,
+        },
+        Aggregation {
+            col: Some("score".into()),
+            op: "max".into(),
+            alias: None,
+        },
     ];
-    req.order_by = vec![OrderBy { col: "total".into(), dir: Some("asc".into()) }];
+    req.order_by = vec![OrderBy {
+        col: "total".into(),
+        dir: Some("asc".into()),
+    }];
     let rows = parse_rows(&reg.query("people", &req).await.unwrap());
     assert_eq!(rows.len(), 2);
     // NYC has scores 10.5, NULL, 40.0 — sum = 50.5, min = 10.5, max = 40.0.
@@ -255,11 +379,11 @@ async fn group_by_with_default_count_and_named_aggs() {
     // Ordered by `total` ASC → NYC (50.5) before LA (70.5).
     assert_eq!(rows[0]["city"], Value::from("NYC"));
     assert_eq!(rows[1]["city"], Value::from("LA"));
-    let la  = rows.iter().find(|r| r["city"] == "LA").unwrap();
+    let la = rows.iter().find(|r| r["city"] == "LA").unwrap();
     let nyc = rows.iter().find(|r| r["city"] == "NYC").unwrap();
-    assert_eq!(la["total"].as_f64().unwrap(),  70.5);
+    assert_eq!(la["total"].as_f64().unwrap(), 70.5);
     assert_eq!(nyc["total"].as_f64().unwrap(), 50.5);
-    assert_eq!(la["min_score"].as_f64().unwrap(),  20.0);
+    assert_eq!(la["min_score"].as_f64().unwrap(), 20.0);
     assert_eq!(nyc["max_score"].as_f64().unwrap(), 40.0);
 }
 
@@ -272,7 +396,10 @@ async fn distinct_dedups_projection() {
     let mut req = empty_req();
     req.columns = vec!["city".into()];
     req.distinct = true;
-    req.order_by = vec![OrderBy { col: "city".into(), dir: Some("asc".into()) }];
+    req.order_by = vec![OrderBy {
+        col: "city".into(),
+        dir: Some("asc".into()),
+    }];
     let rows = parse_rows(&reg.query("people", &req).await.unwrap());
     let cities: Vec<&str> = rows.iter().map(|r| r["city"].as_str().unwrap()).collect();
     assert_eq!(cities, vec!["LA", "NYC"]);
@@ -285,18 +412,21 @@ async fn pagination_and_limit_cap() {
     let reg = make_registry(&parquet);
 
     let mut req = empty_req();
-    req.order_by  = vec![OrderBy { col: "id".into(), dir: Some("asc".into()) }];
+    req.order_by = vec![OrderBy {
+        col: "id".into(),
+        dir: Some("asc".into()),
+    }];
     req.page_size = 2;
-    req.page      = 2;
+    req.page = 2;
     let rows = parse_rows(&reg.query("people", &req).await.unwrap());
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0]["id"], 3);
     assert_eq!(rows[1]["id"], 4);
 
     // Top-level limit truncates the last page.
-    req.page      = 1;
+    req.page = 1;
     req.page_size = 10;
-    req.limit     = Some(3);
+    req.limit = Some(3);
     let rows = parse_rows(&reg.query("people", &req).await.unwrap());
     assert_eq!(rows.len(), 3);
 }
@@ -308,14 +438,16 @@ async fn arrow_ipc_roundtrip() {
     let reg = make_registry(&parquet);
 
     let mut req = empty_req();
-    req.columns  = vec!["id".into(), "name".into()];
-    req.order_by = vec![OrderBy { col: "id".into(), dir: Some("asc".into()) }];
+    req.columns = vec!["id".into(), "name".into()];
+    req.order_by = vec![OrderBy {
+        col: "id".into(),
+        dir: Some("asc".into()),
+    }];
 
     let bytes = reg.query_arrow("people", &req).await.expect("arrow ipc");
     assert!(!bytes.is_empty());
 
-    let reader = StreamReader::try_new(std::io::Cursor::new(bytes), None)
-        .expect("stream reader");
+    let reader = StreamReader::try_new(std::io::Cursor::new(bytes), None).expect("stream reader");
     let schema = reader.schema();
     let fields: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
     assert_eq!(fields, vec!["id", "name"]);
@@ -331,8 +463,16 @@ async fn arrow_ipc_roundtrip() {
         first.column(0).data_type(),
         DataType::Int32 | DataType::Int64,
     ));
-    let ids = first.column(0).as_any().downcast_ref::<Int32Array>().expect("int32");
-    let names = first.column(1).as_any().downcast_ref::<StringArray>().expect("utf8");
+    let ids = first
+        .column(0)
+        .as_any()
+        .downcast_ref::<Int32Array>()
+        .expect("int32");
+    let names = first
+        .column(1)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .expect("utf8");
     assert_eq!(ids.value(0), 1);
     assert_eq!(names.value(0), "Anna");
 }
@@ -344,10 +484,12 @@ async fn arrow_ipc_with_group_by_emits_typed_columns() {
     let reg = make_registry(&parquet);
 
     let mut req = empty_req();
-    req.group_by     = vec!["city".into()];
-    req.aggregations = vec![
-        Aggregation { col: Some("score".into()), op: "sum".into(), alias: Some("total".into()) },
-    ];
+    req.group_by = vec!["city".into()];
+    req.aggregations = vec![Aggregation {
+        col: Some("score".into()),
+        op: "sum".into(),
+        alias: Some("total".into()),
+    }];
 
     let bytes = reg.query_arrow("people", &req).await.expect("arrow ipc");
     let reader = StreamReader::try_new(std::io::Cursor::new(bytes), None).unwrap();
@@ -389,10 +531,15 @@ async fn hive_partition_column_is_surfaced() {
     let reg = make_registry_at(&glob);
 
     let rows = parse_rows(&reg.query("people", &empty_req()).await.unwrap());
-    let has_city = rows.first().map(|r| r.get("city").is_some()).unwrap_or(false);
+    let has_city = rows
+        .first()
+        .map(|r| r.get("city").is_some())
+        .unwrap_or(false);
     assert!(
         has_city,
         "hive partition column `city` was not surfaced. row keys: {:?}",
-        rows.first().and_then(|r| r.as_object()).map(|o| o.keys().collect::<Vec<_>>())
+        rows.first()
+            .and_then(|r| r.as_object())
+            .map(|o| o.keys().collect::<Vec<_>>())
     );
 }

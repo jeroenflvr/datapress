@@ -113,6 +113,7 @@ class DataPressConfig:
     prefix: str
     compress: bool
     max_body_bytes: int
+    max_page_size: int
     request_timeout_ms: int
     shutdown_timeout_secs: int
     metrics_enabled: bool
@@ -127,6 +128,7 @@ class DataPressConfig:
         prefix: str = "",
         compress: bool = True,
         max_body_bytes: int = 1_048_576,
+        max_page_size: int = 1_000_000,
         request_timeout_ms: int = 30_000,
         shutdown_timeout_secs: int = 30,
         metrics_enabled: bool = False,
@@ -150,6 +152,8 @@ class DataPressConfig:
                 ``Accept-Encoding`` (gzip / brotli / zstd). Default ``True``.
             max_body_bytes: Maximum accepted JSON request body, in bytes.
                 Larger bodies are rejected with ``413``. Default ``1_048_576``.
+            max_page_size: Maximum rows returned by one query page. Larger
+                ``page_size`` values are clamped. Default ``1_000_000``.
             request_timeout_ms: Per-request handler timeout, in ms.
                 ``0`` disables the timeout. Default ``30_000``.
             shutdown_timeout_secs: Grace period for in-flight requests after

@@ -3,26 +3,24 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwap;
-use async_trait::async_trait;
 use arrow::array::{
-    Array, ArrayRef, BooleanArray, Decimal128Array, Decimal256Array,
-    Float32Array, Float64Array,
-    Int8Array, Int16Array, Int32Array, Int64Array,
-    LargeStringArray, RecordBatch, Scalar, StringArray, StringViewArray,
-    UInt8Array, UInt16Array, UInt32Array, UInt64Array,
+    Array, ArrayRef, BooleanArray, Decimal128Array, Decimal256Array, Float32Array, Float64Array,
+    Int8Array, Int16Array, Int32Array, Int64Array, LargeStringArray, RecordBatch, Scalar,
+    StringArray, StringViewArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
 };
 use arrow::compute;
 use arrow::compute::kernels::cmp::{eq, gt, gt_eq, lt, lt_eq, neq};
 use arrow::datatypes::{DataType, Field, Schema};
-use parquet::arrow::arrow_reader::{ArrowReaderOptions, ParquetRecordBatchReaderBuilder};
+use async_trait::async_trait;
 use parquet::arrow::ProjectionMask;
+use parquet::arrow::arrow_reader::{ArrowReaderOptions, ParquetRecordBatchReaderBuilder};
 use serde_json::Value as JsonValue;
 
-use datafusion::datasource::{MemTable, TableProvider};
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
+use datafusion::datasource::{MemTable, TableProvider};
 use datafusion::prelude::{ParquetReadOptions, SessionContext};
 use datafusion::scalar::ScalarValue;
 
@@ -31,8 +29,8 @@ use url::Url;
 
 use datapress_core::backend::{Backend, DatasetSummary, ReloadStats};
 use datapress_core::config::{
-    AddressingStyle, AppConfig, DatasetConfig, IndexConfig, IndexMode,
-    ResolvedCreds, S3Config, SourceKind,
+    AddressingStyle, AppConfig, DatasetConfig, IndexConfig, IndexMode, ResolvedCreds, S3Config,
+    SourceKind,
 };
 use datapress_core::errors::AppError;
 use datapress_core::models::{CountRequest, Predicate, QueryRequest};
@@ -60,11 +58,11 @@ type EqIndex = HashMap<String, HashMap<String, Vec<u32>>>;
 /// against a registered `ListingTable`. `arrow_schema` still carries the
 /// inferred schema so discovery endpoints work.
 pub struct DatasetState {
-    pub schema:       DatasetSchema,
-    pub data:         Vec<RecordBatch>,
+    pub schema: DatasetSchema,
+    pub data: Vec<RecordBatch>,
     pub arrow_schema: Arc<Schema>,
-    pub index:        EqIndex,
-    pub lazy:         bool,
+    pub index: EqIndex,
+    pub lazy: bool,
 }
 
 impl DatasetState {
@@ -79,10 +77,11 @@ impl DatasetState {
 /// held behind `ArcSwap` so a reload can atomically replace it without
 /// blocking concurrent queries.
 pub struct Store {
-    ctx:      SessionContext,
+    ctx: SessionContext,
+    max_page_size: u64,
     /// Original dataset configs, indexed by name. Reload reads the source
     /// path from here — clients can't redirect a reload at an arbitrary file.
-    configs:  HashMap<String, DatasetConfig>,
+    configs: HashMap<String, DatasetConfig>,
     /// Hot-swappable snapshot of all currently loaded datasets.
     datasets: ArcSwap<HashMap<String, Arc<DatasetState>>>,
     /// Per-name reload mutex. Serialises concurrent reloads of the same
@@ -95,13 +94,17 @@ impl Store {
     pub async fn load(cfg: &AppConfig) -> Result<Self, AppError> {
         // One-shot init for the deltalake S3 backend. Safe to call more
         // than once — the handlers are idempotent.
-        if cfg.datasets.iter().any(|d| d.source.kind == SourceKind::Delta && d.source.is_s3()) {
+        if cfg
+            .datasets
+            .iter()
+            .any(|d| d.source.kind == SourceKind::Delta && d.source.is_s3())
+        {
             deltalake::aws::register_handlers(None);
         }
 
         let ctx = SessionContext::new();
         let mut datasets = HashMap::with_capacity(cfg.datasets.len());
-        let mut configs  = HashMap::with_capacity(cfg.datasets.len());
+        let mut configs = HashMap::with_capacity(cfg.datasets.len());
 
         for d in &cfg.datasets {
             let (state, provider) = build_dataset(d, &ctx).await?;
@@ -111,6 +114,7 @@ impl Store {
         }
         Ok(Self {
             ctx,
+            max_page_size: cfg.server.max_page_size.max(1),
             configs,
             datasets: ArcSwap::from_pointee(datasets),
             reload_locks: Mutex::new(HashMap::new()),
@@ -149,19 +153,23 @@ impl Store {
             }
             let arr = serialize(&batches[0].slice(0, 1))?;
             let trimmed = arr.trim();
-            let inner = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']'))
+            let inner = trimmed
+                .strip_prefix('[')
+                .and_then(|s| s.strip_suffix(']'))
                 .unwrap_or(trimmed);
             return Ok(inner.to_string());
         }
 
         let first = match st.data.iter().find(|b| b.num_rows() > 0) {
             Some(b) => b,
-            None    => return Ok("null".into()),
+            None => return Ok("null".into()),
         };
         let arr = serialize(&first.slice(0, 1))?;
         // strip the outer [] to return a single object
         let trimmed = arr.trim();
-        let inner = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']'))
+        let inner = trimmed
+            .strip_prefix('[')
+            .and_then(|s| s.strip_suffix(']'))
             .unwrap_or(trimmed);
         Ok(inner.to_string())
     }
@@ -227,7 +235,7 @@ impl Store {
     /// Arrow IPC stream (one schema message + one batch + EOS). Empty
     /// results still produce a valid, self-describing zero-batch stream.
     pub async fn query_arrow(&self, name: &str, req: &QueryRequest) -> Result<Vec<u8>, AppError> {
-        let batch  = self.query_batch(name, req).await?;
+        let batch = self.query_batch(name, req).await?;
         let schema = batch.schema();
         let mut buf = Vec::with_capacity(8 * 1024);
         {
@@ -245,10 +253,10 @@ impl Store {
     async fn query_batch(&self, name: &str, req: &QueryRequest) -> Result<RecordBatch, AppError> {
         let st = self.dataset(name)?;
 
-        let page      = req.page.max(1);
-        let page_size = req.page_size.clamp(1, 1_000_000);
-        let offset    = ((page - 1) * page_size) as usize;
-        let limit     = page_size as usize;
+        let page = req.page.max(1);
+        let page_size = req.page_size.clamp(1, self.max_page_size);
+        let offset = ((page - 1) * page_size) as usize;
+        let limit = page_size as usize;
 
         // In-memory hot paths only fire when:
         //   - the dataset is materialised,
@@ -268,8 +276,8 @@ impl Store {
             // No predicates → O(1) raw Arrow slice across chunks, no engine overhead.
             if req.predicates.is_empty() {
                 let start = offset.min(total);
-                let len   = limit.min(total - start);
-                let page  = slice_global(&st.data, &st.arrow_schema, start, len)?;
+                let len = limit.min(total - start);
+                let page = slice_global(&st.data, &st.arrow_schema, start, len)?;
                 return project(&st.schema, page, &req.columns);
             }
 
@@ -286,8 +294,8 @@ impl Store {
         // multi-threaded vectorised execution covers all operators
         // (LIKE, ILIKE, ranges, NOT NULL, …). Predicate values are bound
         // as typed parameters, never interpolated into the SQL text.
-        let (sql, params) = build_query_sql(&st.schema, req)?;
-        let mut df  = self.ctx.sql(&sql).await?;
+        let (sql, params) = build_query_sql(&st.schema, req, self.max_page_size)?;
+        let mut df = self.ctx.sql(&sql).await?;
         if !params.is_empty() {
             df = df.with_param_values(params)?;
         }
@@ -296,7 +304,8 @@ impl Store {
             // Synthesize an empty batch with the SQL result schema so the
             // Arrow IPC writer still emits a valid schema message. The
             // shape matches what `compute::concat_batches` would return.
-            let schema = batches.first()
+            let schema = batches
+                .first()
                 .map(|b| b.schema())
                 .unwrap_or_else(|| Arc::new(arrow::datatypes::Schema::empty()));
             return Ok(RecordBatch::new_empty(schema));
@@ -325,13 +334,18 @@ impl Store {
         // Fallback: DataFusion SQL — same predicate translation as `query`,
         // with predicate values bound as typed parameters.
         let (sql, params) = build_count_sql(&st.schema, &req.predicates)?;
-        let mut df  = self.ctx.sql(&sql).await?;
+        let mut df = self.ctx.sql(&sql).await?;
         if !params.is_empty() {
             df = df.with_param_values(params)?;
         }
         let batches = df.collect().await?;
-        let n = batches.first()
-            .and_then(|b| b.column(0).as_any().downcast_ref::<arrow::array::Int64Array>())
+        let n = batches
+            .first()
+            .and_then(|b| {
+                b.column(0)
+                    .as_any()
+                    .downcast_ref::<arrow::array::Int64Array>()
+            })
             .filter(|a| !a.is_empty())
             .map(|a| a.value(0))
             .unwrap_or(0);
@@ -355,11 +369,13 @@ async fn build_dataset(
     if d.lazy {
         match (d.source.kind, d.source.is_s3()) {
             (SourceKind::Parquet, false) => return build_lazy_local_parquet(d, ctx).await,
-            (SourceKind::Parquet, true)  => return build_lazy_s3_parquet(d, ctx).await,
-            (SourceKind::Delta,   _)     => return Err(AppError::Internal(format!(
-                "dataset '{}': lazy mode is not supported for delta sources",
-                d.name
-            ))),
+            (SourceKind::Parquet, true) => return build_lazy_s3_parquet(d, ctx).await,
+            (SourceKind::Delta, _) => {
+                return Err(AppError::Internal(format!(
+                    "dataset '{}': lazy mode is not supported for delta sources",
+                    d.name
+                )));
+            }
         }
     }
 
@@ -369,29 +385,34 @@ async fn build_dataset(
     // / indexing / partitioning logic below is shared.
     let raw_batches: Vec<RecordBatch> = match (d.source.kind, d.source.is_s3()) {
         (SourceKind::Parquet, false) => read_local_parquet(d)?,
-        (SourceKind::Parquet, true)  => read_s3_parquet(d, ctx).await?,
-        (SourceKind::Delta,   false) => read_delta(d, HashMap::new()).await?,
-        (SourceKind::Delta,   true)  => read_delta(d, delta_s3_options(d)?).await?,
+        (SourceKind::Parquet, true) => read_s3_parquet(d, ctx).await?,
+        (SourceKind::Delta, false) => read_delta(d, HashMap::new()).await?,
+        (SourceKind::Delta, true) => read_delta(d, delta_s3_options(d)?).await?,
     };
     if raw_batches.is_empty() {
         return Err(AppError::Internal(format!(
-            "dataset '{}': source produced no batches", d.name
+            "dataset '{}': source produced no batches",
+            d.name
         )));
     }
 
-    let chunks    = raw_batches;
+    let chunks = raw_batches;
     let arrow_sch = chunks[0].schema();
 
     // Build DatasetSchema from the Arrow schema.
-    let columns: Vec<ColumnInfo> = arrow_sch.fields().iter().map(|f| {
-        let dt = f.data_type();
-        ColumnInfo {
-            name:     f.name().clone(),
-            logical:  arrow_to_logical(dt),
-            sql_type: format!("{dt:?}"),
-            nullable: f.is_nullable(),
-        }
-    }).collect();
+    let columns: Vec<ColumnInfo> = arrow_sch
+        .fields()
+        .iter()
+        .map(|f| {
+            let dt = f.data_type();
+            ColumnInfo {
+                name: f.name().clone(),
+                logical: arrow_to_logical(dt),
+                sql_type: format!("{dt:?}"),
+                nullable: f.is_nullable(),
+            }
+        })
+        .collect();
     let schema = DatasetSchema::new(&d.name, columns);
 
     // Build the equality index per the per-dataset policy. Operates on the
@@ -404,24 +425,35 @@ async fn build_dataset(
     // the existing batches round-robin across `n_parts` partitions instead
     // of re-slicing a concatenated batch — `clone()` on a RecordBatch is
     // an Arc-clone of the column buffers, not a copy.
-    let n_parts = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    let n_parts = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
     let mut parts: Vec<Vec<RecordBatch>> = (0..n_parts).map(|_| Vec::new()).collect();
     for (i, b) in chunks.iter().enumerate() {
-        if b.num_rows() == 0 { continue; }
+        if b.num_rows() == 0 {
+            continue;
+        }
         parts[i % n_parts].push(b.clone());
     }
     parts.retain(|p| !p.is_empty());
     let provider: Arc<dyn TableProvider> = Arc::new(MemTable::try_new(arrow_sch.clone(), parts)?);
 
     let total_rows: usize = chunks.iter().map(|b| b.num_rows()).sum();
-    let mem_mb: usize = chunks.iter()
+    let mem_mb: usize = chunks
+        .iter()
         .flat_map(|b| b.columns().iter())
         .map(|c| c.get_buffer_memory_size())
-        .sum::<usize>() / 1_048_576;
+        .sum::<usize>()
+        / 1_048_576;
     log::info!(
         "dataset '{}' [{}]: {} rows, {} cols, {} MB, {} chunks, {} indexed cols",
-        d.name, d.source.kind.as_str(),
-        total_rows, schema.columns.len(), mem_mb, chunks.len(), index.len()
+        d.name,
+        d.source.kind.as_str(),
+        total_rows,
+        schema.columns.len(),
+        mem_mb,
+        chunks.len(),
+        index.len()
     );
 
     Ok((
@@ -441,41 +473,43 @@ async fn build_dataset(
 /// each query. The returned `DatasetState.data` is an empty `Vec` —
 /// `arrow_schema` still carries the inferred Arrow schema for discovery.
 async fn build_lazy_local_parquet(
-    d:   &DatasetConfig,
+    d: &DatasetConfig,
     ctx: &SessionContext,
 ) -> Result<(DatasetState, Arc<dyn TableProvider>), AppError> {
     let (url, part_keys) = lazy_local_listing(d)?;
 
-    let mut opts = ListingOptions::new(Arc::new(ParquetFormat::default()))
-        .with_file_extension(".parquet");
+    let mut opts =
+        ListingOptions::new(Arc::new(ParquetFormat::default())).with_file_extension(".parquet");
     if !part_keys.is_empty() {
         opts = opts.with_table_partition_cols(
-            part_keys.iter().map(|k| (k.clone(), DataType::Utf8)).collect(),
+            part_keys
+                .iter()
+                .map(|k| (k.clone(), DataType::Utf8))
+                .collect(),
         );
     }
 
     let session_state = ctx.state();
     // `infer_schema` returns the *file* schema (without partition columns);
     // `ListingTable` appends the declared partition columns on top.
-    let file_schema = opts
-        .infer_schema(&session_state, &url)
-        .await
-        .map_err(|e| AppError::Internal(format!(
-            "dataset '{}': infer parquet schema: {e}", d.name
-        )))?;
+    let file_schema = opts.infer_schema(&session_state, &url).await.map_err(|e| {
+        AppError::Internal(format!("dataset '{}': infer parquet schema: {e}", d.name))
+    })?;
 
     let cfg = ListingTableConfig::new(url)
         .with_listing_options(opts)
         .with_schema(file_schema.clone());
-    let table = ListingTable::try_new(cfg)
-        .map_err(|e| AppError::Internal(format!(
-            "dataset '{}': ListingTable::try_new: {e}", d.name
-        )))?;
+    let table = ListingTable::try_new(cfg).map_err(|e| {
+        AppError::Internal(format!("dataset '{}': ListingTable::try_new: {e}", d.name))
+    })?;
     let provider: Arc<dyn TableProvider> = Arc::new(table);
 
     // Discovery schema = file columns + partition columns (Utf8).
-    let mut fields: Vec<Field> =
-        file_schema.fields().iter().map(|f| f.as_ref().clone()).collect();
+    let mut fields: Vec<Field> = file_schema
+        .fields()
+        .iter()
+        .map(|f| f.as_ref().clone())
+        .collect();
     for k in &part_keys {
         if !fields.iter().any(|f| f.name() == k) {
             fields.push(Field::new(k, DataType::Utf8, false));
@@ -483,20 +517,27 @@ async fn build_lazy_local_parquet(
     }
     let arrow_sch = Arc::new(Schema::new(fields));
 
-    let columns: Vec<ColumnInfo> = arrow_sch.fields().iter().map(|f| {
-        let dt = f.data_type();
-        ColumnInfo {
-            name:     f.name().clone(),
-            logical:  arrow_to_logical(dt),
-            sql_type: format!("{dt:?}"),
-            nullable: f.is_nullable(),
-        }
-    }).collect();
+    let columns: Vec<ColumnInfo> = arrow_sch
+        .fields()
+        .iter()
+        .map(|f| {
+            let dt = f.data_type();
+            ColumnInfo {
+                name: f.name().clone(),
+                logical: arrow_to_logical(dt),
+                sql_type: format!("{dt:?}"),
+                nullable: f.is_nullable(),
+            }
+        })
+        .collect();
     let schema = DatasetSchema::new(&d.name, columns);
 
     log::info!(
         "dataset '{}' [{}, lazy]: {} cols ({} partition), no materialise, no index",
-        d.name, d.source.kind.as_str(), schema.columns.len(), part_keys.len()
+        d.name,
+        d.source.kind.as_str(),
+        schema.columns.len(),
+        part_keys.len()
     );
 
     Ok((
@@ -515,18 +556,21 @@ async fn build_lazy_local_parquet(
 /// rooted at the dataset base plus the ordered hive partition keys (if any).
 /// Handles three shapes: a glob (`root/city=*/*.parquet`), a directory
 /// (hive root or flat folder of parquets), and a single `*.parquet` file.
-fn lazy_local_listing(
-    d: &DatasetConfig,
-) -> Result<(ListingTableUrl, Vec<String>), AppError> {
+fn lazy_local_listing(d: &DatasetConfig) -> Result<(ListingTableUrl, Vec<String>), AppError> {
     let loc = &d.source.location;
 
     if loc.contains('*') || loc.contains('?') || loc.contains('[') {
         let parts: Vec<&str> = loc.split('/').collect();
-        let first_wild = parts.iter()
+        let first_wild = parts
+            .iter()
             .position(|c| c.contains('*') || c.contains('?') || c.contains('['))
             .unwrap_or(parts.len());
         let base = parts[..first_wild].join("/");
-        let base = if base.is_empty() { "/".to_string() } else { base };
+        let base = if base.is_empty() {
+            "/".to_string()
+        } else {
+            base
+        };
         // Partition keys: `key=…` components between the base and the file
         // pattern (the final component).
         let upper = parts.len().saturating_sub(1);
@@ -544,22 +588,28 @@ fn lazy_local_listing(
         return Ok((dir_url(path, d)?, keys));
     }
 
-    let url = ListingTableUrl::parse(loc).map_err(|e| AppError::Internal(format!(
-        "dataset '{}': bad url '{loc}': {e}", d.name
-    )))?;
+    let url = ListingTableUrl::parse(loc)
+        .map_err(|e| AppError::Internal(format!("dataset '{}': bad url '{loc}': {e}", d.name)))?;
     Ok((url, Vec::new()))
 }
 
 /// Parse a directory path into a `ListingTableUrl` (trailing slash so
 /// DataFusion treats it as a directory root, not a single object).
 fn dir_url(path: &std::path::Path, d: &DatasetConfig) -> Result<ListingTableUrl, AppError> {
-    let s = path.to_str().ok_or_else(|| AppError::Internal(format!(
-        "dataset '{}': non-utf8 path {}", d.name, path.display()
-    )))?;
-    let s = if s.ends_with('/') { s.to_string() } else { format!("{s}/") };
-    ListingTableUrl::parse(&s).map_err(|e| AppError::Internal(format!(
-        "dataset '{}': bad url '{s}': {e}", d.name
-    )))
+    let s = path.to_str().ok_or_else(|| {
+        AppError::Internal(format!(
+            "dataset '{}': non-utf8 path {}",
+            d.name,
+            path.display()
+        ))
+    })?;
+    let s = if s.ends_with('/') {
+        s.to_string()
+    } else {
+        format!("{s}/")
+    };
+    ListingTableUrl::parse(&s)
+        .map_err(|e| AppError::Internal(format!("dataset '{}': bad url '{s}': {e}", d.name)))
 }
 
 /// Walk down a directory following the first `key=value` subdirectory at
@@ -569,22 +619,32 @@ fn discover_hive_keys(base: &std::path::Path) -> Vec<String> {
     let mut keys = Vec::new();
     let mut cur = base.to_path_buf();
     loop {
-        let Ok(rd) = std::fs::read_dir(&cur) else { break };
+        let Ok(rd) = std::fs::read_dir(&cur) else {
+            break;
+        };
         let mut next: Option<(String, std::path::PathBuf)> = None;
         for entry in rd.flatten() {
             let p = entry.path();
-            if !p.is_dir() { continue; }
-            let Some(name) = p.file_name().and_then(|n| n.to_str()) else { continue };
+            if !p.is_dir() {
+                continue;
+            }
+            let Some(name) = p.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
             if let Some((k, v)) = name.split_once('=')
-                && !k.is_empty() && !v.is_empty()
+                && !k.is_empty()
+                && !v.is_empty()
             {
                 next = Some((k.to_string(), p));
                 break;
             }
         }
         match next {
-            Some((k, p)) => { keys.push(k); cur = p; }
-            None         => break,
+            Some((k, p)) => {
+                keys.push(k);
+                cur = p;
+            }
+            None => break,
         }
     }
     keys
@@ -595,51 +655,61 @@ fn discover_hive_keys(base: &std::path::Path) -> Vec<String> {
 /// DataFusion does the directory listing through the registered store and
 /// streams row groups on each query — no local enumeration needed.
 async fn build_lazy_s3_parquet(
-    d:   &DatasetConfig,
+    d: &DatasetConfig,
     ctx: &SessionContext,
 ) -> Result<(DatasetState, Arc<dyn TableProvider>), AppError> {
     register_s3_object_store(d, ctx)?;
 
-    let url = ListingTableUrl::parse(&d.source.location)
-        .map_err(|e| AppError::Internal(format!(
-            "dataset '{}': bad s3 url '{}': {e}", d.name, d.source.location
-        )))?;
+    let url = ListingTableUrl::parse(&d.source.location).map_err(|e| {
+        AppError::Internal(format!(
+            "dataset '{}': bad s3 url '{}': {e}",
+            d.name, d.source.location
+        ))
+    })?;
 
-    let opts = ListingOptions::new(Arc::new(ParquetFormat::default()))
-        .with_file_extension(".parquet");
+    let opts =
+        ListingOptions::new(Arc::new(ParquetFormat::default())).with_file_extension(".parquet");
 
     let session_state = ctx.state();
-    let resolved_schema = opts
-        .infer_schema(&session_state, &url)
-        .await
-        .map_err(|e| AppError::Internal(format!(
-            "dataset '{}': infer parquet schema on s3: {e}", d.name
-        )))?;
+    let resolved_schema = opts.infer_schema(&session_state, &url).await.map_err(|e| {
+        AppError::Internal(format!(
+            "dataset '{}': infer parquet schema on s3: {e}",
+            d.name
+        ))
+    })?;
 
     let cfg = ListingTableConfig::new(url)
         .with_listing_options(opts)
         .with_schema(resolved_schema.clone());
-    let table = ListingTable::try_new(cfg)
-        .map_err(|e| AppError::Internal(format!(
-            "dataset '{}': ListingTable::try_new (s3): {e}", d.name
-        )))?;
+    let table = ListingTable::try_new(cfg).map_err(|e| {
+        AppError::Internal(format!(
+            "dataset '{}': ListingTable::try_new (s3): {e}",
+            d.name
+        ))
+    })?;
     let provider: Arc<dyn TableProvider> = Arc::new(table);
 
     let arrow_sch = resolved_schema;
-    let columns: Vec<ColumnInfo> = arrow_sch.fields().iter().map(|f| {
-        let dt = f.data_type();
-        ColumnInfo {
-            name:     f.name().clone(),
-            logical:  arrow_to_logical(dt),
-            sql_type: format!("{dt:?}"),
-            nullable: f.is_nullable(),
-        }
-    }).collect();
+    let columns: Vec<ColumnInfo> = arrow_sch
+        .fields()
+        .iter()
+        .map(|f| {
+            let dt = f.data_type();
+            ColumnInfo {
+                name: f.name().clone(),
+                logical: arrow_to_logical(dt),
+                sql_type: format!("{dt:?}"),
+                nullable: f.is_nullable(),
+            }
+        })
+        .collect();
     let schema = DatasetSchema::new(&d.name, columns);
 
     log::info!(
         "dataset '{}' [{}, lazy, s3]: {} cols (no materialise, no index)",
-        d.name, d.source.kind.as_str(), schema.columns.len()
+        d.name,
+        d.source.kind.as_str(),
+        schema.columns.len()
     );
 
     Ok((
@@ -687,23 +757,30 @@ fn read_local_parquet(d: &DatasetConfig) -> Result<Vec<RecordBatch>, AppError> {
         // can (a) decide a column projection and (b) override Utf8 columns
         // that are dictionary-encoded in the file so the reader materialises
         // them as Arrow Dictionary arrays instead of expanding to plain Utf8.
-        let probe = ParquetRecordBatchReaderBuilder::try_new(file.try_clone()
-            .map_err(|e| AppError::Internal(format!("dup fd {}: {e}", f.display())))?)?;
+        let probe = ParquetRecordBatchReaderBuilder::try_new(
+            file.try_clone()
+                .map_err(|e| AppError::Internal(format!("dup fd {}: {e}", f.display())))?,
+        )?;
         let parquet_schema = probe.parquet_schema().clone();
-        let arrow_schema   = probe.schema().clone();
-        let metadata       = probe.metadata().clone();
+        let arrow_schema = probe.schema().clone();
+        let metadata = probe.metadata().clone();
         drop(probe);
 
         // Column projection (top-level / leaf indices for flat schemas).
         let projection = if let Some(w) = &wanted {
-            let indices: Vec<usize> = arrow_schema.fields().iter().enumerate()
+            let indices: Vec<usize> = arrow_schema
+                .fields()
+                .iter()
+                .enumerate()
                 .filter(|(_, fld)| w.contains(&fld.name().to_lowercase()))
                 .map(|(i, _)| i)
                 .collect();
             if indices.is_empty() {
                 return Err(AppError::Internal(format!(
                     "dataset '{}': no columns from `columns = {:?}` match parquet schema for {}",
-                    d.name, d.columns, f.display()
+                    d.name,
+                    d.columns,
+                    f.display()
                 )));
             }
             ProjectionMask::roots(&parquet_schema, indices)
@@ -718,12 +795,19 @@ fn read_local_parquet(d: &DatasetConfig) -> Result<Vec<RecordBatch>, AppError> {
         // the dataset has `dict_encode = false` — escape hatch for cases
         // where the override interacts badly with null propagation in the
         // downstream engine.
-        let mut new_fields: Vec<Field> = arrow_schema.fields().iter()
-            .map(|f| f.as_ref().clone()).collect();
-        if d.dict_encode && let Some(rg0) = metadata.row_groups().first() {
+        let mut new_fields: Vec<Field> = arrow_schema
+            .fields()
+            .iter()
+            .map(|f| f.as_ref().clone())
+            .collect();
+        if d.dict_encode
+            && let Some(rg0) = metadata.row_groups().first()
+        {
             for (i, fld) in arrow_schema.fields().iter().enumerate() {
-                if !matches!(fld.data_type(),
-                    DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) {
+                if !matches!(
+                    fld.data_type(),
+                    DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
+                ) {
                     continue;
                 }
                 if let Some(col) = rg0.columns().get(i)
@@ -731,10 +815,7 @@ fn read_local_parquet(d: &DatasetConfig) -> Result<Vec<RecordBatch>, AppError> {
                 {
                     new_fields[i] = Field::new(
                         fld.name(),
-                        DataType::Dictionary(
-                            Box::new(DataType::Int32),
-                            Box::new(DataType::Utf8),
-                        ),
+                        DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
                         fld.is_nullable(),
                     );
                 }
@@ -762,7 +843,8 @@ fn read_local_parquet(d: &DatasetConfig) -> Result<Vec<RecordBatch>, AppError> {
     }
     if all.is_empty() {
         return Err(AppError::Internal(format!(
-            "dataset '{}': parquet source is empty", d.name
+            "dataset '{}': parquet source is empty",
+            d.name
         )));
     }
     Ok(all)
@@ -790,8 +872,12 @@ fn append_partition_cols(
     pairs: &[(String, String)],
 ) -> Result<RecordBatch, AppError> {
     let n = batch.num_rows();
-    let mut fields: Vec<Field> =
-        batch.schema().fields().iter().map(|f| f.as_ref().clone()).collect();
+    let mut fields: Vec<Field> = batch
+        .schema()
+        .fields()
+        .iter()
+        .map(|f| f.as_ref().clone())
+        .collect();
     let mut cols: Vec<ArrayRef> = batch.columns().to_vec();
     for (k, v) in pairs {
         if fields.iter().any(|f| f.name() == k) {
@@ -808,7 +894,7 @@ fn append_partition_cols(
 /// `read_parquet("s3://…")` can resolve the URL) and stream the whole
 /// dataset back through `DataFrame::collect`.
 async fn read_s3_parquet(
-    d:   &DatasetConfig,
+    d: &DatasetConfig,
     ctx: &SessionContext,
 ) -> Result<Vec<RecordBatch>, AppError> {
     register_s3_object_store(d, ctx)?;
@@ -822,31 +908,32 @@ async fn read_s3_parquet(
 /// `RecordBatch`. We materialise eagerly so the rest of the backend can
 /// treat all datasets uniformly (single in-memory batch + eq-index).
 async fn read_delta(
-    d:    &DatasetConfig,
+    d: &DatasetConfig,
     opts: HashMap<String, String>,
 ) -> Result<Vec<RecordBatch>, AppError> {
-    let url = deltalake::ensure_table_uri(&d.source.location)
-        .map_err(|e| AppError::Internal(format!(
+    let url = deltalake::ensure_table_uri(&d.source.location).map_err(|e| {
+        AppError::Internal(format!(
             "dataset '{}': bad delta location '{}': {e}",
             d.name, d.source.location
-        )))?;
+        ))
+    })?;
     let table = deltalake::open_table_with_storage_options(url, opts)
         .await
-        .map_err(|e| AppError::Internal(format!(
-            "dataset '{}': delta open '{}': {e}",
-            d.name, d.source.location
-        )))?;
-    let provider = table.table_provider().await
-        .map_err(|e| AppError::Internal(format!(
-            "dataset '{}': delta table_provider: {e}", d.name
-        )))?;
+        .map_err(|e| {
+            AppError::Internal(format!(
+                "dataset '{}': delta open '{}': {e}",
+                d.name, d.source.location
+            ))
+        })?;
+    let provider = table.table_provider().await.map_err(|e| {
+        AppError::Internal(format!("dataset '{}': delta table_provider: {e}", d.name))
+    })?;
     // Drive a full scan via a throwaway SessionContext so we end up with
     // an in-memory Vec<RecordBatch> the shared materialise path can use.
     let scan_ctx = SessionContext::new();
-    let df = scan_ctx.read_table(provider)
-        .map_err(|e| AppError::Internal(format!(
-            "dataset '{}': delta read_table: {e}", d.name
-        )))?;
+    let df = scan_ctx
+        .read_table(provider)
+        .map_err(|e| AppError::Internal(format!("dataset '{}': delta read_table: {e}", d.name)))?;
     Ok(df.collect().await?)
 }
 
@@ -870,9 +957,15 @@ fn delta_s3_options(d: &DatasetConfig) -> Result<HashMap<String, String>, AppErr
         "AWS_VIRTUAL_HOSTED_STYLE_REQUEST".into(),
         (s3.addressing_style == AddressingStyle::Virtual).to_string(),
     );
-    if let Some(k) = creds.access_key_id { opts.insert("AWS_ACCESS_KEY_ID".into(), k); }
-    if let Some(s) = creds.secret_access_key { opts.insert("AWS_SECRET_ACCESS_KEY".into(), s); }
-    if let Some(t) = creds.session_token { opts.insert("AWS_SESSION_TOKEN".into(), t); }
+    if let Some(k) = creds.access_key_id {
+        opts.insert("AWS_ACCESS_KEY_ID".into(), k);
+    }
+    if let Some(s) = creds.secret_access_key {
+        opts.insert("AWS_SECRET_ACCESS_KEY".into(), s);
+    }
+    if let Some(t) = creds.session_token {
+        opts.insert("AWS_SESSION_TOKEN".into(), t);
+    }
     // Read-only paths don't need the S3 lock-provider plumbing.
     opts.insert("AWS_S3_ALLOW_UNSAFE_RENAME".into(), "true".into());
     Ok(opts)
@@ -883,14 +976,16 @@ fn delta_s3_options(d: &DatasetConfig) -> Result<HashMap<String, String>, AppErr
 /// `s3://bucket/`.
 fn register_s3_object_store(d: &DatasetConfig, ctx: &SessionContext) -> Result<(), AppError> {
     let (bucket, _key) = d.source.s3_bucket()?;
-    let creds  = d.resolved_creds();
+    let creds = d.resolved_creds();
     let region = d.resolved_region();
-    let s3     = d.s3.clone().unwrap_or_default();
+    let s3 = d.s3.clone().unwrap_or_default();
 
-    let store = build_s3(bucket, &region, &s3, &creds)
-        .map_err(|e| AppError::Internal(format!(
-            "dataset '{}': build S3 store for '{bucket}': {e}", d.name
-        )))?;
+    let store = build_s3(bucket, &region, &s3, &creds).map_err(|e| {
+        AppError::Internal(format!(
+            "dataset '{}': build S3 store for '{bucket}': {e}",
+            d.name
+        ))
+    })?;
 
     let url = Url::parse(&format!("s3://{bucket}"))
         .map_err(|e| AppError::Internal(format!("invalid s3 URL for bucket {bucket}: {e}")))?;
@@ -901,8 +996,8 @@ fn register_s3_object_store(d: &DatasetConfig, ctx: &SessionContext) -> Result<(
 fn build_s3(
     bucket: &str,
     region: &str,
-    s3:     &S3Config,
-    creds:  &ResolvedCreds,
+    s3: &S3Config,
+    creds: &ResolvedCreds,
 ) -> Result<object_store::aws::AmazonS3, object_store::Error> {
     let mut b = AmazonS3Builder::new()
         .with_bucket_name(bucket)
@@ -927,24 +1022,34 @@ fn build_s3(
 fn arrow_to_logical(dt: &DataType) -> LogicalType {
     match dt {
         DataType::Boolean => LogicalType::Bool,
-        DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
-            | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64
-                => LogicalType::Int,
-        DataType::Float16 | DataType::Float32 | DataType::Float64
-                => LogicalType::Float,
-        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
-                => LogicalType::Utf8,
+        DataType::Int8
+        | DataType::Int16
+        | DataType::Int32
+        | DataType::Int64
+        | DataType::UInt8
+        | DataType::UInt16
+        | DataType::UInt32
+        | DataType::UInt64 => LogicalType::Int,
+        DataType::Float16 | DataType::Float32 | DataType::Float64 => LogicalType::Float,
+        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View => LogicalType::Utf8,
         // Dictionary-encoded strings are reported as plain strings — clients
         // (and the rest of the backend) shouldn't have to care that we keep
         // a compressed representation in memory.
-        DataType::Dictionary(_, v) if matches!(v.as_ref(),
-            DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View) => LogicalType::Utf8,
-        DataType::Date32 | DataType::Date64
-            | DataType::Time32(_) | DataType::Time64(_)
-            | DataType::Timestamp(_, _)
-            | DataType::Duration(_)
-            | DataType::Interval(_)
-                => LogicalType::Temporal,
+        DataType::Dictionary(_, v)
+            if matches!(
+                v.as_ref(),
+                DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
+            ) =>
+        {
+            LogicalType::Utf8
+        }
+        DataType::Date32
+        | DataType::Date64
+        | DataType::Time32(_)
+        | DataType::Time64(_)
+        | DataType::Timestamp(_, _)
+        | DataType::Duration(_)
+        | DataType::Interval(_) => LogicalType::Temporal,
         _ => LogicalType::Other,
     }
 }
@@ -953,17 +1058,27 @@ fn arrow_to_logical(dt: &DataType) -> LogicalType {
 // Per-batch projection
 // ---------------------------------------------------------------------------
 
-fn project(schema: &DatasetSchema, batch: RecordBatch, columns: &[String])
-    -> Result<RecordBatch, AppError>
-{
+fn project(
+    schema: &DatasetSchema,
+    batch: RecordBatch,
+    columns: &[String],
+) -> Result<RecordBatch, AppError> {
     if columns.is_empty() {
         return Ok(batch);
     }
-    let indices: Vec<usize> = columns.iter()
-        .map(|c| schema.find(c).map(|info| schema.by_name[&info.name.to_lowercase()]))
+    let indices: Vec<usize> = columns
+        .iter()
+        .map(|c| {
+            schema
+                .find(c)
+                .map(|info| schema.by_name[&info.name.to_lowercase()])
+        })
         .collect::<Result<_, _>>()?;
-    let fields: Vec<Field>    = indices.iter().map(|&i| batch.schema().field(i).clone()).collect();
-    let cols:   Vec<ArrayRef> = indices.iter().map(|&i| batch.column(i).clone()).collect();
+    let fields: Vec<Field> = indices
+        .iter()
+        .map(|&i| batch.schema().field(i).clone())
+        .collect();
+    let cols: Vec<ArrayRef> = indices.iter().map(|&i| batch.column(i).clone()).collect();
     Ok(RecordBatch::try_new(Arc::new(Schema::new(fields)), cols)?)
 }
 
@@ -1003,12 +1118,15 @@ impl Params {
 fn build_query_sql(
     schema: &DatasetSchema,
     req: &QueryRequest,
+    max_page_size: u64,
 ) -> Result<(String, Vec<ScalarValue>), AppError> {
     let agg_plan = req.agg_plan(schema)?;
 
     let cols = if let Some(plan) = &agg_plan {
         // Group cols, then aggregations, each aliased to the JSON output key.
-        let mut parts: Vec<String> = plan.group_cols.iter()
+        let mut parts: Vec<String> = plan
+            .group_cols
+            .iter()
             .map(|c| DatasetSchema::quote_ident(c))
             .collect();
         for a in &plan.aggs {
@@ -1017,23 +1135,42 @@ fn build_query_sql(
                 (op, Some(c)) => format!("{}({})", op.as_sql(), DatasetSchema::quote_ident(c)),
                 _ => unreachable!(),
             };
-            parts.push(format!("{expr} AS {}", DatasetSchema::quote_ident(&a.alias)));
+            parts.push(format!(
+                "{expr} AS {}",
+                DatasetSchema::quote_ident(&a.alias)
+            ));
         }
         parts.join(", ")
     } else if req.columns.is_empty() {
-        if req.distinct { "DISTINCT *".to_string() } else { "*".to_string() }
+        if req.distinct {
+            "DISTINCT *".to_string()
+        } else {
+            "*".to_string()
+        }
     } else {
-        let list = req.columns.iter()
-            .map(|c| schema.find(c).map(|info| DatasetSchema::quote_ident(&info.name)))
+        let list = req
+            .columns
+            .iter()
+            .map(|c| {
+                schema
+                    .find(c)
+                    .map(|info| DatasetSchema::quote_ident(&info.name))
+            })
             .collect::<Result<Vec<_>, _>>()?
             .join(", ");
-        if req.distinct { format!("DISTINCT {list}") } else { list }
+        if req.distinct {
+            format!("DISTINCT {list}")
+        } else {
+            list
+        }
     };
 
-    let (limit, offset) = req.effective_limit_offset(1000);
+    let (limit, offset) = req.effective_limit_offset(max_page_size);
 
     let mut params = Params::new();
-    let clauses: Vec<String> = req.predicates.iter()
+    let clauses: Vec<String> = req
+        .predicates
+        .iter()
         .map(|p| pred_to_sql(schema, p, &mut params))
         .collect::<Result<_, _>>()?;
 
@@ -1046,7 +1183,8 @@ fn build_query_sql(
     let group_clause = match &agg_plan {
         Some(p) => format!(
             " GROUP BY {}",
-            p.group_cols.iter()
+            p.group_cols
+                .iter()
                 .map(|c| DatasetSchema::quote_ident(c))
                 .collect::<Vec<_>>()
                 .join(", "),
@@ -1055,7 +1193,7 @@ fn build_query_sql(
     };
     let order_clause = match req.order_by_sql(schema, agg_plan.as_ref())? {
         Some(s) => format!(" ORDER BY {s}"),
-        None    => String::new(),
+        None => String::new(),
     };
     let sql = format!(
         "SELECT {cols} FROM {table}{where_clause}{group_clause}{order_clause} \
@@ -1069,7 +1207,8 @@ fn build_count_sql(
     predicates: &[Predicate],
 ) -> Result<(String, Vec<ScalarValue>), AppError> {
     let mut params = Params::new();
-    let clauses: Vec<String> = predicates.iter()
+    let clauses: Vec<String> = predicates
+        .iter()
         .map(|p| pred_to_sql(schema, p, &mut params))
         .collect::<Result<_, _>>()?;
     let table = DatasetSchema::quote_ident(&schema.name);
@@ -1088,37 +1227,41 @@ fn pred_to_sql(
     params: &mut Params,
 ) -> Result<String, AppError> {
     let info = schema.find(&pred.col)?;
-    let col  = DatasetSchema::quote_ident(&info.name);
+    let col = DatasetSchema::quote_ident(&info.name);
 
     match pred.op.as_str() {
-        "is_null"     => return Ok(format!("{col} IS NULL")),
+        "is_null" => return Ok(format!("{col} IS NULL")),
         "is_not_null" => return Ok(format!("{col} IS NOT NULL")),
         _ => {}
     }
 
-    let val = pred.val.as_ref()
+    let val = pred
+        .val
+        .as_ref()
         .ok_or_else(|| AppError::InvalidValue(format!("'{}' requires a value", pred.op)))?;
 
     if pred.op == "in" {
-        let items = val.as_array()
+        let items = val
+            .as_array()
             .filter(|a| !a.is_empty())
             .ok_or_else(|| AppError::InvalidValue("'in' needs a non-empty array".into()))?;
-        let placeholders: Vec<String> = items.iter()
+        let placeholders: Vec<String> = items
+            .iter()
             .map(|item| Ok(params.bind(json_to_scalar(item)?)))
             .collect::<Result<_, AppError>>()?;
         return Ok(format!("{col} IN ({})", placeholders.join(", ")));
     }
 
     let sql_op = match pred.op.as_str() {
-        "eq"    => "=",
-        "neq"   => "!=",
-        "gt"    => ">",
-        "gte"   => ">=",
-        "lt"    => "<",
-        "lte"   => "<=",
-        "like"  => "LIKE",
+        "eq" => "=",
+        "neq" => "!=",
+        "gt" => ">",
+        "gte" => ">=",
+        "lt" => "<",
+        "lte" => "<=",
+        "like" => "LIKE",
         "ilike" => "ILIKE",
-        other   => return Err(AppError::UnknownOperator(other.into())),
+        other => return Err(AppError::UnknownOperator(other.into())),
     };
     let placeholder = params.bind(json_to_scalar(val)?);
     Ok(format!("{col} {sql_op} {placeholder}"))
@@ -1130,8 +1273,8 @@ fn pred_to_sql(
 fn json_to_scalar(val: &JsonValue) -> Result<ScalarValue, AppError> {
     match val {
         JsonValue::String(s) => Ok(ScalarValue::Utf8(Some(s.clone()))),
-        JsonValue::Bool(b)   => Ok(ScalarValue::Boolean(Some(*b))),
-        JsonValue::Null      => Ok(ScalarValue::Null),
+        JsonValue::Bool(b) => Ok(ScalarValue::Boolean(Some(*b))),
+        JsonValue::Null => Ok(ScalarValue::Null),
         JsonValue::Number(n) => {
             if let Some(i) = n.as_i64() {
                 Ok(ScalarValue::Int64(Some(i)))
@@ -1140,10 +1283,14 @@ fn json_to_scalar(val: &JsonValue) -> Result<ScalarValue, AppError> {
             } else if let Some(f) = n.as_f64() {
                 Ok(ScalarValue::Float64(Some(f)))
             } else {
-                Err(AppError::InvalidValue("unsupported numeric literal in predicate".into()))
+                Err(AppError::InvalidValue(
+                    "unsupported numeric literal in predicate".into(),
+                ))
             }
         }
-        _ => Err(AppError::InvalidValue("unsupported literal type in predicate".into())),
+        _ => Err(AppError::InvalidValue(
+            "unsupported literal type in predicate".into(),
+        )),
     }
 }
 
@@ -1155,7 +1302,7 @@ fn json_index_key(val: &JsonValue) -> Option<String> {
     match val {
         JsonValue::String(s) => Some(s.clone()),
         JsonValue::Number(n) => Some(n.to_string()),
-        JsonValue::Bool(b)   => Some(b.to_string()),
+        JsonValue::Bool(b) => Some(b.to_string()),
         _ => None,
     }
 }
@@ -1165,8 +1312,12 @@ fn intersect_sorted(a: &[u32], b: &[u32]) -> Vec<u32> {
     let (mut i, mut j) = (0, 0);
     while i < a.len() && j < b.len() {
         match a[i].cmp(&b[j]) {
-            Ordering::Equal   => { out.push(a[i]); i += 1; j += 1; }
-            Ordering::Less    => i += 1,
+            Ordering::Equal => {
+                out.push(a[i]);
+                i += 1;
+                j += 1;
+            }
+            Ordering::Less => i += 1,
             Ordering::Greater => j += 1,
         }
     }
@@ -1178,9 +1329,19 @@ fn union_sorted(a: &[u32], b: &[u32]) -> Vec<u32> {
     let (mut i, mut j) = (0, 0);
     while i < a.len() && j < b.len() {
         match a[i].cmp(&b[j]) {
-            Ordering::Less    => { out.push(a[i]); i += 1; }
-            Ordering::Greater => { out.push(b[j]); j += 1; }
-            Ordering::Equal   => { out.push(a[i]); i += 1; j += 1; }
+            Ordering::Less => {
+                out.push(a[i]);
+                i += 1;
+            }
+            Ordering::Greater => {
+                out.push(b[j]);
+                j += 1;
+            }
+            Ordering::Equal => {
+                out.push(a[i]);
+                i += 1;
+                j += 1;
+            }
         }
     }
     out.extend_from_slice(&a[i..]);
@@ -1189,12 +1350,14 @@ fn union_sorted(a: &[u32], b: &[u32]) -> Vec<u32> {
 }
 
 fn try_index(index: &EqIndex, predicates: &[Predicate]) -> Option<Vec<u32>> {
-    if predicates.is_empty() || index.is_empty() { return None; }
+    if predicates.is_empty() || index.is_empty() {
+        return None;
+    }
 
     let mut result: Option<Vec<u32>> = None;
     for pred in predicates {
         let col_lower = pred.col.to_lowercase();
-        let col_map   = index.get(&col_lower)?;
+        let col_map = index.get(&col_lower)?;
 
         let rows: Vec<u32> = match pred.op.as_str() {
             "eq" => {
@@ -1215,7 +1378,7 @@ fn try_index(index: &EqIndex, predicates: &[Predicate]) -> Option<Vec<u32>> {
         };
 
         result = Some(match result {
-            None    => rows,
+            None => rows,
             Some(r) => intersect_sorted(&r, &rows),
         });
     }
@@ -1228,18 +1391,23 @@ fn slice_global(
     chunks: &[RecordBatch],
     schema: &Arc<Schema>,
     offset: usize,
-    limit:  usize,
+    limit: usize,
 ) -> Result<RecordBatch, AppError> {
     if limit == 0 || chunks.is_empty() {
         return Ok(RecordBatch::new_empty(schema.clone()));
     }
     let mut out = Vec::new();
-    let mut to_skip   = offset;
+    let mut to_skip = offset;
     let mut remaining = limit;
     for b in chunks {
-        if remaining == 0 { break; }
+        if remaining == 0 {
+            break;
+        }
         let n = b.num_rows();
-        if to_skip >= n { to_skip -= n; continue; }
+        if to_skip >= n {
+            to_skip -= n;
+            continue;
+        }
         let take = remaining.min(n - to_skip);
         out.push(b.slice(to_skip, take));
         to_skip = 0;
@@ -1258,12 +1426,12 @@ fn slice_global(
 fn take_page(
     chunks: &[RecordBatch],
     schema: &Arc<Schema>,
-    rows:   &[u32],
+    rows: &[u32],
     offset: usize,
-    limit:  usize,
+    limit: usize,
 ) -> Result<RecordBatch, AppError> {
     let start = offset.min(rows.len());
-    let len   = limit.min(rows.len() - start);
+    let len = limit.min(rows.len() - start);
     if len == 0 || chunks.is_empty() {
         return Ok(RecordBatch::new_empty(schema.clone()));
     }
@@ -1274,7 +1442,9 @@ fn take_page(
     let mut acc: u32 = 0;
     offsets.push(0);
     for b in chunks {
-        acc = acc.checked_add(b.num_rows() as u32).expect("row count exceeds u32::MAX");
+        acc = acc
+            .checked_add(b.num_rows() as u32)
+            .expect("row count exceeds u32::MAX");
         offsets.push(acc);
     }
 
@@ -1282,20 +1452,26 @@ fn take_page(
     // the original output position so we can restore page order at the end.
     let mut buckets: Vec<Vec<(u32, u32)>> = (0..chunks.len()).map(|_| Vec::new()).collect();
     for (out_pos, &gid) in rows[start..start + len].iter().enumerate() {
-        let bi    = offsets.partition_point(|&x| x <= gid).saturating_sub(1);
+        let bi = offsets.partition_point(|&x| x <= gid).saturating_sub(1);
         let local = gid - offsets[bi];
         buckets[bi].push((out_pos as u32, local));
     }
 
     // Per-chunk take, recording the destination index for each emitted row.
     let mut takens: Vec<RecordBatch> = Vec::new();
-    let mut dest:   Vec<u32>         = Vec::with_capacity(len);
+    let mut dest: Vec<u32> = Vec::with_capacity(len);
     for (bi, bucket) in buckets.iter().enumerate() {
-        if bucket.is_empty() { continue; }
+        if bucket.is_empty() {
+            continue;
+        }
         let idx = UInt32Array::from(bucket.iter().map(|(_, l)| *l).collect::<Vec<u32>>());
-        let cols: Vec<ArrayRef> = chunks[bi].columns().iter()
-            .map(|c| arrow::compute::take(c.as_ref(), &idx, None::<arrow::compute::TakeOptions>)
-                     .map_err(AppError::from))
+        let cols: Vec<ArrayRef> = chunks[bi]
+            .columns()
+            .iter()
+            .map(|c| {
+                arrow::compute::take(c.as_ref(), &idx, None::<arrow::compute::TakeOptions>)
+                    .map_err(AppError::from)
+            })
             .collect::<Result<_, _>>()?;
         takens.push(RecordBatch::try_new(chunks[bi].schema(), cols)?);
         dest.extend(bucket.iter().map(|(out_pos, _)| *out_pos));
@@ -1308,9 +1484,13 @@ fn take_page(
         inv[d as usize] = i as u32;
     }
     let perm = UInt32Array::from(inv);
-    let cols: Vec<ArrayRef> = stitched.columns().iter()
-        .map(|c| arrow::compute::take(c.as_ref(), &perm, None::<arrow::compute::TakeOptions>)
-                 .map_err(AppError::from))
+    let cols: Vec<ArrayRef> = stitched
+        .columns()
+        .iter()
+        .map(|c| {
+            arrow::compute::take(c.as_ref(), &perm, None::<arrow::compute::TakeOptions>)
+                .map_err(AppError::from)
+        })
         .collect::<Result<_, _>>()?;
     RecordBatch::try_new(stitched.schema(), cols).map_err(AppError::from)
 }
@@ -1331,19 +1511,28 @@ fn build_eq_index_with_policy(chunks: &[RecordBatch], cfg: &IndexConfig) -> EqIn
         None
     };
 
-    let max_card = if cfg.mode == IndexMode::Auto { Some(cfg.max_cardinality) } else { None };
+    let max_card = if cfg.mode == IndexMode::Auto {
+        Some(cfg.max_cardinality)
+    } else {
+        None
+    };
 
     // Per-chunk starting global row id.
     let mut batch_offsets: Vec<u32> = Vec::with_capacity(chunks.len());
     let mut acc: u32 = 0;
     for b in chunks {
         batch_offsets.push(acc);
-        acc = acc.checked_add(b.num_rows() as u32).expect("row count exceeds u32::MAX");
+        acc = acc
+            .checked_add(b.num_rows() as u32)
+            .expect("row count exceeds u32::MAX");
     }
 
     let schema = chunks[0].schema();
 
-    schema.fields().par_iter().enumerate()
+    schema
+        .fields()
+        .par_iter()
+        .enumerate()
         .filter_map(|(ci, field)| {
             let col_lower = field.name().to_lowercase();
             if let Some(a) = &allow
@@ -1360,9 +1549,13 @@ fn build_eq_index_with_policy(chunks: &[RecordBatch], cfg: &IndexConfig) -> EqIn
                     if matches!(k.as_ref(), DataType::Int32)
                     && matches!(v.as_ref(), DataType::Utf8));
             match dtype {
-                DataType::Utf8 | DataType::Utf8View
+                DataType::Utf8
+                | DataType::Utf8View
                 | DataType::Boolean
-                | DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {}
+                | DataType::Int8
+                | DataType::Int16
+                | DataType::Int32
+                | DataType::Int64 => {}
                 _ if dict_utf8 => {}
                 _ => return None,
             }
@@ -1371,20 +1564,24 @@ fn build_eq_index_with_policy(chunks: &[RecordBatch], cfg: &IndexConfig) -> EqIn
 
             for (bi, batch) in chunks.iter().enumerate() {
                 let base = batch_offsets[bi];
-                let col  = batch.column(ci);
+                let col = batch.column(ci);
 
                 macro_rules! index_col {
                     ($arr_ty:ty) => {{
                         let arr = col.as_any().downcast_ref::<$arr_ty>()?;
                         for row in 0..arr.len() {
-                            if arr.is_null(row) { continue; }
+                            if arr.is_null(row) {
+                                continue;
+                            }
                             let key = arr.value(row).to_string();
                             let gid = base + row as u32;
                             if let Some(v) = map.get_mut(&key) {
                                 v.push(gid);
                             } else {
                                 if let Some(mc) = max_card {
-                                    if map.len() >= mc { return None; }
+                                    if map.len() >= mc {
+                                        return None;
+                                    }
                                 }
                                 map.insert(key, vec![gid]);
                             }
@@ -1399,12 +1596,16 @@ fn build_eq_index_with_policy(chunks: &[RecordBatch], cfg: &IndexConfig) -> EqIn
                     // values reuse the existing HashMap entry by hash, but
                     // `HashMap::get_mut` still needs the key, so we use a
                     // borrowed lookup via `get` first to avoid the alloc.
-                    let arr = col.as_any()
-                        .downcast_ref::<arrow::array::DictionaryArray<arrow::datatypes::Int32Type>>()?;
-                    let keys   = arr.keys();
+                    let arr = col
+                        .as_any()
+                        .downcast_ref::<arrow::array::DictionaryArray<arrow::datatypes::Int32Type>>(
+                        )?;
+                    let keys = arr.keys();
                     let values = arr.values().as_any().downcast_ref::<StringArray>()?;
                     for row in 0..arr.len() {
-                        if arr.is_null(row) { continue; }
+                        if arr.is_null(row) {
+                            continue;
+                        }
                         let k = keys.value(row) as usize;
                         let s = values.value(k);
                         let gid = base + row as u32;
@@ -1421,13 +1622,13 @@ fn build_eq_index_with_policy(chunks: &[RecordBatch], cfg: &IndexConfig) -> EqIn
                     }
                 } else {
                     match dtype {
-                        DataType::Utf8     => index_col!(StringArray),
+                        DataType::Utf8 => index_col!(StringArray),
                         DataType::Utf8View => index_col!(StringViewArray),
-                        DataType::Boolean  => index_col!(BooleanArray),
-                        DataType::Int8     => index_col!(Int8Array),
-                        DataType::Int16    => index_col!(Int16Array),
-                        DataType::Int32    => index_col!(Int32Array),
-                        DataType::Int64    => index_col!(Int64Array),
+                        DataType::Boolean => index_col!(BooleanArray),
+                        DataType::Int8 => index_col!(Int8Array),
+                        DataType::Int16 => index_col!(Int16Array),
+                        DataType::Int32 => index_col!(Int32Array),
+                        DataType::Int64 => index_col!(Int64Array),
                         _ => unreachable!(),
                     }
                 }
@@ -1443,8 +1644,8 @@ fn build_eq_index_with_policy(chunks: &[RecordBatch], cfg: &IndexConfig) -> EqIn
 // on the page batch right before JSON encoding. We deliberately do **not**
 // pay this cost at load time — a `Date32` is 4 bytes per row, its ISO-8601
 // rendering is ~10–24 bytes per row, and a wide dataset full of temporal
-// columns would balloon resident RAM. The cast is applied per page (≤ 1000
-// rows after pagination), so the per-query overhead is negligible.
+// columns would balloon resident RAM. The cast is applied per returned page
+// after pagination, so the cost is paid only for rows the caller requested.
 // ---------------------------------------------------------------------------
 
 /// Returns true for Arrow types that `write_value` can render directly. Any
@@ -1452,15 +1653,27 @@ fn build_eq_index_with_policy(chunks: &[RecordBatch], cfg: &IndexConfig) -> EqIn
 /// JSON output is faithful rather than silently `null`.
 fn writable_inline(dt: &DataType) -> bool {
     match dt {
-        DataType::Utf8 | DataType::LargeUtf8 | DataType::Utf8View
+        DataType::Utf8
+        | DataType::LargeUtf8
+        | DataType::Utf8View
         | DataType::Boolean
-        | DataType::Int8  | DataType::Int16  | DataType::Int32  | DataType::Int64
-        | DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64
-        | DataType::Float32 | DataType::Float64
-        | DataType::Decimal128(_, _) | DataType::Decimal256(_, _) => true,
+        | DataType::Int8
+        | DataType::Int16
+        | DataType::Int32
+        | DataType::Int64
+        | DataType::UInt8
+        | DataType::UInt16
+        | DataType::UInt32
+        | DataType::UInt64
+        | DataType::Float32
+        | DataType::Float64
+        | DataType::Decimal128(_, _)
+        | DataType::Decimal256(_, _) => true,
         DataType::Dictionary(k, v)
-            if matches!(k.as_ref(), DataType::Int32)
-                && matches!(v.as_ref(), DataType::Utf8) => true,
+            if matches!(k.as_ref(), DataType::Int32) && matches!(v.as_ref(), DataType::Utf8) =>
+        {
+            true
+        }
         _ => false,
     }
 }
@@ -1472,22 +1685,45 @@ fn writable_inline(dt: &DataType) -> bool {
 /// so the JSON serializer never falls back to writing literal `null`.
 fn cast_for_serialize(batch: &RecordBatch) -> Result<RecordBatch, AppError> {
     let schema = batch.schema();
-    let to_cast: Vec<usize> = schema.fields().iter().enumerate()
-        .filter_map(|(i, f)| if writable_inline(f.data_type()) { None } else { Some(i) })
+    let to_cast: Vec<usize> = schema
+        .fields()
+        .iter()
+        .enumerate()
+        .filter_map(|(i, f)| {
+            if writable_inline(f.data_type()) {
+                None
+            } else {
+                Some(i)
+            }
+        })
         .collect();
     if to_cast.is_empty() {
         return Ok(batch.clone());
     }
-    let new_fields: Vec<Field> = schema.fields().iter().enumerate()
-        .map(|(i, f)| if to_cast.contains(&i) {
-            Field::new(f.name(), DataType::Utf8, f.is_nullable())
-        } else { f.as_ref().clone() })
+    let new_fields: Vec<Field> = schema
+        .fields()
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            if to_cast.contains(&i) {
+                Field::new(f.name(), DataType::Utf8, f.is_nullable())
+            } else {
+                f.as_ref().clone()
+            }
+        })
         .collect();
     let new_schema = Arc::new(Schema::new(new_fields));
-    let cols: Vec<ArrayRef> = batch.columns().iter().enumerate()
-        .map(|(i, c)| if to_cast.contains(&i) {
-            compute::cast(c.as_ref(), &DataType::Utf8).map_err(AppError::from)
-        } else { Ok(c.clone()) })
+    let cols: Vec<ArrayRef> = batch
+        .columns()
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            if to_cast.contains(&i) {
+                compute::cast(c.as_ref(), &DataType::Utf8).map_err(AppError::from)
+            } else {
+                Ok(c.clone())
+            }
+        })
         .collect::<Result<_, _>>()?;
     RecordBatch::try_new(new_schema, cols).map_err(AppError::from)
 }
@@ -1499,11 +1735,22 @@ fn cast_for_serialize(batch: &RecordBatch) -> Result<RecordBatch, AppError> {
 
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
-enum CmpOp { Eq, Neq, Gt, Gte, Lt, Lte, Like, ILike }
+enum CmpOp {
+    Eq,
+    Neq,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    Like,
+    ILike,
+}
 
 #[allow(dead_code)]
 fn eq_str(col: &ArrayRef, val: &str) -> Result<BooleanArray, AppError> {
-    let arr = col.as_any().downcast_ref::<StringArray>()
+    let arr = col
+        .as_any()
+        .downcast_ref::<StringArray>()
         .ok_or_else(|| AppError::InvalidValue("equality: column is not a string".into()))?;
     let s = Scalar::new(StringArray::from(vec![val]));
     Ok(eq(arr, &s)?)
@@ -1513,44 +1760,54 @@ fn eq_str(col: &ArrayRef, val: &str) -> Result<BooleanArray, AppError> {
 fn cmp_scalar(col: &ArrayRef, op: CmpOp, val: &JsonValue) -> Result<BooleanArray, AppError> {
     macro_rules! num_cmp {
         ($arr_type:ty, $cast:ty) => {{
-            let n   = val.as_f64().ok_or_else(|| AppError::InvalidValue("expected number".into()))? as $cast;
+            let n = val
+                .as_f64()
+                .ok_or_else(|| AppError::InvalidValue("expected number".into()))?
+                as $cast;
             let arr = col.as_any().downcast_ref::<$arr_type>().unwrap();
-            let s   = Scalar::new(<$arr_type>::from(vec![n]));
+            let s = Scalar::new(<$arr_type>::from(vec![n]));
             Ok(match op {
-                CmpOp::Eq    => eq(arr, &s)?,
-                CmpOp::Neq   => neq(arr, &s)?,
-                CmpOp::Gt    => gt(arr, &s)?,
-                CmpOp::Gte   => gt_eq(arr, &s)?,
-                CmpOp::Lt    => lt(arr, &s)?,
-                CmpOp::Lte   => lt_eq(arr, &s)?,
-                CmpOp::Like | CmpOp::ILike =>
-                    return Err(AppError::InvalidValue("LIKE requires a string column".into())),
+                CmpOp::Eq => eq(arr, &s)?,
+                CmpOp::Neq => neq(arr, &s)?,
+                CmpOp::Gt => gt(arr, &s)?,
+                CmpOp::Gte => gt_eq(arr, &s)?,
+                CmpOp::Lt => lt(arr, &s)?,
+                CmpOp::Lte => lt_eq(arr, &s)?,
+                CmpOp::Like | CmpOp::ILike => {
+                    return Err(AppError::InvalidValue(
+                        "LIKE requires a string column".into(),
+                    ));
+                }
             })
         }};
     }
     match col.data_type() {
         DataType::Utf8 => {
-            let s   = val.as_str().ok_or_else(|| AppError::InvalidValue("expected string".into()))?;
+            let s = val
+                .as_str()
+                .ok_or_else(|| AppError::InvalidValue("expected string".into()))?;
             let arr = col.as_any().downcast_ref::<StringArray>().unwrap();
-            let sc  = Scalar::new(StringArray::from(vec![s]));
+            let sc = Scalar::new(StringArray::from(vec![s]));
             Ok(match op {
-                CmpOp::Eq    => eq(arr, &sc)?,
-                CmpOp::Neq   => neq(arr, &sc)?,
-                CmpOp::Gt    => gt(arr, &sc)?,
-                CmpOp::Gte   => gt_eq(arr, &sc)?,
-                CmpOp::Lt    => lt(arr, &sc)?,
-                CmpOp::Lte   => lt_eq(arr, &sc)?,
-                CmpOp::Like  => compute::like(arr, &sc)?,
+                CmpOp::Eq => eq(arr, &sc)?,
+                CmpOp::Neq => neq(arr, &sc)?,
+                CmpOp::Gt => gt(arr, &sc)?,
+                CmpOp::Gte => gt_eq(arr, &sc)?,
+                CmpOp::Lt => lt(arr, &sc)?,
+                CmpOp::Lte => lt_eq(arr, &sc)?,
+                CmpOp::Like => compute::like(arr, &sc)?,
                 CmpOp::ILike => compute::ilike(arr, &sc)?,
             })
         }
-        DataType::Int8    => num_cmp!(Int8Array,   i8),
-        DataType::Int16   => num_cmp!(Int16Array,  i16),
-        DataType::Int32   => num_cmp!(Int32Array,  i32),
-        DataType::Int64   => num_cmp!(Int64Array,  i64),
+        DataType::Int8 => num_cmp!(Int8Array, i8),
+        DataType::Int16 => num_cmp!(Int16Array, i16),
+        DataType::Int32 => num_cmp!(Int32Array, i32),
+        DataType::Int64 => num_cmp!(Int64Array, i64),
         DataType::Float32 => num_cmp!(Float32Array, f32),
         DataType::Float64 => num_cmp!(Float64Array, f64),
-        dt => Err(AppError::InvalidValue(format!("unsupported type for comparison: {dt:?}"))),
+        dt => Err(AppError::InvalidValue(format!(
+            "unsupported type for comparison: {dt:?}"
+        ))),
     }
 }
 
@@ -1563,26 +1820,34 @@ pub fn serialize(batch: &RecordBatch) -> Result<String, AppError> {
     // them — plus any other dtype `write_value` can't render directly — to
     // Utf8 here, on the bounded page batch, so the JSON output is faithful
     // without paying the load-time RAM cost.
-    let batch  = cast_for_serialize(batch)?;
+    let batch = cast_for_serialize(batch)?;
     let schema = batch.schema();
     let n_rows = batch.num_rows();
 
-    let keys: Vec<Vec<u8>> = schema.fields().iter().map(|f| {
-        let mut k = Vec::with_capacity(f.name().len() + 3);
-        k.push(b'"');
-        k.extend_from_slice(f.name().as_bytes());
-        k.extend_from_slice(b"\":");
-        k
-    }).collect();
+    let keys: Vec<Vec<u8>> = schema
+        .fields()
+        .iter()
+        .map(|f| {
+            let mut k = Vec::with_capacity(f.name().len() + 3);
+            k.push(b'"');
+            k.extend_from_slice(f.name().as_bytes());
+            k.extend_from_slice(b"\":");
+            k
+        })
+        .collect();
 
     let mut buf: Vec<u8> = Vec::with_capacity(n_rows.max(1) * 300);
     buf.push(b'[');
 
     for row in 0..n_rows {
-        if row > 0 { buf.push(b','); }
+        if row > 0 {
+            buf.push(b',');
+        }
         buf.push(b'{');
         for (i, key) in keys.iter().enumerate() {
-            if i > 0 { buf.push(b','); }
+            if i > 0 {
+                buf.push(b',');
+            }
             buf.extend_from_slice(key);
             let col = batch.column(i);
             if col.is_null(row) {
@@ -1601,36 +1866,143 @@ pub fn serialize(batch: &RecordBatch) -> Result<String, AppError> {
 #[inline]
 fn write_value(buf: &mut Vec<u8>, col: &dyn Array, row: usize) {
     match col.data_type() {
-        DataType::Utf8 =>
-            write_str(buf, col.as_any().downcast_ref::<StringArray>().unwrap().value(row)),
-        DataType::LargeUtf8 =>
-            write_str(buf, col.as_any().downcast_ref::<LargeStringArray>().unwrap().value(row)),
-        DataType::Utf8View =>
-            write_str(buf, col.as_any().downcast_ref::<StringViewArray>().unwrap().value(row)),
+        DataType::Utf8 => write_str(
+            buf,
+            col.as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap()
+                .value(row),
+        ),
+        DataType::LargeUtf8 => write_str(
+            buf,
+            col.as_any()
+                .downcast_ref::<LargeStringArray>()
+                .unwrap()
+                .value(row),
+        ),
+        DataType::Utf8View => write_str(
+            buf,
+            col.as_any()
+                .downcast_ref::<StringViewArray>()
+                .unwrap()
+                .value(row),
+        ),
         DataType::Dictionary(key, value)
             if matches!(key.as_ref(), DataType::Int32)
                 && matches!(value.as_ref(), DataType::Utf8) =>
         {
-            let dict = col.as_any()
+            let dict = col
+                .as_any()
                 .downcast_ref::<arrow::array::DictionaryArray<arrow::datatypes::Int32Type>>()
                 .unwrap();
-            let keys   = dict.keys();
-            let values = dict.values().as_any().downcast_ref::<StringArray>().unwrap();
+            let keys = dict.keys();
+            let values = dict
+                .values()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
             let k = keys.value(row) as usize;
             write_str(buf, values.value(k));
         }
         DataType::Boolean => {
-            let v = col.as_any().downcast_ref::<BooleanArray>().unwrap().value(row);
+            let v = col
+                .as_any()
+                .downcast_ref::<BooleanArray>()
+                .unwrap()
+                .value(row);
             buf.extend_from_slice(if v { b"true" } else { b"false" });
         }
-        DataType::Int8   => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<Int8Array>()  .unwrap().value(row)).as_bytes()); }
-        DataType::Int16  => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<Int16Array>() .unwrap().value(row)).as_bytes()); }
-        DataType::Int32  => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<Int32Array>() .unwrap().value(row)).as_bytes()); }
-        DataType::Int64  => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<Int64Array>() .unwrap().value(row)).as_bytes()); }
-        DataType::UInt8  => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<UInt8Array>() .unwrap().value(row)).as_bytes()); }
-        DataType::UInt16 => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<UInt16Array>().unwrap().value(row)).as_bytes()); }
-        DataType::UInt32 => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<UInt32Array>().unwrap().value(row)).as_bytes()); }
-        DataType::UInt64 => { let mut b = itoa::Buffer::new(); buf.extend_from_slice(b.format(col.as_any().downcast_ref::<UInt64Array>().unwrap().value(row)).as_bytes()); }
+        DataType::Int8 => {
+            let mut b = itoa::Buffer::new();
+            buf.extend_from_slice(
+                b.format(col.as_any().downcast_ref::<Int8Array>().unwrap().value(row))
+                    .as_bytes(),
+            );
+        }
+        DataType::Int16 => {
+            let mut b = itoa::Buffer::new();
+            buf.extend_from_slice(
+                b.format(
+                    col.as_any()
+                        .downcast_ref::<Int16Array>()
+                        .unwrap()
+                        .value(row),
+                )
+                .as_bytes(),
+            );
+        }
+        DataType::Int32 => {
+            let mut b = itoa::Buffer::new();
+            buf.extend_from_slice(
+                b.format(
+                    col.as_any()
+                        .downcast_ref::<Int32Array>()
+                        .unwrap()
+                        .value(row),
+                )
+                .as_bytes(),
+            );
+        }
+        DataType::Int64 => {
+            let mut b = itoa::Buffer::new();
+            buf.extend_from_slice(
+                b.format(
+                    col.as_any()
+                        .downcast_ref::<Int64Array>()
+                        .unwrap()
+                        .value(row),
+                )
+                .as_bytes(),
+            );
+        }
+        DataType::UInt8 => {
+            let mut b = itoa::Buffer::new();
+            buf.extend_from_slice(
+                b.format(
+                    col.as_any()
+                        .downcast_ref::<UInt8Array>()
+                        .unwrap()
+                        .value(row),
+                )
+                .as_bytes(),
+            );
+        }
+        DataType::UInt16 => {
+            let mut b = itoa::Buffer::new();
+            buf.extend_from_slice(
+                b.format(
+                    col.as_any()
+                        .downcast_ref::<UInt16Array>()
+                        .unwrap()
+                        .value(row),
+                )
+                .as_bytes(),
+            );
+        }
+        DataType::UInt32 => {
+            let mut b = itoa::Buffer::new();
+            buf.extend_from_slice(
+                b.format(
+                    col.as_any()
+                        .downcast_ref::<UInt32Array>()
+                        .unwrap()
+                        .value(row),
+                )
+                .as_bytes(),
+            );
+        }
+        DataType::UInt64 => {
+            let mut b = itoa::Buffer::new();
+            buf.extend_from_slice(
+                b.format(
+                    col.as_any()
+                        .downcast_ref::<UInt64Array>()
+                        .unwrap()
+                        .value(row),
+                )
+                .as_bytes(),
+            );
+        }
         DataType::Decimal128(_, _) => {
             let arr = col.as_any().downcast_ref::<Decimal128Array>().unwrap();
             write_str(buf, &arr.value_as_string(row));
@@ -1640,14 +2012,30 @@ fn write_value(buf: &mut Vec<u8>, col: &dyn Array, row: usize) {
             write_str(buf, &arr.value_as_string(row));
         }
         DataType::Float32 => {
-            let v = col.as_any().downcast_ref::<Float32Array>().unwrap().value(row);
-            if v.is_finite() { let mut b = ryu::Buffer::new(); buf.extend_from_slice(b.format_finite(v).as_bytes()); }
-            else { buf.extend_from_slice(b"null"); }
+            let v = col
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .unwrap()
+                .value(row);
+            if v.is_finite() {
+                let mut b = ryu::Buffer::new();
+                buf.extend_from_slice(b.format_finite(v).as_bytes());
+            } else {
+                buf.extend_from_slice(b"null");
+            }
         }
         DataType::Float64 => {
-            let v = col.as_any().downcast_ref::<Float64Array>().unwrap().value(row);
-            if v.is_finite() { let mut b = ryu::Buffer::new(); buf.extend_from_slice(b.format_finite(v).as_bytes()); }
-            else { buf.extend_from_slice(b"null"); }
+            let v = col
+                .as_any()
+                .downcast_ref::<Float64Array>()
+                .unwrap()
+                .value(row);
+            if v.is_finite() {
+                let mut b = ryu::Buffer::new();
+                buf.extend_from_slice(b.format_finite(v).as_bytes());
+            } else {
+                buf.extend_from_slice(b"null");
+            }
         }
         // Any dtype not handled above must have been pre-cast to Utf8 by
         // `cast_for_serialize`. Hitting this arm is a bug — surface it as a
@@ -1662,11 +2050,11 @@ fn write_str(buf: &mut Vec<u8>, s: &str) {
     buf.push(b'"');
     for &byte in s.as_bytes() {
         match byte {
-            b'"'        => buf.extend_from_slice(b"\\\""),
-            b'\\'       => buf.extend_from_slice(b"\\\\"),
-            b'\n'       => buf.extend_from_slice(b"\\n"),
-            b'\r'       => buf.extend_from_slice(b"\\r"),
-            b'\t'       => buf.extend_from_slice(b"\\t"),
+            b'"' => buf.extend_from_slice(b"\\\""),
+            b'\\' => buf.extend_from_slice(b"\\\\"),
+            b'\n' => buf.extend_from_slice(b"\\n"),
+            b'\r' => buf.extend_from_slice(b"\\r"),
+            b'\t' => buf.extend_from_slice(b"\\t"),
             0x00..=0x1f => {
                 buf.extend_from_slice(b"\\u00");
                 const HEX: &[u8] = b"0123456789abcdef";
@@ -1692,9 +2080,9 @@ impl Backend for Store {
     fn summary(&self, name: &str) -> Result<DatasetSummary, AppError> {
         let st = self.dataset(name)?;
         Ok(DatasetSummary {
-            name:    st.schema.name.clone(),
+            name: st.schema.name.clone(),
             columns: st.schema.columns.len(),
-            rows:    st.num_rows(),
+            rows: st.num_rows(),
         })
     }
 
@@ -1707,13 +2095,18 @@ impl Backend for Store {
         let st = self.dataset(name)?;
         // Report indexed columns in the dataset's declared schema order
         // so the `/schema` response is deterministic.
-        let mut cols: Vec<String> = st.schema.columns.iter()
+        let mut cols: Vec<String> = st
+            .schema
+            .columns
+            .iter()
             .map(|c| c.name.clone())
             .filter(|n| st.index.contains_key(n))
             .collect();
         // Any indexed columns not in `schema.columns` (shouldn't happen,
         // but be defensive) get appended sorted.
-        let mut extras: Vec<String> = st.index.keys()
+        let mut extras: Vec<String> = st
+            .index
+            .keys()
             .filter(|n| !cols.iter().any(|c| c == *n))
             .cloned()
             .collect();

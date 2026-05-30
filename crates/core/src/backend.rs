@@ -17,16 +17,16 @@ use crate::schema::DatasetSchema;
 /// Outcome of a successful [`Backend::reload`].
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct ReloadStats {
-    pub rows:       usize,
+    pub rows: usize,
     pub elapsed_ms: u128,
 }
 
 /// One entry in `GET /api/datasets`.
 #[derive(Debug, Clone, Serialize)]
 pub struct DatasetSummary {
-    pub name:    String,
+    pub name: String,
     pub columns: usize,
-    pub rows:    usize,
+    pub rows: usize,
 }
 
 /// Read / reload interface every backend exposes to the HTTP layer.
@@ -74,7 +74,8 @@ pub trait Backend: Send + Sync + 'static {
     /// batches are already Arrow.
     async fn query_arrow(&self, _name: &str, _req: &QueryRequest) -> Result<Vec<u8>, AppError> {
         Err(AppError::InvalidValue(
-            "Arrow IPC response format is not supported by this backend".into()))
+            "Arrow IPC response format is not supported by this backend".into(),
+        ))
     }
 
     /// Count rows in `name` matching `req.predicates`.

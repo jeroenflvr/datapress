@@ -28,7 +28,10 @@ use crate::config::SwaggerOAuth2Config;
 /// security scheme (auto-discovered from the issuer's well-known URL)
 /// and the UI's `initOAuth` is preconfigured with `client_id`, scopes,
 /// and PKCE so users can sign in directly from the docs page.
-pub fn service(mount: &str, oauth2: Option<&SwaggerOAuth2Config>) -> impl HttpServiceFactory + use<> {
+pub fn service(
+    mount: &str,
+    oauth2: Option<&SwaggerOAuth2Config>,
+) -> impl HttpServiceFactory + use<> {
     let ui = SwaggerUi::new(format!("{mount}/{{_:.*}}"))
         .url(format!("{mount}/openapi.json"), openapi(oauth2));
     if let Some(o) = oauth2 {
@@ -51,11 +54,7 @@ pub fn service(mount: &str, oauth2: Option<&SwaggerOAuth2Config>) -> impl HttpSe
 /// Without the redirect, visiting the bare mount path (e.g. `/docs`)
 /// 404s because `SwaggerUi`'s tail-capture route requires the trailing
 /// slash to match the empty asset path.
-pub fn configure(
-    mount:  &str,
-    oauth2: Option<&SwaggerOAuth2Config>,
-    cfg:    &mut web::ServiceConfig,
-) {
+pub fn configure(mount: &str, oauth2: Option<&SwaggerOAuth2Config>, cfg: &mut web::ServiceConfig) {
     let redirect_target = format!("{mount}/");
     cfg.service(
         web::resource(mount.to_string()).route(web::get().to(move || {
@@ -333,7 +332,7 @@ fn openapi(oauth2: Option<&SwaggerOAuth2Config>) -> OpenApi {
                         "order_by":     { "type": "array", "items": { "$ref": "#/components/schemas/OrderBy" } },
                         "limit":        { "type": "integer", "format": "int64" },
                         "page":         { "type": "integer", "format": "int64", "default": 1 },
-                        "page_size":    { "type": "integer", "format": "int64", "default": 1000 }
+                        "page_size":    { "type": "integer", "format": "int64", "default": 1000, "description": "Rows per page. Clamped to [1, server.max_page_size]; default cap is 1,000,000." }
                     }
                 },
                 "CountRequest": {
@@ -363,7 +362,10 @@ fn openapi(oauth2: Option<&SwaggerOAuth2Config>) -> OpenApi {
         // requirements per operation can be tightened later when the
         // server actually enforces tokens.
         let scopes = serde_json::Value::Array(
-            o.scopes.iter().map(|s| serde_json::Value::String(s.clone())).collect()
+            o.scopes
+                .iter()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .collect(),
         );
         json["security"] = serde_json::json!([ { "OpenIdConnect": scopes } ]);
     }
@@ -387,10 +389,10 @@ mod tests {
     #[test]
     fn openapi_with_oauth2_advertises_openid_connect_scheme() {
         let cfg = SwaggerOAuth2Config {
-            issuer:    "https://issuer.example.com".into(),
+            issuer: "https://issuer.example.com".into(),
             client_id: "dp-swagger".into(),
-            scopes:    vec!["openid".into(), "datasets:read".into()],
-            pkce:      true,
+            scopes: vec!["openid".into(), "datasets:read".into()],
+            pkce: true,
         };
         let spec = openapi(Some(&cfg));
         let json = serde_json::to_value(&spec).unwrap();

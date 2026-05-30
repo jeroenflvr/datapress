@@ -41,12 +41,15 @@ where
     type Future = std::future::Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ready(Ok(TimeoutMiddleware { service, duration: self.duration }))
+        ready(Ok(TimeoutMiddleware {
+            service,
+            duration: self.duration,
+        }))
     }
 }
 
 pub struct TimeoutMiddleware<S> {
-    service:  S,
+    service: S,
     duration: Duration,
 }
 
@@ -73,12 +76,12 @@ where
         // pre-built 504 response — actix renders it without ever needing
         // the original request.
         let method = req.method().clone();
-        let path   = req.path().to_owned();
-        let fut    = self.service.call(req);
+        let path = req.path().to_owned();
+        let fut = self.service.call(req);
         Box::pin(async move {
             match tokio::time::timeout(duration, fut).await {
                 Ok(Ok(resp)) => Ok(resp.map_into_left_body()),
-                Ok(Err(e))   => Err(e),
+                Ok(Err(e)) => Err(e),
                 Err(_) => {
                     log::warn!(
                         "request {method} {path} exceeded timeout of {} ms",

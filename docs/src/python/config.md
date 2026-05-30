@@ -13,6 +13,7 @@ cfg = DataPressConfig(
     prefix="",                    # e.g. "/datapress" behind a proxy
     compress=True,
     max_body_bytes=1_048_576,     # 413 above this
+    max_page_size=1_000_000,      # clamp query page_size above this
     request_timeout_ms=30_000,    # 504 above this; 0 disables
     shutdown_timeout_secs=30,     # SIGTERM/SIGINT grace period
 )

@@ -33,7 +33,7 @@ pub fn configure(mount: &str, cfg: &mut web::ServiceConfig) {
     )
     .service(
         web::scope(mount)
-            .route("/",          web::get().to(serve_index))
+            .route("/", web::get().to(serve_index))
             .route("/{tail:.*}", web::get().to(serve)),
     );
 }
@@ -56,11 +56,7 @@ async fn serve(req: HttpRequest) -> HttpResponse {
 fn serve_path(p: &str) -> HttpResponse {
     match SITE.get_file(p) {
         Some(f) => HttpResponse::Ok()
-            .content_type(
-                mime_guess::from_path(p)
-                    .first_or_octet_stream()
-                    .as_ref(),
-            )
+            .content_type(mime_guess::from_path(p).first_or_octet_stream().as_ref())
             .body(f.contents()),
         None => HttpResponse::NotFound()
             .content_type("text/plain; charset=utf-8")

@@ -47,7 +47,7 @@ use crate::errors::AppError;
 #[derive(Debug, Clone)]
 pub struct Principal {
     /// `sub` claim — the IdP's stable identifier for the user / client.
-    pub sub:    String,
+    pub sub: String,
     /// All scopes the bearer holds, normalised to lowercase.
     pub scopes: Vec<String>,
     /// Tenant extracted via `auth.tenant_claim`, if configured and
@@ -75,12 +75,15 @@ impl Principal {
 /// 403, so clients can distinguish "you forgot your token" from
 /// "your token is insufficient".
 pub fn require_scopes(req: &HttpRequest, required: &[String]) -> Result<(), AppError> {
-    if required.is_empty() { return Ok(()); }
+    if required.is_empty() {
+        return Ok(());
+    }
     let ext = req.extensions();
     match ext.get::<Principal>() {
         Some(p) if p.has_all_scopes(required) => Ok(()),
         Some(_) => Err(AppError::Forbidden(format!(
-            "token is missing required scope(s): {}", required.join(" ")
+            "token is missing required scope(s): {}",
+            required.join(" ")
         ))),
         None => Err(AppError::Unauthorized(
             "missing or invalid bearer token".into(),
@@ -104,13 +107,13 @@ struct JwksSnapshot {
 /// inner snapshot is behind an Arc.
 #[derive(Clone)]
 pub struct JwksCache {
-    inner:    Arc<ArcSwap<Option<JwksSnapshot>>>,
+    inner: Arc<ArcSwap<Option<JwksSnapshot>>>,
     /// OIDC issuer, used to run discovery (`.well-known/openid-configuration`).
-    issuer:   Arc<String>,
+    issuer: Arc<String>,
     /// JWKS endpoint discovered from the issuer's OIDC metadata. Cached
     /// once resolved; `None` until the first successful discovery.
     jwks_uri: Arc<ArcSwap<Option<String>>>,
-    client:   reqwest::Client,
+    client: reqwest::Client,
 }
 
 impl JwksCache {
@@ -141,15 +144,17 @@ impl JwksCache {
             .build()
             .map_err(|e| AppError::Internal(format!("reqwest client: {e}")))?;
         let cache = Self {
-            inner:    Arc::new(ArcSwap::from_pointee(None)),
-            issuer:   Arc::new(cfg.issuer.clone()),
+            inner: Arc::new(ArcSwap::from_pointee(None)),
+            issuer: Arc::new(cfg.issuer.clone()),
             jwks_uri: Arc::new(ArcSwap::from_pointee(None)),
-            client:   client.clone(),
+            client: client.clone(),
         };
 
         match cache.resolve_and_fetch().await {
             Ok(set) => {
-                cache.inner.store(Arc::new(Some(JwksSnapshot { set: Arc::new(set) })));
+                cache
+                    .inner
+                    .store(Arc::new(Some(JwksSnapshot { set: Arc::new(set) })));
                 log::info!("auth: JWKS loaded for issuer {}", cfg.issuer);
             }
             Err(e) if cfg.start_degraded => {
@@ -200,9 +205,7 @@ impl JwksCache {
             }
             Err(e) => {
                 let fallback = format!("{}/.well-known/jwks.json", self.issuer);
-                log::warn!(
-                    "auth: OIDC discovery failed ({e}); falling back to legacy {fallback}"
-                );
+                log::warn!("auth: OIDC discovery failed ({e}); falling back to legacy {fallback}");
                 fetch_jwks(&self.client, &fallback).await
             }
         }
@@ -211,7 +214,8 @@ impl JwksCache {
     async fn refresh_quiet(&self) {
         match self.resolve_and_fetch().await {
             Ok(set) => {
-                self.inner.store(Arc::new(Some(JwksSnapshot { set: Arc::new(set) })));
+                self.inner
+                    .store(Arc::new(Some(JwksSnapshot { set: Arc::new(set) })));
                 log::debug!("auth: JWKS refreshed");
             }
             Err(e) => log::warn!("auth: JWKS refresh failed: {e}"),
@@ -235,7 +239,11 @@ async fn discover_jwks_uri(client: &reqwest::Client, issuer: &str) -> Result<Str
     }
 
     let disco_url = format!("{issuer}/.well-known/openid-configuration");
-    let resp = client.get(&disco_url).send().await.map_err(|e| e.to_string())?;
+    let resp = client
+        .get(&disco_url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("discovery {disco_url} → HTTP {}", resp.status()));
     }
@@ -243,7 +251,10 @@ async fn discover_jwks_uri(client: &reqwest::Client, issuer: &str) -> Result<Str
         .json::<OidcMetadata>()
         .await
         .map_err(|e| format!("discovery {disco_url} body: {e}"))?;
-    log::info!("auth: discovered jwks_uri={} via {disco_url}", meta.jwks_uri);
+    log::info!(
+        "auth: discovered jwks_uri={} via {disco_url}",
+        meta.jwks_uri
+    );
     Ok(meta.jwks_uri)
 }
 
@@ -299,10 +310,15 @@ fn parse_scopes(c: &Claims) -> Vec<String> {
 }
 
 fn extract_tenant(c: &Claims, pointer: &str) -> Option<String> {
-    if pointer.is_empty() { return None; }
+    if pointer.is_empty() {
+        return None;
+    }
     // Wrap extras into a Value so JSON pointer works uniformly.
     let v = serde_json::Value::Object(
-        c.extra.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        c.extra
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
     );
     v.pointer(pointer).and_then(|x| match x {
         serde_json::Value::String(s) => Some(s.clone()),
@@ -321,41 +337,43 @@ fn algorithm_from(name: &str) -> Result<Algorithm, AppError> {
         "PS256" => Algorithm::PS256,
         "PS384" => Algorithm::PS384,
         "PS512" => Algorithm::PS512,
-        other   => return Err(AppError::Internal(format!("unsupported alg: {other}"))),
+        other => return Err(AppError::Internal(format!("unsupported alg: {other}"))),
     })
 }
 
 /// Validate the bearer token, returning a [`Principal`] on success.
 pub fn verify_token(
     token: &str,
-    cfg:   &AuthConfig,
-    jwks:  &JwksCache,
+    cfg: &AuthConfig,
+    jwks: &JwksCache,
 ) -> Result<Principal, AppError> {
-    let snap = jwks.snapshot().ok_or_else(|| {
-        AppError::Unavailable("auth: JWKS not yet available".into())
-    })?;
+    let snap = jwks
+        .snapshot()
+        .ok_or_else(|| AppError::Unavailable("auth: JWKS not yet available".into()))?;
 
-    let header = decode_header(token).map_err(|e| {
-        AppError::Unauthorized(format!("malformed token: {e}"))
-    })?;
-    let kid = header.kid.ok_or_else(|| {
-        AppError::Unauthorized("token header missing 'kid'".into())
-    })?;
-    let jwk = snap.set.find(&kid).ok_or_else(|| {
-        AppError::Unauthorized(format!("unknown signing key kid='{kid}'"))
-    })?;
-    let key = DecodingKey::from_jwk(jwk).map_err(|e| {
-        AppError::Internal(format!("auth: bad JWK in JWKS for kid='{kid}': {e}"))
-    })?;
+    let header = decode_header(token)
+        .map_err(|e| AppError::Unauthorized(format!("malformed token: {e}")))?;
+    let kid = header
+        .kid
+        .ok_or_else(|| AppError::Unauthorized("token header missing 'kid'".into()))?;
+    let jwk = snap
+        .set
+        .find(&kid)
+        .ok_or_else(|| AppError::Unauthorized(format!("unknown signing key kid='{kid}'")))?;
+    let key = DecodingKey::from_jwk(jwk)
+        .map_err(|e| AppError::Internal(format!("auth: bad JWK in JWKS for kid='{kid}': {e}")))?;
 
     // Build validation. Pin algorithm to what's in the token header,
     // but only if the operator listed it as allowed.
-    let allowed: Vec<Algorithm> = cfg.algorithms.iter()
+    let allowed: Vec<Algorithm> = cfg
+        .algorithms
+        .iter()
         .map(|a| algorithm_from(a))
         .collect::<Result<_, _>>()?;
     if !allowed.contains(&header.alg) {
         return Err(AppError::Unauthorized(format!(
-            "token alg '{:?}' not in auth.algorithms allow-list", header.alg
+            "token alg '{:?}' not in auth.algorithms allow-list",
+            header.alg
         )));
     }
     let mut v = Validation::new(header.alg);
@@ -367,27 +385,34 @@ pub fn verify_token(
         v.set_audience(&[&cfg.audience]);
     }
 
-    let data = decode::<Claims>(token, &key, &v).map_err(|e| {
-        AppError::Unauthorized(format!("token rejected: {e}"))
-    })?;
+    let data = decode::<Claims>(token, &key, &v)
+        .map_err(|e| AppError::Unauthorized(format!("token rejected: {e}")))?;
 
-    let claims  = data.claims;
-    let scopes  = parse_scopes(&claims);
-    let tenant  = extract_tenant(&claims, &cfg.tenant_claim);
+    let claims = data.claims;
+    let scopes = parse_scopes(&claims);
+    let tenant = extract_tenant(&claims, &cfg.tenant_claim);
 
     if !cfg.allowed_tenants.is_empty() {
         match &tenant {
             Some(t) if cfg.allowed_tenants.iter().any(|a| a == t) => {}
-            Some(t) => return Err(AppError::Forbidden(format!(
-                "tenant '{t}' is not in auth.allowed_tenants"
-            ))),
-            None => return Err(AppError::Forbidden(
-                "token does not carry the configured tenant claim".into()
-            )),
+            Some(t) => {
+                return Err(AppError::Forbidden(format!(
+                    "tenant '{t}' is not in auth.allowed_tenants"
+                )));
+            }
+            None => {
+                return Err(AppError::Forbidden(
+                    "token does not carry the configured tenant claim".into(),
+                ));
+            }
         }
     }
 
-    Ok(Principal { sub: claims.sub, scopes, tenant })
+    Ok(Principal {
+        sub: claims.sub,
+        scopes,
+        tenant,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -397,7 +422,7 @@ pub fn verify_token(
 /// State shared between every middleware instance. Cheap to clone.
 #[derive(Clone)]
 pub struct AuthState {
-    pub cfg:  Arc<AuthConfig>,
+    pub cfg: Arc<AuthConfig>,
     pub jwks: JwksCache,
 }
 
@@ -413,10 +438,14 @@ pub struct Auth {
 
 impl Auth {
     /// Build an enforcing middleware around the given state.
-    pub fn new(state: AuthState) -> Self { Self { state: Some(state) } }
+    pub fn new(state: AuthState) -> Self {
+        Self { state: Some(state) }
+    }
     /// Build a no-op middleware. Useful so callers can wrap the same
     /// type unconditionally and decide enforcement at runtime.
-    pub fn disabled() -> Self { Self { state: None } }
+    pub fn disabled() -> Self {
+        Self { state: None }
+    }
 }
 
 impl<S, B> Transform<S, ServiceRequest> for Auth
@@ -424,20 +453,23 @@ where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = ActixError> + 'static,
     B: 'static,
 {
-    type Response  = ServiceResponse<EitherBody<B>>;
-    type Error     = ActixError;
+    type Response = ServiceResponse<EitherBody<B>>;
+    type Error = ActixError;
     type Transform = AuthMiddleware<S>;
     type InitError = ();
-    type Future    = Ready<Result<Self::Transform, Self::InitError>>;
+    type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ready(Ok(AuthMiddleware { service: Arc::new(service), state: self.state.clone() }))
+        ready(Ok(AuthMiddleware {
+            service: Arc::new(service),
+            state: self.state.clone(),
+        }))
     }
 }
 
 pub struct AuthMiddleware<S> {
     service: Arc<S>,
-    state:   Option<AuthState>,
+    state: Option<AuthState>,
 }
 
 impl<S, B> Service<ServiceRequest> for AuthMiddleware<S>
@@ -446,13 +478,13 @@ where
     B: 'static,
 {
     type Response = ServiceResponse<EitherBody<B>>;
-    type Error    = ActixError;
-    type Future   = Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>>>>;
+    type Error = ActixError;
+    type Future = Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>>>>;
 
     actix_web::dev::forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
-        let svc   = self.service.clone();
+        let svc = self.service.clone();
         let state = self.state.clone();
         Box::pin(async move {
             let Some(state) = state else {
@@ -460,7 +492,8 @@ where
                 return Ok(res.map_into_left_body());
             };
             // Try to extract a bearer token.
-            let header_val = req.headers()
+            let header_val = req
+                .headers()
                 .get(header::AUTHORIZATION)
                 .and_then(|v| v.to_str().ok())
                 .map(str::trim);
@@ -480,12 +513,15 @@ where
                         if let Some(t) = &principal.tenant {
                             log::debug!(
                                 "auth: sub='{}' tenant='{}' scopes={:?}",
-                                principal.sub, t, principal.scopes
+                                principal.sub,
+                                t,
+                                principal.scopes
                             );
                         } else {
                             log::debug!(
                                 "auth: sub='{}' scopes={:?}",
-                                principal.sub, principal.scopes
+                                principal.sub,
+                                principal.scopes
                             );
                         }
                         req.extensions_mut().insert(principal);
@@ -523,12 +559,12 @@ mod tests {
 
     fn cfg() -> AuthConfig {
         AuthConfig {
-            enabled:           true,
-            issuer:            "https://issuer.test".into(),
-            audience:          "api://datapress".into(),
-            read_scopes:       vec!["datasets:read".into()],
-            reload_scopes:     vec!["datasets:reload".into()],
-            tenant_claim:      "/tid".into(),
+            enabled: true,
+            issuer: "https://issuer.test".into(),
+            audience: "api://datapress".into(),
+            read_scopes: vec!["datasets:read".into()],
+            reload_scopes: vec!["datasets:reload".into()],
+            tenant_claim: "/tid".into(),
             ..AuthConfig::default()
         }
     }
@@ -538,7 +574,8 @@ mod tests {
         let c: Claims = serde_json::from_value(serde_json::json!({
             "sub": "u",
             "scope": "openid datasets:read"
-        })).unwrap();
+        }))
+        .unwrap();
         let s = parse_scopes(&c);
         assert!(s.contains(&"openid".into()));
         assert!(s.contains(&"datasets:read".into()));
@@ -546,7 +583,8 @@ mod tests {
         let c: Claims = serde_json::from_value(serde_json::json!({
             "sub": "u",
             "scp": ["openid", "datasets:read"]
-        })).unwrap();
+        }))
+        .unwrap();
         let s = parse_scopes(&c);
         assert!(s.contains(&"openid".into()));
         assert!(s.contains(&"datasets:read".into()));
@@ -557,13 +595,15 @@ mod tests {
         let c: Claims = serde_json::from_value(serde_json::json!({
             "sub": "u",
             "tid": "acme"
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(extract_tenant(&c, "/tid").as_deref(), Some("acme"));
 
         let c: Claims = serde_json::from_value(serde_json::json!({
             "sub": "u",
             "org": { "id": 42 }
-        })).unwrap();
+        }))
+        .unwrap();
         assert_eq!(extract_tenant(&c, "/org/id").as_deref(), Some("42"));
     }
 

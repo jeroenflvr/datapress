@@ -19,7 +19,7 @@
 use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 
 use crate::admin;
-use crate::handlers::{ARROW_IPC_MIME, BackendData, wants_arrow};
+use crate::handlers::{ARROW_IPC_MIME, BackendData, QueryLimits, wants_arrow};
 use crate::models::{CountRequest, QueryRequest};
 
 // -------------------------------------------------------------- auth guards --
@@ -39,7 +39,9 @@ fn require_read(req: &HttpRequest) -> Result<(), crate::errors::AppError> {
     Ok(())
 }
 #[cfg(not(feature = "auth"))]
-fn require_read(_: &HttpRequest) -> Result<(), crate::errors::AppError> { Ok(()) }
+fn require_read(_: &HttpRequest) -> Result<(), crate::errors::AppError> {
+    Ok(())
+}
 
 /// Allow the request to perform a reload if EITHER the legacy admin
 /// token matches OR (when `auth` is enabled) the caller holds the
@@ -55,8 +57,12 @@ fn require_reload(req: &HttpRequest) -> Result<(), crate::errors::AppError> {
             && cfg.enabled
         {
             let scope_ok = crate::auth::require_scopes(req, &cfg.reload_scopes).is_ok();
-            if admin_ok && cfg.admin_token_fallback { return Ok(()); }
-            if scope_ok { return Ok(()); }
+            if admin_ok && cfg.admin_token_fallback {
+                return Ok(());
+            }
+            if scope_ok {
+                return Ok(());
+            }
             // Neither path satisfied — surface the scope error so
             // the client gets a 401/403 with a Bearer challenge.
             return crate::auth::require_scopes(req, &cfg.reload_scopes);
@@ -71,18 +77,18 @@ fn require_reload(req: &HttpRequest) -> Result<(), crate::errors::AppError> {
 /// Call this inside a [`web::scope`] — usually `/api/v1` — so paths come
 /// out as `/api/v1/datasets/...`.
 pub fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.route("/datasets",                web::get().to(list_datasets))
+    cfg.route("/datasets", web::get().to(list_datasets))
         .route("/datasets/{name}/schema", web::get().to(get_schema))
-        .route("/datasets/{name}/query",  web::post().to(query_dataset))
-        .route("/datasets/{name}/count",  web::post().to(count_dataset))
+        .route("/datasets/{name}/query", web::post().to(query_dataset))
+        .route("/datasets/{name}/count", web::post().to(count_dataset))
         .route("/datasets/{name}/reload", web::post().to(reload_dataset));
 }
 
 /// Route table for log_routes-style introspection. Each entry is
 /// `(method, path-suffix)` relative to the version's mount scope.
 pub const ROUTES: &[(&str, &str)] = &[
-    ("GET",  "/datasets"),
-    ("GET",  "/datasets/{name}/schema"),
+    ("GET", "/datasets"),
+    ("GET", "/datasets/{name}/schema"),
     ("POST", "/datasets/{name}/query"),
     ("POST", "/datasets/{name}/count"),
     ("POST", "/datasets/{name}/reload"),
@@ -91,7 +97,9 @@ pub const ROUTES: &[(&str, &str)] = &[
 // ---------------------------------------------------------------- handlers --
 
 pub async fn list_datasets(req: HttpRequest, backend: BackendData) -> HttpResponse {
-    if let Err(e) = require_read(&req) { return e.error_response(); }
+    if let Err(e) = require_read(&req) {
+        return e.error_response();
+    }
     let summaries: Vec<_> = backend
         .names()
         .into_iter()
@@ -101,49 +109,63 @@ pub async fn list_datasets(req: HttpRequest, backend: BackendData) -> HttpRespon
 }
 
 pub async fn get_schema(
-    req:     HttpRequest,
+    req: HttpRequest,
     backend: BackendData,
-    path:    web::Path<String>,
+    path: web::Path<String>,
 ) -> HttpResponse {
-    if let Err(e) = require_read(&req) { return e.error_response(); }
+    if let Err(e) = require_read(&req) {
+        return e.error_response();
+    }
     let name = path.into_inner();
     let schema = match backend.schema(&name) {
-        Ok(s)  => s,
+        Ok(s) => s,
         Err(e) => return e.error_response(),
     };
     let summary = match backend.summary(&name) {
-        Ok(s)  => s,
+        Ok(s) => s,
         Err(e) => return e.error_response(),
     };
     let indexed = match backend.indexed_columns(&name) {
-        Ok(i)  => i,
+        Ok(i) => i,
         Err(e) => return e.error_response(),
     };
     let sample = match backend.sample(&name).await {
-        Ok(s)  => s,
+        Ok(s) => s,
         Err(e) => return e.error_response(),
     };
     let body = format!(
         r#"{{"name":{name_lit},"rows":{rows},"columns":{cols},"indexed":{indexed},"sample":{sample}}}"#,
         name_lit = serde_json::to_string(&schema.name).unwrap(),
-        rows     = summary.rows,
-        cols     = serde_json::to_string(&schema.columns).unwrap(),
-        indexed  = serde_json::to_string(&indexed).unwrap(),
+        rows = summary.rows,
+        cols = serde_json::to_string(&schema.columns).unwrap(),
+        indexed = serde_json::to_string(&indexed).unwrap(),
     );
-    HttpResponse::Ok().content_type("application/json").body(body)
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .body(body)
 }
 
 pub async fn query_dataset(
-    http:    HttpRequest,
+    http: HttpRequest,
     backend: BackendData,
-    path:    web::Path<String>,
-    body:    web::Json<QueryRequest>,
+    limits: Option<web::Data<QueryLimits>>,
+    path: web::Path<String>,
+    body: web::Json<QueryRequest>,
 ) -> HttpResponse {
-    if let Err(e) = require_read(&http) { return e.error_response(); }
-    let name      = path.into_inner();
-    let page      = body.page.max(1);
-    let page_size = body.page_size.clamp(1, 1_000_000);
-    let req       = body.into_inner();
+    if let Err(e) = require_read(&http) {
+        return e.error_response();
+    }
+    let name = path.into_inner();
+    let max_page_size = limits
+        .as_ref()
+        .map(|l| l.max_page_size)
+        .unwrap_or_else(|| QueryLimits::default().max_page_size)
+        .max(1);
+    let page = body.page.max(1);
+    let page_size = body.page_size.clamp(1, max_page_size);
+    let mut req = body.into_inner();
+    req.page = page;
+    req.page_size = page_size;
 
     // Content negotiation: clients opt into Arrow IPC via the `Accept`
     // header or `?format=arrow`. Anything else (including no header)
@@ -162,24 +184,28 @@ pub async fn query_dataset(
     match backend.query(&name, &req).await {
         Ok(arr) => {
             let body = format!(r#"{{"data":{arr},"page":{page},"page_size":{page_size}}}"#);
-            HttpResponse::Ok().content_type("application/json").body(body)
+            HttpResponse::Ok()
+                .content_type("application/json")
+                .body(body)
         }
         Err(e) => e.error_response(),
     }
 }
 
 pub async fn count_dataset(
-    req:     HttpRequest,
+    req: HttpRequest,
     backend: BackendData,
-    path:    web::Path<String>,
-    body:    Option<web::Json<CountRequest>>,
+    path: web::Path<String>,
+    body: Option<web::Json<CountRequest>>,
 ) -> HttpResponse {
-    if let Err(e) = require_read(&req) { return e.error_response(); }
+    if let Err(e) = require_read(&req) {
+        return e.error_response();
+    }
     let name = path.into_inner();
-    let req  = body.map(|b| b.into_inner()).unwrap_or_default();
+    let req = body.map(|b| b.into_inner()).unwrap_or_default();
 
     match backend.count(&name, &req).await {
-        Ok(n)  => HttpResponse::Ok().json(serde_json::json!({ "count": n })),
+        Ok(n) => HttpResponse::Ok().json(serde_json::json!({ "count": n })),
         Err(e) => e.error_response(),
     }
 }
@@ -188,9 +214,9 @@ pub async fn count_dataset(
 /// Requires `X-Admin-Token` matching `$ADMIN_TOKEN`. Disabled if the env
 /// var is unset.
 pub async fn reload_dataset(
-    req:     HttpRequest,
+    req: HttpRequest,
     backend: BackendData,
-    path:    web::Path<String>,
+    path: web::Path<String>,
 ) -> HttpResponse {
     if let Err(e) = require_reload(&req) {
         return e.error_response();

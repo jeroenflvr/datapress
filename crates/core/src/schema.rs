@@ -28,13 +28,15 @@ pub enum LogicalType {
 impl LogicalType {
     /// True iff the type must be cast to VARCHAR when projected through
     /// DuckDB's `json_object()` call.
-    pub fn needs_cast(self) -> bool { matches!(self, LogicalType::Temporal) }
+    pub fn needs_cast(self) -> bool {
+        matches!(self, LogicalType::Temporal)
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ColumnInfo {
-    pub name:     String,
-    pub logical:  LogicalType,
+    pub name: String,
+    pub logical: LogicalType,
     /// Original backend-specific type name (e.g. "TIMESTAMP", "VARCHAR",
     /// "Float64") — included in the schema response for clients.
     pub sql_type: String,
@@ -43,7 +45,7 @@ pub struct ColumnInfo {
 
 #[derive(Debug, Clone)]
 pub struct DatasetSchema {
-    pub name:    String,
+    pub name: String,
     pub columns: Vec<ColumnInfo>,
     /// lowercase name → index in `columns`.
     pub by_name: HashMap<String, usize>,
@@ -51,10 +53,16 @@ pub struct DatasetSchema {
 
 impl DatasetSchema {
     pub fn new(name: impl Into<String>, columns: Vec<ColumnInfo>) -> Self {
-        let by_name = columns.iter().enumerate()
+        let by_name = columns
+            .iter()
+            .enumerate()
             .map(|(i, c)| (c.name.to_lowercase(), i))
             .collect();
-        Self { name: name.into(), columns, by_name }
+        Self {
+            name: name.into(),
+            columns,
+            by_name,
+        }
     }
 
     /// Case-insensitive lookup. Returns the canonical `ColumnInfo`.
@@ -77,10 +85,23 @@ mod tests {
     use super::*;
 
     fn s() -> DatasetSchema {
-        DatasetSchema::new("ds", vec![
-            ColumnInfo { name: "Id".into(),    logical: LogicalType::Int,      sql_type: "BIGINT".into(),    nullable: false },
-            ColumnInfo { name: "When".into(),  logical: LogicalType::Temporal, sql_type: "TIMESTAMP".into(), nullable: true  },
-        ])
+        DatasetSchema::new(
+            "ds",
+            vec![
+                ColumnInfo {
+                    name: "Id".into(),
+                    logical: LogicalType::Int,
+                    sql_type: "BIGINT".into(),
+                    nullable: false,
+                },
+                ColumnInfo {
+                    name: "When".into(),
+                    logical: LogicalType::Temporal,
+                    sql_type: "TIMESTAMP".into(),
+                    nullable: true,
+                },
+            ],
+        )
     }
 
     #[test]
@@ -110,7 +131,13 @@ mod tests {
     #[test]
     fn needs_cast_only_temporal() {
         assert!(LogicalType::Temporal.needs_cast());
-        for t in [LogicalType::Bool, LogicalType::Int, LogicalType::Float, LogicalType::Utf8, LogicalType::Other] {
+        for t in [
+            LogicalType::Bool,
+            LogicalType::Int,
+            LogicalType::Float,
+            LogicalType::Utf8,
+            LogicalType::Other,
+        ] {
             assert!(!t.needs_cast());
         }
     }
