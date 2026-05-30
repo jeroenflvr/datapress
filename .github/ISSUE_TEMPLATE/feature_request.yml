@@ -1,0 +1,46 @@
+name: Feature request
+description: Suggest an improvement or new capability for datapress
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What are you trying to do, and why does it matter?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior or API you would like to see.
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Query DSL
+        - HTTP API
+        - DuckDB backend
+        - DataFusion backend
+        - Python package
+        - Authentication / authorization
+        - Object storage / dataset formats
+        - Documentation
+        - Operations / observability
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workaround, competing approach, or API trade-off worth noting?
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, examples, configs, benchmark needs, or compatibility concerns.

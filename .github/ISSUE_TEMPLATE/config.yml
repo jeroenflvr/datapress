@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/jeroenflvr/fast-api/security/advisories/new
+    about: Please report security vulnerabilities privately.
+  - name: Documentation
+    url: https://github.com/jeroenflvr/fast-api/tree/main/docs/src
+    about: Browse or improve the project documentation.
