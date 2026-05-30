@@ -23,14 +23,14 @@ jobs:
     name: cargo clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-clippy
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
       - name: Build MkDocs site
         run: uv tool run --with 'mkdocs>=1.6,<2' --with 'mkdocs-material>=9.6,<10' mkdocs build -f docs/mkdocs.yml -d site --strict
       - run: cargo clippy --workspace --all-targets --features docs,swagger --locked
@@ -46,7 +46,7 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: "0"
       CARGO_PROFILE_DEV_DEBUG:  "0"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Free disk space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -61,7 +61,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-test
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v7
       - name: Build MkDocs site
         run: uv tool run --with 'mkdocs>=1.6,<2' --with 'mkdocs-material>=9.6,<10' mkdocs build -f docs/mkdocs.yml -d site --strict
       - run: cargo test --workspace --features docs,swagger --locked
@@ -70,7 +70,7 @@ jobs:
     name: cargo audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: taiki-e/install-action@v2
         with:
