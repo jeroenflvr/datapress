@@ -14,7 +14,7 @@ same predicates, same pagination — only the response encoding differs.
 | Types preserved     | JSON scalars only (`int`/`float`/`bool`/`string`); temporals stringified to ISO-8601 | Native Arrow types — `Int32`, `Timestamp(ns)`, `Decimal128`, dictionary, etc. retained end-to-end |
 | Page metadata       | In the body                                          | In headers: `X-Page`, `X-Page-Size`                                              |
 | Empty result        | `{ "data": [], "page": ..., "page_size": ... }`      | Valid stream with the schema message only, zero batches                          |
-| Compression         | Big win — JSON is text                               | Smaller starting point; gzip/zstd still help on wide / repetitive cols, brotli usually skipped |
+| Compression         | Big win — JSON is text                               | Smaller starting point; gzip/brotli/zstd can still help on wide / repetitive cols; clients must decode HTTP compression before handing bytes to Arrow |
 | Client cost         | `json.loads` + per-row dict construction             | `pyarrow.ipc.open_stream(...).read_all()` → zero-copy `pyarrow.Table`            |
 | Best for            | Small responses, browsers, ad-hoc `curl`, dashboards | Bulk data into Polars / pandas / DuckDB-on-the-client, ML feature pipelines      |
 
@@ -68,6 +68,35 @@ To keep Arrow responses smaller, ask for fewer columns, lower
 Also check any reverse proxy in front of DataPress: proxies often have
 their own request and response buffering limits, independent of
 DataPress' `max_body_bytes`.
+
+## HTTP compression
+
+Arrow IPC is already a compact binary format, but DataPress can still
+compress the HTTP response when `[server].compress = true` and the
+client sends `Accept-Encoding`. For example, a client can ask for
+Brotli with:
+
+```http
+Accept-Encoding: br
+```
+
+That compression is an HTTP transfer encoding around the Arrow IPC
+stream. The Arrow stream itself is unchanged, but the bytes on the wire
+are compressed. Therefore the client must pass **decompressed** bytes to
+`pyarrow.ipc.open_stream()`. If compressed bytes are passed directly to
+PyArrow, it will fail because the first bytes no longer look like an
+Arrow IPC stream.
+
+With `requests`, `response.content` is decompressed automatically for
+supported `Content-Encoding` values. `gzip` and `deflate` work out of
+the box. Brotli requires a Brotli decoder package in the Python
+environment, such as `brotli` or `brotlicffi`. Without one, do not send
+`Accept-Encoding: br`; request `gzip` or `identity`, or decompress the
+body yourself before calling `ipc.open_stream()`.
+
+When debugging, inspect `response.headers["Content-Encoding"]`. If it
+is `br` and `ipc.open_stream(response.content)` throws, the client is
+almost certainly still holding compressed bytes.
 
 ## How to ask for Arrow
 
@@ -138,10 +167,17 @@ def query_all_polars(
             response = session.post(
                 f"{base_url.rstrip('/')}/api/v1/datasets/{dataset}/query",
                 json=request_body,
-                headers={"Accept": ARROW},
+                headers={
+                    "Accept": ARROW,
+                    # Requires a Brotli decoder package for requests,
+                    # for example brotli or brotlicffi.
+                    "Accept-Encoding": "br",
+                },
             )
             response.raise_for_status()
 
+            # response.content must be decompressed before PyArrow sees it.
+            # requests does this for Brotli only when brotli/brotlicffi is installed.
             table = ipc.open_stream(response.content).read_all()
             tables.append(table)
 
