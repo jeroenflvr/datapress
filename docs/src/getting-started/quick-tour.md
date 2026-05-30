@@ -46,11 +46,23 @@ curl -s -X POST http://localhost:8080/api/v1/datasets/accidents/count \
 
 ## Arrow IPC for bulk pulls
 
+For a single page as Arrow IPC, keep using `/query` and opt into Arrow:
+
 ```bash
 curl -X POST 'http://localhost:8080/api/v1/datasets/accidents/query?format=arrow' \
   -H 'Content-Type: application/json' \
   --output page.arrow \
   -d '{ "columns": ["ID","State"], "page_size": 10000 }'
+```
+
+For one request that streams every matching row, use `/query/stream`
+and cap the export with `limit` when appropriate:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/datasets/accidents/query/stream \
+  -H 'Content-Type: application/json' \
+  --output result.arrow \
+  -d '{ "columns": ["ID","State"], "limit": 100000 }'
 ```
 
 Load it in Python:
@@ -63,7 +75,7 @@ df = pl.from_arrow(table)
 ```
 
 See [Querying › Arrow IPC vs JSON](../query/arrow-ipc.md) for the
-trade-offs.
+streaming modes and trade-offs.
 
 ## Probes
 

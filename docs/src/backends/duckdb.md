@@ -15,9 +15,9 @@ HTTP API.
   step at startup — the server is up and serving within milliseconds.
 - **httpfs + delta.** DuckDB autoloads `httpfs` and `delta` extensions
   when the dataset URL requires them.
-- **Arrow IPC.** Responses to `/query?format=arrow` stream via
-  DuckDB's native `query_arrow` API; no JSON round-trip on the server
-  side.
+- **Arrow IPC.** Paged `/query?format=arrow` responses and full
+  `/query/stream` exports write DuckDB's native `query_arrow` batches
+  into the HTTP response stream; no JSON round-trip on the server side.
 - **Transactional reload.** Dataset reload uses DuckDB's ACID transaction
   path (`CREATE OR REPLACE TABLE ... AS SELECT ...`), so failed reloads
   leave the existing table live. See [Operations › Dataset reload](../operations/reload.md).

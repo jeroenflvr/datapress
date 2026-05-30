@@ -1,37 +1,65 @@
 # Arrow IPC vs JSON
 
-`/query` can return one page in two wire formats. Same body, same
-predicates, same pagination — only the response encoding differs.
+DataPress has two Arrow IPC modes:
 
-For one-request dataframe exports, `/query/stream` returns a single
-Arrow IPC response for all matching rows. It uses the same request shape
-for `columns`, `predicates`, `order_by`, `group_by`, `aggregations`,
-`distinct`, and optional `limit`, but ignores `page` and `page_size`.
+- **Paged Arrow**: `POST /query` with `Accept: application/vnd.apache.arrow.stream`
+    or `?format=arrow`. This returns one requested page as an Arrow IPC
+    stream. Clients still make one request per page.
+- **Full-result Arrow stream**: `POST /query/stream`. This returns one
+    Arrow IPC stream for the full matching result set in a single HTTP
+    response. It ignores `page` and `page_size`; use `limit` to cap rows.
+
+Both modes use the same Arrow IPC wire format: one schema message, zero
+or more `RecordBatch` messages, then an end marker. The difference is
+which rows the server selects before it starts writing the stream.
+
+## What Streaming Means
+
+Arrow IPC is a stream format, and DataPress writes it to the HTTP
+response as chunks. This avoids building one complete response buffer in
+memory before sending bytes to the client.
+
+That does not always mean the query engine itself is a server-side
+cursor:
+
+- DuckDB uses its native Arrow iterator and writes batches directly into
+    the HTTP response stream.
+- DataFusion writes Arrow batches into the HTTP response stream. For SQL
+    fallback paths, DataFusion may still collect execution batches before
+    DataPress encodes them, but DataPress no longer concatenates them into
+    one giant batch or buffers the full Arrow IPC response.
+
+Client code can usually read either mode the same way:
+
+```python
+table = pyarrow.ipc.open_stream(response.content).read_all()
+```
+
+For very large results, prefer `/query/stream` with a sensible `limit`,
+or consume the HTTP response incrementally with an HTTP client that
+supports streaming bytes.
 
 ## Comparison
 
-| Aspect              | JSON (default)                                       | Arrow IPC stream                                                                 |
-|---------------------|------------------------------------------------------|----------------------------------------------------------------------------------|
-| Content-Type        | `application/json`                                   | `application/vnd.apache.arrow.stream`                                            |
-| How to ask          | nothing — it's the default                           | `Accept: application/vnd.apache.arrow.stream` **or** `?format=arrow` on the URL  |
-| Shape               | `{ "data": [{...}, ...], "page": N, "page_size": M }` | Self-describing stream: 1 schema message + N `RecordBatch` messages + EOS        |
-| Layout              | Row-oriented; column names repeated on every row     | Columnar; one contiguous buffer per column per batch                             |
-| Types preserved     | JSON scalars only (`int`/`float`/`bool`/`string`); temporals stringified to ISO-8601 | Native Arrow types — `Int32`, `Timestamp(ns)`, `Decimal128`, dictionary, etc. retained end-to-end |
-| Page metadata       | In the body                                          | Paged `/query`: headers `X-Page`, `X-Page-Size`; `/query/stream`: none           |
-| Empty result        | `{ "data": [], "page": ..., "page_size": ... }`      | Valid stream with the schema message only, zero batches                          |
-| Transfer            | One JSON response body                               | Streamed HTTP body carrying Arrow IPC chunks                                     |
-| Compression         | Big win — JSON is text                               | Smaller starting point; gzip/brotli/zstd can still help on wide / repetitive cols; clients must decode HTTP compression before handing bytes to Arrow |
-| Client cost         | `json.loads` + per-row dict construction             | `pyarrow.ipc.open_stream(...).read_all()` → zero-copy `pyarrow.Table`            |
-| Best for            | Small responses, browsers, ad-hoc `curl`, dashboards | Bulk data into Polars / pandas / DuckDB-on-the-client, ML feature pipelines      |
+| Aspect              | JSON `/query`                                        | Paged Arrow `/query`                                                             | Full Arrow `/query/stream`                                                      |
+|---------------------|------------------------------------------------------|----------------------------------------------------------------------------------|---------------------------------------------------------------------------------|
+| Content-Type        | `application/json`                                   | `application/vnd.apache.arrow.stream`                                            | `application/vnd.apache.arrow.stream`                                           |
+| How to ask          | Default                                              | `Accept: application/vnd.apache.arrow.stream` or `?format=arrow`                 | Call `/query/stream`                                                            |
+| Rows returned       | One page                                             | One page                                                                         | All matching rows, optionally capped by `limit`                                 |
+| Uses `page`         | Yes                                                  | Yes                                                                              | No                                                                              |
+| Uses `page_size`    | Yes, clamped to `server.max_page_size`               | Yes, clamped to `server.max_page_size`                                           | No                                                                              |
+| Uses `limit`        | Caps total rows across pages                         | Caps total rows across pages                                                     | Caps total rows in the single stream                                            |
+| Shape               | `{ "data": [{...}], "page": N, "page_size": M }`    | Arrow IPC stream: schema + batches + end marker                                  | Arrow IPC stream: schema + batches + end marker                                 |
+| Page metadata       | In the body                                          | Headers `X-Page`, `X-Page-Size`                                                  | None                                                                            |
+| Empty result        | `{ "data": [], "page": ..., "page_size": ... }`      | Valid stream with the schema message only, zero batches                          | Valid stream with the schema message only, zero batches                         |
+| Best for            | Small UI/API responses                               | Dataframe clients that want explicit paging                                      | Dataframe clients that want one request for a bounded export                    |
 
 ## When to pick which
 
 - **JSON** when the consumer is JavaScript, the response is small
   (≲ 10 k rows), or you're poking at the API by hand.
-- **Paged Arrow IPC** when you're moving result pages into a dataframe
-  library, the schema has non-string types you want preserved, or
-  page sizes are large enough that JSON parse time shows up in
-  profiles.
+- **Paged Arrow IPC** when you want dataframe-friendly pages, bounded
+    memory per request, retryable page fetches, or parallel page downloads.
 - **`/query/stream`** when you want one HTTP request for the full
     filtered result set and can consume an Arrow IPC stream on the client.
 
@@ -100,6 +128,22 @@ curl -X POST http://localhost:8080/api/v1/datasets/accidents/query/stream \
 It does not include `X-Page` or `X-Page-Size`, because there is no
 server-side page boundary. The optional top-level `limit` still caps the
 total number of rows in the stream.
+
+The request flow is different from paged `/query`:
+
+```text
+Paged /query:
+request page 1 -> Arrow stream for page 1 -> done
+request page 2 -> Arrow stream for page 2 -> done
+request page 3 -> Arrow stream for page 3 -> done
+
+Full /query/stream:
+one request -> Arrow stream for every matching row -> done
+```
+
+Use a deterministic `order_by` for either mode when stable row order
+matters. For paged `/query`, it keeps page boundaries stable. For
+`/query/stream`, it makes repeated exports easier to compare.
 
 ## HTTP compression
 
@@ -230,6 +274,44 @@ response.raise_for_status()
 table = ipc.open_stream(response.content).read_all()
 df = pl.from_arrow(table)
 ```
+
+That example still buffers the HTTP response in `response.content`
+before PyArrow reads it. The server streams the response, but the client
+chooses to materialize the bytes. For larger responses, stream bytes into
+a file-like buffer first:
+
+```python
+import tempfile
+
+import httpx
+import pyarrow.ipc as ipc
+import polars as pl
+
+with tempfile.SpooledTemporaryFile(max_size=256 * 1024 * 1024) as file:
+    with httpx.stream(
+        "POST",
+        "http://localhost:8080/api/v1/datasets/accidents/query/stream",
+        json={
+            "columns": ["ID", "State", "Severity", "Start_Time"],
+            "predicates": [{"col": "State", "op": "in", "val": ["CA", "TX"]}],
+            "order_by": [{"col": "ID"}],
+            "limit": 100_000,
+        },
+        timeout=60.0,
+    ) as response:
+        response.raise_for_status()
+        for chunk in response.iter_bytes():
+            file.write(chunk)
+
+    file.seek(0)
+    table = ipc.open_stream(file).read_all()
+
+df = pl.from_arrow(table)
+```
+
+`SpooledTemporaryFile` keeps small responses in memory and spills larger
+ones to disk. HTTP compression is still decoded by `httpx` before chunks
+are yielded, provided the needed decoder is installed.
 
 ### Async `httpx` with count + gather
 

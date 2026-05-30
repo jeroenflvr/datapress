@@ -27,14 +27,19 @@ see [Counting](count.md) for a separate count endpoint.
 ## Response — Arrow IPC
 
 When the client opts in (see [Arrow IPC vs JSON](arrow-ipc.md)), the
-body is a self-describing Arrow IPC **stream** and pagination metadata
-moves into response headers:
+`/query` body is a self-describing Arrow IPC **stream** for the selected
+page and pagination metadata moves into response headers:
 
 ```http
 Content-Type: application/vnd.apache.arrow.stream
 X-Page: 1
 X-Page-Size: 50
 ```
+
+`POST /query/stream` uses the same request body for filtering,
+projection, sorting, grouping, and optional `limit`, but ignores `page`
+and `page_size`. Its response is one Arrow IPC stream for all matching
+rows and does not include page headers.
 
 ## Smallest possible query
 

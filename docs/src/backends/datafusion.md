@@ -14,8 +14,11 @@ and queries it with [Apache DataFusion](https://datafusion.apache.org/).
   `O(1)` resolution of `eq` / `in` predicates. Combined predicates on
   multiple indexed columns merge sorted row-id lists without touching
   DataFusion.
-- **Arrow IPC.** Responses to `/query?format=arrow` are emitted from
-  the resident chunks with no copy.
+- **Arrow IPC.** Paged `/query?format=arrow` responses and full
+  `/query/stream` exports write Arrow batches into the HTTP response
+  stream. Resident no-filter streams can reuse existing batches directly;
+  SQL fallback paths may still collect DataFusion execution batches
+  before DataPress encodes them.
 - **Lazy parquet mode.** `lazy = true` registers a `ListingTable`
   pointing at parquet files; DataFusion handles projection &
   predicate pushdown for datasets too big to materialise.
