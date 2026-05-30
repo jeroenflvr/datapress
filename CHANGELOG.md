@@ -3,6 +3,15 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.4] - 2026-05-30
+
+### Miscellaneous
+
+- Always build with metrics ([ec1c7ee](https://github.com/jeroenflvr/fast-api/commit/ec1c7eec76e21333eb504f60803b6b59a12d85b7))
+- Pin mkdocs version to avoid 2.0 breaking changes ([d17e509](https://github.com/jeroenflvr/fast-api/commit/d17e50952d1cf0cdec3b95b4d160297030309adb))
+- Cleanup projects and align crates ([74f6d6d](https://github.com/jeroenflvr/fast-api/commit/74f6d6d2443a759f914747952f9fe2dbb623c9d2))
+- Update community standards ([9d35495](https://github.com/jeroenflvr/fast-api/commit/9d354955609512c74d5f7078ca73ec010f050eb7))
+
 ## [0.2.3] - 2026-05-29
 
 ### Bug Fixes
