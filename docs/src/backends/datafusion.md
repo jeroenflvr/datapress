@@ -22,7 +22,7 @@ and queries it with [Apache DataFusion](https://datafusion.apache.org/).
 - **Hot reload.** `POST /api/v1/datasets/{name}/reload` swaps the
   resident chunks atomically using an `ArcSwap` double buffer; queries
   in flight see the old data, queries arriving after the swap see the
-  new.
+  new. See [Operations › Dataset reload](../operations/reload.md).
 
 ## Trade-offs
 

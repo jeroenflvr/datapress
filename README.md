@@ -543,10 +543,10 @@ through the engine.
 
 ### `POST /api/v1/datasets/{name}/reload` *(admin)*
 
-Rebuilds the dataset from its configured `source` and atomically swaps it
-in. Running queries finish against the old snapshot; the next query hits
-the new data. The old in-memory copy is dropped once the last in-flight
-request releases its reference.
+Rebuilds the dataset from its configured `source` and publishes the new
+contents without a server restart. Running queries finish against a
+consistent old snapshot; later queries see the new data. If the rebuild
+fails, the previously published dataset stays live.
 
 Requires `X-Admin-Token: $ADMIN_TOKEN`. **If `ADMIN_TOKEN` is unset the
 endpoint is disabled** — the secure default. The comparison is
@@ -567,36 +567,32 @@ curl -s -X POST \
 | `500`  | `{ "error": "internal error: …" }`            | Parquet read failed — old data stays live.           |
 
 Concurrent reloads of the **same** dataset are serialised (per-name mutex);
-reloads of **different** datasets run in parallel. Peak memory roughly
-doubles during a reload because old and new copies coexist briefly.
+reloads of **different** datasets run in parallel.
 
-#### How it works — double-buffered, lock-free swap
+#### Backend-specific reload semantics
 
-Hot-reload uses a classic **double-buffering** pattern. There is never a
-"loading…" window where queries fail or block:
+- **DataFusion** uses a service-level double buffer. The backend builds a
+  fresh `DatasetState` off to the side (parquet/Delta read, Arrow
+  `RecordBatch` chunks, equality indexes, partition metadata), registers
+  the new provider, then publishes it with an `ArcSwap` snapshot update.
+  Queries that already captured the old `Arc` keep running; later queries
+  see the new state. The old buffers are dropped once the last reader
+  releases its reference. Trade-off: for materialised datasets, peak RSS
+  can approach roughly twice the dataset size plus index overhead during
+  reload.
+- **DuckDB** delegates publication to the database engine. Reload runs
+  `CREATE OR REPLACE TABLE ... AS SELECT ...` against the dataset source.
+  DuckDB treats that as an ACID transaction over the table/catalog
+  replacement: if the source read or table creation fails, the existing
+  table remains live; if it succeeds, later queries see the replacement
+  atomically. In-flight queries continue against the snapshot they started
+  with through DuckDB's transaction/MVCC semantics. DataPress then
+  refreshes only the small cached schema and row-count metadata.
 
-1. **Build off to the side.** The reload handler re-reads the dataset's
-   `source` and constructs a brand-new `DatasetState` (parquet/Delta
-   decode, equality-index build, partitioning) entirely off the hot path.
-   Live queries keep hitting the current snapshot the whole time.
-2. **Atomic pointer swap.** When the new state is ready, a single
-   `ArcSwap::store` replaces the pointer in the shared dataset map. This
-   is a single atomic word-write — no readers are paused, no locks held.
-3. **Old copy retires lazily.** Queries that grabbed the old `Arc` before
-   the swap keep using it; once the last in-flight request releases its
-   reference, the old `Arc`'s strong count hits zero and the buffers are
-   freed. No GC pause, no stop-the-world.
-4. **Per-name serialisation.** A small per-dataset async mutex prevents two
-   concurrent reloads of the *same* dataset from both rebuilding — they
-   queue. Reloads of *different* datasets run fully in parallel.
-5. **Failure is safe.** If the rebuild errors out (bad parquet, S3 timeout,
-   …), the swap never happens. The old snapshot stays live and the
-   handler returns `500` with the underlying error. Clients never observe
-   a partially-loaded dataset.
-
-Trade-off: peak RSS roughly doubles for the dataset being reloaded while
-both buffers are resident. Reloads of different datasets don't compound
-this — only the one being rebuilt is held twice.
+The HTTP contract is the same for both backends: clients observe either
+the old dataset or the new dataset, never a partially loaded one. The
+resource profile differs: DataFusion owns the Arrow buffers in process;
+DuckDB relies on DuckDB's storage engine and buffer manager.
 
 ---
 

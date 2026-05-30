@@ -131,6 +131,7 @@ nav:
   - Operations:
       - operations/index.md
       - Probes (healthz / readyz / version): operations/probes.md
+      - Dataset reload: operations/reload.md
       - Graceful shutdown: operations/graceful-shutdown.md
       - Logging: operations/logging.md
       - Prometheus metrics: operations/metrics.md

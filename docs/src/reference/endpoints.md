@@ -67,6 +67,10 @@ See [Operations › Prometheus metrics](../operations/metrics.md).
 be set (otherwise the endpoint returns `403`). The request must carry
 the matching token in the `X-Admin-Token` header.
 
+Reload publication is backend-specific: DataFusion uses a service-level
+double buffer, while DuckDB uses transactional table replacement inside
+DuckDB. See [Operations › Dataset reload](../operations/reload.md).
+
 ```bash
 curl -s -X POST \
      -H "X-Admin-Token: $ADMIN_TOKEN" \

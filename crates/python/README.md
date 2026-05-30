@@ -333,7 +333,50 @@ df    = pl.from_arrow(table)                    # zero-copy → Polars
 page, page_size = r.headers["X-Page"], r.headers["X-Page-Size"]
 ```
 
-DataFusion backend only. DuckDB returns `400`; fall back to JSON.
+To read the complete result set into Polars, walk pages until the server
+returns fewer rows than requested:
+
+```python
+import pyarrow as pa
+import pyarrow.ipc as ipc
+import polars as pl
+import requests
+
+ARROW = "application/vnd.apache.arrow.stream"
+
+
+def query_all_polars(
+    base_url: str,
+    dataset: str,
+    body: dict,
+    page_size: int = 100_000,
+) -> pl.DataFrame:
+    tables: list[pa.Table] = []
+    page = 1
+
+    with requests.Session() as session:
+        while True:
+            response = session.post(
+                f"{base_url.rstrip('/')}/api/v1/datasets/{dataset}/query",
+                json={**body, "page": page, "page_size": page_size},
+                headers={"Accept": ARROW},
+            )
+            response.raise_for_status()
+
+            table = ipc.open_stream(response.content).read_all()
+            tables.append(table)
+
+            if table.num_rows < page_size:
+                break
+            page += 1
+
+    table = tables[0] if len(tables) == 1 else pa.concat_tables(tables)
+    return pl.from_arrow(table)
+```
+
+Use a deterministic `order_by` for full exports from datasets that may be
+reloaded while you page through results. Arrow IPC is supported by both
+backends.
 
 ### Count body
 
@@ -371,17 +414,20 @@ curl -X POST -H "X-Admin-Token: supersecret" \
 # → { "dataset": "accidents", "rows": 7728394, "elapsed_ms": 1842 }
 ```
 
-**Double-buffered, zero-downtime swap.** Reload builds the new dataset
-off to the side (parquet decode + equality-index build happen on a
-worker thread against the *old* snapshot still being served), then a
-single `ArcSwap::store` flips the pointer in the shared map. In-flight
-queries finish against the old `Arc`; the next request sees the new
-data. The old buffers are dropped lazily once the last reader releases
-its reference — no locks, no GC pause, no "loading…" window. If the
-rebuild fails the swap simply doesn't happen and the old snapshot stays
-live. Per-dataset reloads are serialised by an async mutex; reloads of
-different datasets run in parallel. Peak RSS roughly doubles for the
-dataset being reloaded while both buffers are resident.
+Reload publication is backend-specific. DataFusion uses a service-level
+double buffer: it builds a new `DatasetState` off to the side, then
+publishes it with an `ArcSwap` snapshot update. In-flight queries keep
+using the old Arrow buffers; later queries see the new state. Peak RSS can
+approach roughly twice the materialised dataset size during reload.
+
+DuckDB delegates the heavy publication step to the engine with
+`CREATE OR REPLACE TABLE ... AS SELECT ...`. DuckDB handles that as an
+ACID transaction over the table/catalog replacement: failures leave the
+existing table live, and successful reloads become visible atomically to
+later queries while in-flight queries continue against their starting
+snapshot. DataPress then refreshes its small cached schema and row-count
+metadata. Per-dataset reloads are serialised by an async mutex; reloads
+of different datasets run in parallel.
 
 ---
 

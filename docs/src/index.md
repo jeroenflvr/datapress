@@ -28,22 +28,22 @@ engines and lets you configure and launch the server from Python.
 
 <div class="grid cards" markdown>
 
-- :material-rocket-launch: **[Getting started](getting-started/index.md)**
+- **[Getting started](getting-started/index.md)**
   Install, edit `datasets.toml`, run a backend, hit it with `curl`.
 
-- :material-cog: **[Configuration](configuration/index.md)**
+- **[Configuration](configuration/index.md)**
   Every TOML field, with copy-pasteable examples.
 
-- :material-database-search: **[Querying](query/index.md)**
+- **[Querying](query/index.md)**
   The full predicate / aggregation / pagination DSL.
 
-- :material-server: **[Backends](backends/index.md)**
+- **[Backends](backends/index.md)**
   When to pick DuckDB vs Arrow + DataFusion.
 
-- :material-language-python: **[Python](python/index.md)**
+- **[Python](python/index.md)**
   `pip install datap-rs`, run the same server from Python.
 
-- :material-wrench: **[Operations](operations/index.md)**
+- **[Operations](operations/index.md)**
   Probes, shutdown, logging, deployment.
 
 </div>

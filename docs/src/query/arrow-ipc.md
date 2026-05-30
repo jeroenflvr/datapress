@@ -50,6 +50,9 @@ same predicates, same pagination — only the response encoding differs.
 
 ## Reading Arrow IPC in Python
 
+For a single page, read the Arrow IPC stream and pass the resulting
+`pyarrow.Table` to Polars:
+
 ```python
 import requests, pyarrow.ipc as ipc, polars as pl
 
@@ -61,6 +64,62 @@ r = requests.post(
 table = ipc.open_stream(r.content).read_all()     # → pyarrow.Table
 df    = pl.from_arrow(table)                      # zero-copy → Polars
 page, size = int(r.headers["X-Page"]), int(r.headers["X-Page-Size"])
+```
+
+To pull the complete result set, request pages until the server returns
+fewer rows than `page_size`, then concatenate the Arrow tables before
+creating the Polars dataframe. When exporting a changing dataset, include
+a deterministic `order_by` so page boundaries stay stable.
+
+```python
+import pyarrow as pa
+import pyarrow.ipc as ipc
+import polars as pl
+import requests
+
+ARROW = "application/vnd.apache.arrow.stream"
+
+
+def query_all_polars(
+    base_url: str,
+    dataset: str,
+    body: dict,
+    *,
+    page_size: int = 100_000,
+) -> pl.DataFrame:
+    tables: list[pa.Table] = []
+    page = 1
+
+    with requests.Session() as session:
+        while True:
+            request_body = {**body, "page": page, "page_size": page_size}
+            response = session.post(
+                f"{base_url.rstrip('/')}/api/v1/datasets/{dataset}/query",
+                json=request_body,
+                headers={"Accept": ARROW},
+            )
+            response.raise_for_status()
+
+            table = ipc.open_stream(response.content).read_all()
+            tables.append(table)
+
+            if table.num_rows < page_size:
+                break
+            page += 1
+
+    table = tables[0] if len(tables) == 1 else pa.concat_tables(tables)
+    return pl.from_arrow(table)
+
+
+df = query_all_polars(
+    "http://localhost:8080",
+    "accidents",
+    {
+        "columns": ["ID", "State", "Severity"],
+        "predicates": [{"col": "State", "op": "eq", "val": "TX"}],
+        "order_by": [{"col": "ID"}],
+    },
+)
 ```
 
 ## Backend support

@@ -18,6 +18,9 @@ HTTP API.
 - **Arrow IPC.** Responses to `/query?format=arrow` stream via
   DuckDB's native `query_arrow` API; no JSON round-trip on the server
   side.
+- **Transactional reload.** Dataset reload uses DuckDB's ACID transaction
+  path (`CREATE OR REPLACE TABLE ... AS SELECT ...`), so failed reloads
+  leave the existing table live. See [Operations › Dataset reload](../operations/reload.md).
 - **Small binary.** No DataFusion plan trees, no in-memory chunk
   store, no equality index — just DuckDB.
 

@@ -12,7 +12,7 @@
 | Range / `LIKE` / `is_null`     | SQL path                           | SQL path (DataFusion)                              |
 | Sort / `group_by` / `distinct` | SQL path                           | SQL path                                           |
 | Arrow IPC responses            | ✅ native `query_arrow`            | ✅ from resident chunks, zero-copy                 |
-| Hot reload (`/reload`)         | ✅                                  | ✅ atomic `ArcSwap` swap                            |
+| Hot reload (`/reload`)         | ✅ DuckDB transactional replace     | ✅ `ArcSwap` double-buffer swap                     |
 | Delta support                  | ✅ via `delta` extension            | ✅ via `deltalake` crate                            |
 | S3 support                     | ✅ via `httpfs`                     | ✅ via `object_store`                               |
 | Best for                       | Huge or growing datasets, full SQL | Hot, RAM-resident data with indexed point queries  |
