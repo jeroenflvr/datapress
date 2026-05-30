@@ -39,7 +39,7 @@ jobs:
         with:
           target:         ${{ matrix.target }}
           manylinux:      auto
-          args:           --release --features docs,swagger --out dist
+          args:           --release --features docs,swagger,auth --out dist
           rust-toolchain: stable
           # The rust-cross manylinux2014 images ship GCC 4.8 (CentOS 7
           # base), which trips DuckDB's `__GNUC__ < 5` ABI guard in
@@ -86,7 +86,7 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           target:         aarch64
-          args:           --release --features docs,swagger --out dist
+          args:           --release --features docs,swagger,auth --out dist
           rust-toolchain: stable
           sccache:        'false'
       - uses: actions/upload-artifact@v4
@@ -113,7 +113,7 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           target:         x64
-          args:           --release --features docs,swagger --out dist
+          args:           --release --features docs,swagger,auth --out dist
           rust-toolchain: stable
           sccache:        'false'
       - uses: actions/upload-artifact@v4

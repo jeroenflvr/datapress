@@ -34,7 +34,7 @@ Every example below uses the `accidents` dataset from `data/us_accidents/`.
 ## 1. Empty body — first page of everything
 
 ```bash
-curl -s -X POST http://localhost:8000/api/datasets/accidents/query \
+curl -s -X POST http://localhost:8000/api/v1/datasets/accidents/query \
      -H 'content-type: application/json' \
      -d '{}'
 ```
@@ -376,7 +376,7 @@ more `RecordBatch` messages + EOS). Pagination metadata moves into
 response headers: `X-Page` and `X-Page-Size`.
 
 ```bash
-curl -X POST http://localhost:8080/api/datasets/accidents/query \
+curl -X POST http://localhost:8080/api/v1/datasets/accidents/query \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/vnd.apache.arrow.stream' \
   --output page.arrow \
@@ -430,7 +430,7 @@ binary columns always go through SQL.
 ## Counting rows
 
 ```
-POST /api/datasets/{name}/count
+POST /api/v1/datasets/{name}/count
 Content-Type: application/json
 ```
 
@@ -448,12 +448,12 @@ Examples:
 
 ```bash
 # Total row count — O(1) on materialised datasets (no scan).
-curl -s -X POST http://localhost:8000/api/datasets/accidents/count \
+curl -s -X POST http://localhost:8000/api/v1/datasets/accidents/count \
      -H 'content-type: application/json' -d '{}'
 # → {"count":7728394}
 
 # Filtered count — same operators as /query.
-curl -s -X POST http://localhost:8000/api/datasets/accidents/count \
+curl -s -X POST http://localhost:8000/api/v1/datasets/accidents/count \
      -H 'content-type: application/json' \
      -d '{
        "predicates": [
@@ -483,7 +483,7 @@ Execution paths (DataFusion backend):
 import httpx
 
 resp = httpx.post(
-    "http://localhost:8000/api/datasets/accidents/query",
+    "http://localhost:8000/api/v1/datasets/accidents/query",
     json={
         "columns": ["id", "state", "severity", "start_time"],
         "predicates": [
@@ -510,13 +510,13 @@ Counting from Python is the same shape — POST to `/count` with just
 import httpx
 
 total = httpx.post(
-    "http://localhost:8000/api/datasets/accidents/count",
+    "http://localhost:8000/api/v1/datasets/accidents/count",
     json={},
     timeout=30.0,
 ).raise_for_status().json()["count"]
 
 filtered = httpx.post(
-    "http://localhost:8000/api/datasets/accidents/count",
+    "http://localhost:8000/api/v1/datasets/accidents/count",
     json={"predicates": [
         {"col": "state",    "op": "in",  "val": ["CA", "TX"]},
         {"col": "severity", "op": "gte", "val": 3},

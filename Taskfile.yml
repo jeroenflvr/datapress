@@ -79,9 +79,10 @@ tasks:
       - uv tool run --with maturin maturin develop --release --uv
 
   py:build:
-    desc: Build a release wheel into ./target/wheels/
+    desc: Build a release wheel into ./target/wheels/ with the published feature set
+    deps: [docs:build]
     cmds:
-      - uv tool run --with maturin maturin build --release
+      - uv tool run --with maturin maturin build --release --features docs,swagger,auth
 
   # ---------------------------------------------------------------------
   # Documentation (MkDocs + Material)
@@ -135,7 +136,7 @@ tasks:
       - sh: '! git rev-parse "{{.VERSION}}" >/dev/null 2>&1'
         msg: "Tag {{.VERSION}} already exists."
     cmds:
-      # 1. Bump workspace version (single source of truth — all crates inherit via version.workspace = true).
+      # 1. Bump workspace version and internal path-dependency constraints.
       - |
         python3 -c "
         import re, pathlib
@@ -143,6 +144,10 @@ tasks:
         s = p.read_text()
         new, n = re.subn(r'(?m)^(version\s*=\s*\")[^\"]+(\"\s*(?:#.*)?)$', r'\g<1>{{.BARE_VERSION}}\g<2>', s, count=1)
         assert n == 1, 'workspace version line not found in Cargo.toml'
+        for crate in ('core', 'duckdb', 'datafusion'):
+            pattern = rf'(path\s*=\s*\"crates/{crate}\",\s*version\s*=\s*\")[^\"]+(\")'
+            new, n = re.subn(pattern, rf'\g<1>{{.BARE_VERSION}}\g<2>', new, count=1)
+            assert n == 1, f'internal dependency version for crates/{crate} not found in Cargo.toml'
         p.write_text(new)
         "
       # 2. Refresh Cargo.lock with the new version.

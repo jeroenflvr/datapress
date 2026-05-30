@@ -10,8 +10,8 @@ pip install datap-rs
 uv pip install datap-rs
 ```
 
-Wheels are published for macOS (arm64/x86_64), Linux (x86_64/aarch64)
-and Windows (x86_64) against CPython 3.9+ (abi3).
+Wheels are published for Linux (x86_64/aarch64), macOS (arm64), and
+Windows (x86_64) against CPython 3.9+ (abi3).
 
 ## Surface
 

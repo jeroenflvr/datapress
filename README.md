@@ -34,7 +34,7 @@ ls data/accidents.parquet
 task run:duckdb        # or: task run:datafusion
 
 # 4. Talk to it.
-curl http://localhost:8080/api/datasets
+curl http://localhost:8080/api/v1/datasets
 ```
 
 `Taskfile.yml` wraps the typical `cargo build --release -p …` invocations;
@@ -311,9 +311,9 @@ Four routes, both backends:
 ### API versioning
 
 The canonical paths live under `/api/v1/...`. The un-versioned
-`/api/...` paths shown in every example below continue to work as a
-**legacy alias** for v1, so existing clients keep running. To upgrade,
-replace `/api/` with `/api/v1/` in your URLs — nothing else changes.
+`/api/...` paths continue to work as a **legacy alias** for v1, so
+existing clients keep running. To upgrade, replace `/api/` with
+`/api/v1/` in your URLs — nothing else changes.
 
 ```text
 POST /api/v1/datasets/accidents/query      # canonical (recommended)
@@ -324,13 +324,13 @@ When a breaking schema change is introduced, it will ship as `/api/v2`
 in a sibling module ([crates/core/src/handlers/v1.rs](crates/core/src/handlers/v1.rs))
 and v1 will stay mounted alongside it for a deprecation window.
 
-### `GET /api/datasets`
+### `GET /api/v1/datasets`
 
 ```json
 { "datasets": [ { "name": "accidents", "columns": 47 } ] }
 ```
 
-### `GET /api/datasets/{name}/schema`
+### `GET /api/v1/datasets/{name}/schema`
 
 Returns the inferred columns plus a sample row so a client can see what
 values look like without issuing a query.
@@ -350,7 +350,7 @@ values look like without issuing a query.
 `logical` values: `bool | int | float | utf8 | temporal | other`. Temporal
 columns are returned as strings.
 
-### `POST /api/datasets/{name}/query`
+### `POST /api/v1/datasets/{name}/query`
 
 ```json
 {
@@ -476,7 +476,7 @@ field is ignored. Supported ops: `count`, `sum`, `avg`, `min`, `max`
 If `aggregations` is omitted an implicit `COUNT(*) AS count` is added.
 
 ```bash
-curl -X POST http://localhost:8080/api/datasets/accidents/query \
+curl -X POST http://localhost:8080/api/v1/datasets/accidents/query \
   -H 'Content-Type: application/json' \
   -d '{
     "group_by": ["State"],
@@ -501,7 +501,7 @@ go through the SQL engine; no in-memory fast path applies.
 building dropdowns / facet lists.
 
 ```bash
-curl -X POST http://localhost:8080/api/datasets/accidents/query \
+curl -X POST http://localhost:8080/api/v1/datasets/accidents/query \
   -H 'Content-Type: application/json' \
   -d '{
     "columns":  ["State"],
@@ -515,17 +515,17 @@ curl -X POST http://localhost:8080/api/datasets/accidents/query \
 Mutually exclusive with `group_by` / `aggregations` (returns `400` if
 combined). Also bypasses the in-memory fast paths.
 
-### `POST /api/datasets/{name}/count`
+### `POST /api/v1/datasets/{name}/count`
 
 Returns the number of rows matching `predicates`. Same predicate shape as
 `/query`; only the `predicates` field is read. Empty body counts every row.
 
 ```bash
-curl -s -X POST http://localhost:8080/api/datasets/accidents/count \
+curl -s -X POST http://localhost:8080/api/v1/datasets/accidents/count \
   -H 'Content-Type: application/json' -d '{}'
 # → { "count": 7728394 }
 
-curl -s -X POST http://localhost:8080/api/datasets/accidents/count \
+curl -s -X POST http://localhost:8080/api/v1/datasets/accidents/count \
   -H 'Content-Type: application/json' \
   -d '{
     "predicates": [
@@ -541,7 +541,7 @@ resident chunk metadata, no scan); indexable predicates short-circuit
 through the equality index. Otherwise it runs `SELECT COUNT(*) … WHERE …`
 through the engine.
 
-### `POST /api/datasets/{name}/reload` *(admin)*
+### `POST /api/v1/datasets/{name}/reload` *(admin)*
 
 Rebuilds the dataset from its configured `source` and atomically swaps it
 in. Running queries finish against the old snapshot; the next query hits
@@ -555,7 +555,7 @@ constant-time.
 ```bash
 curl -s -X POST \
   -H "X-Admin-Token: $ADMIN_TOKEN" \
-  http://localhost:8080/api/datasets/accidents/reload
+  http://localhost:8080/api/v1/datasets/accidents/reload
 # { "dataset": "accidents", "rows": 7728394, "elapsed_ms": 1842 }
 ```
 
@@ -605,11 +605,11 @@ this — only the one being rebuilt is held twice.
 
 ```bash
 # Discovery
-curl -s http://localhost:8080/api/datasets | jq
-curl -s http://localhost:8080/api/datasets/accidents/schema | jq
+curl -s http://localhost:8080/api/v1/datasets | jq
+curl -s http://localhost:8080/api/v1/datasets/accidents/schema | jq
 
 # Equality + range
-curl -s -X POST http://localhost:8080/api/datasets/accidents/query \
+curl -s -X POST http://localhost:8080/api/v1/datasets/accidents/query \
   -H 'Content-Type: application/json' \
   -d '{
     "columns": ["ID","Severity","City","State","Start_Time"],
@@ -621,7 +621,7 @@ curl -s -X POST http://localhost:8080/api/datasets/accidents/query \
   }' | jq
 
 # Substring + numeric range
-curl -s -X POST http://localhost:8080/api/datasets/accidents/query \
+curl -s -X POST http://localhost:8080/api/v1/datasets/accidents/query \
   -H 'Content-Type: application/json' \
   -d '{
     "predicates": [
@@ -632,7 +632,7 @@ curl -s -X POST http://localhost:8080/api/datasets/accidents/query \
   }' | jq
 
 # IN list
-curl -s -X POST http://localhost:8080/api/datasets/accidents/query \
+curl -s -X POST http://localhost:8080/api/v1/datasets/accidents/query \
   -H 'Content-Type: application/json' \
   -d '{
     "predicates": [
@@ -711,7 +711,7 @@ inner loops.
 | Variable          | Default          | Purpose                                                                          |
 |-------------------|------------------|----------------------------------------------------------------------------------|
 | `DATASETS_CONFIG` | `datasets.toml`  | Path to the dataset registry file.                                               |
-| `ADMIN_TOKEN`     | *(unset)*        | Enables `POST /api/datasets/{name}/reload`. Unset = admin endpoints disabled.    |
+| `ADMIN_TOKEN`     | *(unset)*        | Enables `POST /api/v1/datasets/{name}/reload`. Unset = admin endpoints disabled. |
 | `DB_POOL_SIZE`    | `num_cpus`       | DuckDB connection pool size (DuckDB only).                                       |
 | `RUST_LOG`        | `info`           | Standard `env_logger` filter.                                                    |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | *(unset)* | Fallback S3 credentials used by any dataset that doesn't override them. |

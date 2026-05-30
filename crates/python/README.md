@@ -41,8 +41,8 @@ pip install datap-rs
 uv pip install datap-rs
 ```
 
-Wheels are published for macOS (arm64/x86_64), Linux (x86_64/aarch64) and
-Windows (x86_64) against CPython 3.9+ (abi3).
+Wheels are published for Linux (x86_64/aarch64), macOS (arm64), and Windows
+(x86_64) against CPython 3.9+ (abi3).
 
 ---
 
@@ -79,9 +79,9 @@ if __name__ == "__main__":
 Hit it:
 
 ```bash
-curl http://localhost:8000/api/datasets
-curl http://localhost:8000/api/datasets/accidents/schema
-curl -X POST http://localhost:8000/api/datasets/accidents/query \
+curl http://localhost:8000/api/v1/datasets
+curl http://localhost:8000/api/v1/datasets/accidents/schema
+curl -X POST http://localhost:8000/api/v1/datasets/accidents/query \
   -H 'Content-Type: application/json' \
   -d '{
     "columns": ["ID","Severity","City","State"],
@@ -97,11 +97,11 @@ curl -X POST http://localhost:8000/api/datasets/accidents/query \
 
 ## API surface
 
-Four classes, no module-level state:
+Six public classes, no module-level state:
 
 | Class             | Purpose                                                              |
 |-------------------|----------------------------------------------------------------------|
-| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `request_timeout_ms`, `shutdown_timeout_secs`. |
+| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `request_timeout_ms`, `shutdown_timeout_secs`, `metrics_enabled`, `metrics_path`. |
 | `DatasetConfig`   | One dataset: `name`, `source`, `format`, `mode`, optional S3 + index.|
 | `S3Config`        | S3 / S3-compatible credentials and endpoint config.                  |
 | `DataPress`       | Built from a `DataPressConfig` + list of `DatasetConfig` + optional `AuthConfig`. `await .run()`. |
@@ -141,7 +141,7 @@ Traefik / Caddy forwards the prefix verbatim:
 
 ```python
 DataPressConfig(backend="datafusion", port=8000, prefix="/datapress")
-# → GET /datapress/api/datasets, GET /datapress/health, ...
+# → GET /datapress/api/v1/datasets, GET /datapress/health, ...
 ```
 
 `prefix` must start with `/` and not end with `/`. Empty string (default)
@@ -236,11 +236,11 @@ Same five routes for both backends.
 | Method | Path                                  | Purpose                                    |
 |--------|---------------------------------------|--------------------------------------------|
 | GET    | `/health`                             | Liveness probe.                            |
-| GET    | `/api/datasets`                       | List configured datasets.                  |
-| GET    | `/api/datasets/{name}/schema`         | Inferred columns + sample row.             |
-| POST   | `/api/datasets/{name}/query`          | Filter + paginate.                         |
-| POST   | `/api/datasets/{name}/count`          | Total or filtered row count.               |
-| POST   | `/api/datasets/{name}/reload`         | Atomic dataset reload (requires admin token). |
+| GET    | `/api/v1/datasets`                    | List configured datasets.                  |
+| GET    | `/api/v1/datasets/{name}/schema`      | Inferred columns + sample row.             |
+| POST   | `/api/v1/datasets/{name}/query`       | Filter + paginate.                         |
+| POST   | `/api/v1/datasets/{name}/count`       | Total or filtered row count.               |
+| POST   | `/api/v1/datasets/{name}/reload`      | Atomic dataset reload (requires admin token). |
 
 ### Query body
 
@@ -287,7 +287,7 @@ Same five routes for both backends.
 ### Grouping / aggregation
 
 ```bash
-curl -X POST http://localhost:8000/api/datasets/accidents/query \
+curl -X POST http://localhost:8000/api/v1/datasets/accidents/query \
   -H 'Content-Type: application/json' \
   -d '{
     "group_by": ["State"],
@@ -308,7 +308,7 @@ must be a group column or aggregation alias.
 ### Distinct
 
 ```bash
-curl -X POST http://localhost:8000/api/datasets/accidents/query \
+curl -X POST http://localhost:8000/api/v1/datasets/accidents/query \
   -H 'Content-Type: application/json' \
   -d '{ "columns": ["State"], "distinct": true, "order_by": [{"col":"State"}] }'
 ```
@@ -324,7 +324,7 @@ the JSON envelope and receive an Arrow IPC stream instead:
 import requests, pyarrow.ipc as ipc, polars as pl
 
 r = requests.post(
-    "http://localhost:8000/api/datasets/accidents/query",
+    "http://localhost:8000/api/v1/datasets/accidents/query",
     json={"columns": ["ID","State"], "page_size": 1000},
     headers={"Accept": "application/vnd.apache.arrow.stream"},
 )
@@ -348,14 +348,14 @@ materialised DataFusion datasets, the no-predicate case is O(1) and indexed
 `eq` / `in` predicates short-circuit through the equality index.
 
 ```bash
-curl -X POST http://localhost:8000/api/datasets/accidents/count \
+curl -X POST http://localhost:8000/api/v1/datasets/accidents/count \
   -H 'Content-Type: application/json' -d '{}'
 # → { "count": 7728394 }
 ```
 
 ### Admin reload
 
-`POST /api/datasets/{name}/reload` rebuilds a dataset from its source and
+`POST /api/v1/datasets/{name}/reload` rebuilds a dataset from its source and
 atomically swaps it in. Requires the `X-Admin-Token` header to match the
 `ADMIN_TOKEN` env var. **Endpoint is disabled when `ADMIN_TOKEN` is unset**
 (secure default).
@@ -367,7 +367,7 @@ os.environ["ADMIN_TOKEN"] = "supersecret"     # before constructing DataPress
 
 ```bash
 curl -X POST -H "X-Admin-Token: supersecret" \
-  http://localhost:8000/api/datasets/accidents/reload
+  http://localhost:8000/api/v1/datasets/accidents/reload
 # → { "dataset": "accidents", "rows": 7728394, "elapsed_ms": 1842 }
 ```
 

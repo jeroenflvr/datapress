@@ -92,6 +92,7 @@ async fn make_store(location: &str, lazy: bool) -> Store {
         docs:     datapress_core::config::DocsConfig::default(),
         swagger:  datapress_core::config::SwaggerConfig::default(),
         auth:     datapress_core::config::AuthConfig::default(),
+        metrics:  datapress_core::config::MetricsConfig::default(),
         datasets: vec![DatasetConfig {
             name:    "people".into(),
             source:  SourceConfig {
