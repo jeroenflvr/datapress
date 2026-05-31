@@ -146,3 +146,10 @@ To spin up a local OIDC provider for testing, see
 [`examples/keycloak/`](https://github.com/jeroenflvr/fast-api/tree/main/examples/keycloak)
 — one `docker compose up` and you have a pre-provisioned realm with
 client `datapress-api` and the right scopes.
+
+`read_scopes` and `reload_scopes` apply to the whole `DataPress` server
+instance. To enforce strict per-dataset access from Python, run one
+server instance per dataset or per access domain and use dataset-named
+scopes such as `datasets:accidents:read` and
+`datasets:accidents:reload`. See [Python › Examples](examples.md) for a
+complete pattern.

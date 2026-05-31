@@ -479,6 +479,11 @@ Call any endpoint with `Authorization: Bearer <jwt>`. Reload endpoints
 require `reload_scopes`; read endpoints require `read_scopes` unless
 `anonymous_read=True`.
 
+`AuthConfig` applies to one server instance. For strict per-dataset
+scope boundaries from Python, run one `DataPress` instance per dataset
+or access domain and use scopes such as `datasets:accidents:read` /
+`datasets:accidents:reload` on that instance.
+
 ### Try it locally
 
 The repo ships a one-command Keycloak stack at

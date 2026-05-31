@@ -20,7 +20,7 @@ docker compose up -d
 | Realm | `datapress` |
 | Service-account client | `datapress-api` (secret `datapress-secret`) |
 | Swagger UI client (public) | `datapress-swagger` |
-| Scopes | `datasets:read`, `datasets:reload` |
+| Scopes | `datasets:read`, `datasets:reload`, `datasets:accidents:read`, `datasets:accidents:reload`, `datasets:events:read`, `datasets:events:reload` |
 | Test user | `alice` / `alice` |
 
 ## Get a service-account token
@@ -60,22 +60,26 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/v1/datasets
 ## Python
 
 ```python
+import asyncio
 from datap_rs.datapress import DataPress, DataPressConfig, DatasetConfig, AuthConfig
 
 dp = DataPress(
-    DataPressConfig(host="127.0.0.1", port=8000),
-    [DatasetConfig(name="demo", backend="duckdb", source_kind="parquet",
-                   source_uri="data/demo.parquet")],
+  DataPressConfig(backend="duckdb", listen="127.0.0.1", port=8000),
+  [DatasetConfig(name="accidents", source="data/accidents.parquet", format="parquet")],
     auth=AuthConfig(
         enabled=True,
         issuer="http://localhost:8080/realms/datapress",
         audience="datapress-api",
-        read_scopes=["datasets:read"],
-        reload_scopes=["datasets:reload"],
+    read_scopes=["datasets:accidents:read"],
+    reload_scopes=["datasets:accidents:reload"],
     ),
 )
-dp.serve()
+asyncio.run(dp.run())
 ```
+
+`AuthConfig` applies to one DataPress server instance. For strict
+per-dataset scope boundaries, run one Python server per dataset or per
+access domain, each with its own `read_scopes` and `reload_scopes`.
 
 ## Swagger UI SSO
 

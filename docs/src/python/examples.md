@@ -124,6 +124,9 @@ The compose file pre-provisions:
   accounts enabled)
 - public client `datapress-swagger` (for Swagger UI SSO)
 - scopes `datasets:read` and `datasets:reload`
+- dataset-scoped optional scopes such as `datasets:accidents:read`,
+  `datasets:accidents:reload`, `datasets:events:read`, and
+  `datasets:events:reload`
 - test user `alice` / `alice`
 
 **2. Start DataPress with auth enabled** (`pip install datap-rs` —
@@ -216,6 +219,116 @@ TOKEN = requests.post(
     },
     timeout=5,
 ).json()["access_token"]
+```
+
+## OIDC scopes per dataset
+
+`AuthConfig` is attached to one `DataPress` server instance. That makes
+the strict dataset-isolation pattern simple and explicit: run one server
+per dataset (or per access domain), give each instance dataset-named
+scopes, and let your gateway expose them under the paths you want.
+
+The bundled Keycloak realm includes optional dataset scopes for these
+examples. A token with `datasets:accidents:read` can call the accidents
+server, but it will not satisfy the events server, which expects
+`datasets:events:read`.
+
+```python
+# serve_dataset_scopes.py
+import asyncio
+from datap_rs.datapress import (
+    AuthConfig,
+    DataPress,
+    DataPressConfig,
+    DatasetConfig,
+)
+
+ISSUER = "http://localhost:8080/realms/datapress"
+AUDIENCE = "datapress-api"
+
+
+def auth_for(dataset: str) -> AuthConfig:
+    return AuthConfig(
+        enabled=True,
+        issuer=ISSUER,
+        audience=AUDIENCE,
+        read_scopes=[f"datasets:{dataset}:read"],
+        reload_scopes=[f"datasets:{dataset}:reload"],
+        algorithms=["RS256"],
+        admin_token_fallback=False,
+    )
+
+
+async def serve_dataset(name: str, source: str, port: int) -> None:
+    cfg = DataPressConfig(
+        backend="duckdb",
+        listen="127.0.0.1",
+        port=port,
+        prefix=f"/{name}",
+    )
+    dataset = DatasetConfig(name=name, source=source, format="parquet")
+    await DataPress(cfg, datasets=[dataset], auth=auth_for(name)).run()
+
+
+async def main() -> None:
+    await asyncio.gather(
+        serve_dataset("accidents", "data/us_accidents/march_2023.parquet", 8001),
+        serve_dataset("events", "data/events/*.parquet", 8002),
+    )
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+Request a token for only one dataset:
+
+```python
+import requests
+
+TOKEN_URL = "http://localhost:8080/realms/datapress/protocol/openid-connect/token"
+
+
+def token_for(scope: str) -> str:
+    return requests.post(
+        TOKEN_URL,
+        data={
+            "grant_type": "client_credentials",
+            "client_id": "datapress-api",
+            "client_secret": "datapress-secret",
+            "scope": scope,
+        },
+        timeout=5,
+    ).json()["access_token"]
+
+
+accidents_token = token_for("datasets:accidents:read")
+headers = {"Authorization": f"Bearer {accidents_token}"}
+
+print(requests.get(
+    "http://127.0.0.1:8001/accidents/api/v1/datasets",
+    headers=headers,
+    timeout=5,
+).status_code)  # 200
+
+print(requests.get(
+    "http://127.0.0.1:8002/events/api/v1/datasets",
+    headers=headers,
+    timeout=5,
+).status_code)  # 403: token lacks datasets:events:read
+```
+
+For a single server that intentionally exposes several datasets to the
+same audience, keep the coarse scopes:
+
+```python
+auth = AuthConfig(
+    enabled=True,
+    issuer="http://localhost:8080/realms/datapress",
+    audience="datapress-api",
+    read_scopes=["datasets:read"],
+    reload_scopes=["datasets:reload"],
+)
 ```
 
 A scope the client didn't request — e.g. hitting `/reload` with only

@@ -22,6 +22,42 @@
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"
       }
+    },
+    {
+      "name": "datasets:accidents:read",
+      "description": "Read the accidents dataset",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "datasets:accidents:reload",
+      "description": "Reload the accidents dataset",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "datasets:events:read",
+      "description": "Read the events dataset",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "datasets:events:reload",
+      "description": "Reload the events dataset",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
     }
   ],
   "clients": [
@@ -52,6 +88,10 @@
       ],
       "optionalClientScopes": [
         "datasets:reload",
+        "datasets:accidents:read",
+        "datasets:accidents:reload",
+        "datasets:events:read",
+        "datasets:events:reload",
         "address",
         "phone",
         "offline_access",
@@ -80,6 +120,10 @@
       ],
       "optionalClientScopes": [
         "datasets:reload",
+        "datasets:accidents:read",
+        "datasets:accidents:reload",
+        "datasets:events:read",
+        "datasets:events:reload",
         "address",
         "phone",
         "offline_access",
