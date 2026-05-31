@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.11] - 2026-05-31
+
+### Bug Fixes
+
+- *(oidc)* Make sub claim optional ([d0fc43d](https://github.com/jeroenflvr/fast-api/commit/d0fc43d9d46965d45b9555f72749e8e9c5aba3cc))
+
 ## [0.2.10] - 2026-05-31
 
 ### Bug Fixes
