@@ -86,7 +86,7 @@ from datap_rs.datapress import AuthConfig
 
 auth = AuthConfig(
     enabled=True,
-    issuer="https://login.example.com/realms/datapress",
+    issuer="https://issuer.example.com",
     audience="datapress-api",
     read_scopes=["datasets:read"],
     reload_scopes=["datasets:reload"],
@@ -104,7 +104,7 @@ auth = AuthConfig(
 | kwarg                  | Default          | Meaning                                                                |
 |------------------------|------------------|------------------------------------------------------------------------|
 | `enabled`              | `False`          | Master switch. When `False` all other fields are ignored.              |
-| `issuer`               | `""`             | OIDC issuer URL. Required when `enabled=True`.                         |
+| `issuer`               | `""`             | Provider issuer URL; use discovery `issuer` / JWT `iss`.                 |
 | `audience`             | `""`             | Expected `aud` claim. Empty = skip audience check.                     |
 | `read_scopes`          | `[]`             | Scopes required for `GET` endpoints.                                   |
 | `reload_scopes`        | `[]`             | Scopes required for reload / admin endpoints.                          |
@@ -127,7 +127,7 @@ dp = DataPress(
     [DatasetConfig(name="accidents", source="data/accidents.parquet")],
     auth=AuthConfig(
         enabled=True,
-        issuer="http://localhost:8080/realms/datapress",
+        issuer="https://issuer.example.com",
         audience="datapress-api",
         read_scopes=["datasets:read"],
         reload_scopes=["datasets:reload"],
@@ -139,6 +139,7 @@ import asyncio; asyncio.run(dp.run())
 Validation rules (raised as `ValueError`):
 
 - `enabled=True` requires a non-empty `issuer`.
+- `issuer` is the exact issuer from your provider's discovery document or JWT `iss` claim. Keycloak commonly uses `/realms/<realm>`, but providers such as Auth0, Okta, Entra ID, and Zitadel use different paths.
 - `allowed_tenants` requires `tenant_claim` to be set.
 - `tenant_claim` must be a JSON Pointer starting with `/`.
 

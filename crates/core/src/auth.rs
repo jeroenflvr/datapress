@@ -210,7 +210,10 @@ impl JwksCache {
                 fetch_jwks(&self.client, &uri).await
             }
             Err(e) => {
-                let fallback = format!("{}/.well-known/jwks.json", self.issuer);
+                let fallback = format!(
+                    "{}/.well-known/jwks.json",
+                    self.issuer.trim_end_matches('/')
+                );
                 log::warn!("auth: OIDC discovery failed ({e}); falling back to legacy {fallback}");
                 fetch_jwks(&self.client, &fallback).await
             }
@@ -244,7 +247,10 @@ async fn discover_jwks_uri(client: &reqwest::Client, issuer: &str) -> Result<Str
         jwks_uri: String,
     }
 
-    let disco_url = format!("{issuer}/.well-known/openid-configuration");
+    let disco_url = format!(
+        "{}/.well-known/openid-configuration",
+        issuer.trim_end_matches('/')
+    );
     let resp = client
         .get(&disco_url)
         .send()

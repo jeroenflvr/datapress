@@ -453,7 +453,7 @@ from datap_rs.datapress import (
 
 auth = AuthConfig(
     enabled=True,
-    issuer="http://localhost:8080/realms/datapress",
+  issuer="https://issuer.example.com",
     audience="datapress-api",
     read_scopes=["datasets:read"],
     reload_scopes=["datasets:reload"],
@@ -478,6 +478,12 @@ malformed `tenant_claim`, …) raise `ValueError` at construction time.
 Call any endpoint with `Authorization: Bearer <jwt>`. Reload endpoints
 require `reload_scopes`; read endpoints require `read_scopes` unless
 `anonymous_read=True`.
+
+Use your provider's issuer URL exactly as it appears in the discovery
+document or JWT `iss` claim. `/realms/<realm>` is Keycloak-specific;
+many providers use URLs such as `https://tenant.us.auth0.com/`,
+`https://login.microsoftonline.com/<tenant-id>/v2.0`, or an Okta
+authorization-server URL.
 
 `AuthConfig` applies to one server instance. For strict per-dataset
 scope boundaries from Python, run one `DataPress` instance per dataset

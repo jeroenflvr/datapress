@@ -357,7 +357,7 @@ pub struct AuthConfig {
     /// Master switch. `false` (default) skips all auth processing.
     pub enabled: bool,
     /// OIDC issuer URL — must match the `iss` claim of every accepted
-    /// token. Required when `enabled = true`. Must not end in `/`.
+    /// token. Required when `enabled = true`.
     pub issuer: String,
     /// Expected `aud` claim. When empty, audience validation is
     /// skipped (not recommended in production).
@@ -676,12 +676,6 @@ impl AppConfig {
                         "swagger.oauth2.issuer must not be empty".into(),
                     ));
                 }
-                if o.issuer.ends_with('/') {
-                    return Err(AppError::Internal(format!(
-                        "swagger.oauth2.issuer must not end with '/' (got '{}')",
-                        o.issuer
-                    )));
-                }
                 if !(o.issuer.starts_with("https://") || o.issuer.starts_with("http://")) {
                     return Err(AppError::Internal(format!(
                         "swagger.oauth2.issuer must be an absolute http(s) URL (got '{}')",
@@ -740,12 +734,6 @@ impl AppConfig {
                 return Err(AppError::Internal(
                     "auth.issuer must not be empty when auth.enabled = true".into(),
                 ));
-            }
-            if a.issuer.ends_with('/') {
-                return Err(AppError::Internal(format!(
-                    "auth.issuer must not end with '/' (got '{}')",
-                    a.issuer
-                )));
             }
             if !(a.issuer.starts_with("https://") || a.issuer.starts_with("http://")) {
                 return Err(AppError::Internal(format!(
@@ -1107,6 +1095,45 @@ mod tests {
         };
         let err = cfg.validate().unwrap_err();
         assert!(matches!(err, AppError::Internal(m) if m.contains("[[dataset]]")));
+    }
+
+    #[cfg(feature = "auth")]
+    #[test]
+    fn validate_accepts_auth_issuer_with_trailing_slash() {
+        use std::io::Write;
+
+        let dir = std::env::temp_dir().join(format!("dp-auth-issuer-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.parquet");
+        std::fs::File::create(&file).unwrap().write_all(b"x").unwrap();
+
+        let cfg = AppConfig {
+            server: ServerConfig::default(),
+            docs: DocsConfig::default(),
+            swagger: SwaggerConfig::default(),
+            metrics: MetricsConfig::default(),
+            auth: AuthConfig {
+                enabled: true,
+                issuer: "https://tenant.example.com/".into(),
+                ..Default::default()
+            },
+            datasets: vec![DatasetConfig {
+                name: "x".into(),
+                source: SourceConfig {
+                    kind: SourceKind::Parquet,
+                    location: file.to_string_lossy().into_owned(),
+                },
+                s3: None,
+                index: IndexConfig::default(),
+                columns: vec![],
+                dict_encode: true,
+                lazy: false,
+            }],
+        };
+
+        assert!(cfg.validate().is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
