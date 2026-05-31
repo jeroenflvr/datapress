@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.7] - 2026-05-31
+
+### Bug Fixes
+
+- S3 secret config for duckdb ([8b0dd3f](https://github.com/jeroenflvr/fast-api/commit/8b0dd3fdd6f94a5c65713e41f5a36da5c517518c))
+
+### CI
+
+- Add docs and mkdocs to develop build ([79db0d4](https://github.com/jeroenflvr/fast-api/commit/79db0d40f70275e7c2a3f9416172d6438387a4cd))
+
 ## [0.2.6] - 2026-05-30
 
 ### Bug Fixes
