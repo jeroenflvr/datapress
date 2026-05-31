@@ -1,0 +1,70 @@
+# ---------------------------------------------------------------------------
+# datapress configuration template.
+#
+# Copy this file to `datasets.toml` and edit it. The `datapress` CLI looks
+# for its config in this order:
+#
+#   1. $DATAPRESS_CONFIG_FILE   (explicit path; wins if set)
+#   2. ./datasets.toml          (current working directory)
+#   3. $HOME/datasets.toml      (per-user default)
+#
+# Every running instance reads the resolved file at startup and registers
+# each [[dataset]] entry as a queryable table.
+# ---------------------------------------------------------------------------
+
+[server]
+# Engine: "duckdb" or "datafusion". The unified `datapress` binary bundles
+# both, so either value works without rebuilding.
+backend = "duckdb"
+# Loopback by default; set "0.0.0.0" to expose the port.
+listen  = "127.0.0.1"
+port    = 8080
+# workers = 8            # actix worker threads; omit for "one per CPU".
+
+# Embedded Swagger UI (requires a binary built with the `swagger` feature).
+# [swagger]
+# enabled = true
+# path    = "/docs"
+
+# Prometheus metrics (requires the `metrics` feature).
+# [metrics]
+# enabled = true
+# path    = "/metrics"
+
+# -- Local parquet file -----------------------------------------------------
+[[dataset]]
+name = "example"
+
+  [dataset.source]
+  kind     = "parquet"
+  location = "data/example.parquet"
+
+  # Index policy (DataFusion only; DuckDB ignores it):
+  #   mode = "auto" (default) | "none" | "list"
+  # [dataset.index]
+  # mode    = "list"
+  # columns = ["state", "category"]
+
+# -- S3 parquet (AWS) -------------------------------------------------------
+# [[dataset]]
+# name = "events"
+#
+#   [dataset.source]
+#   kind     = "parquet"
+#   location = "s3://my-bucket/events/*.parquet"
+#
+#   [dataset.s3]
+#   region            = "eu-west-3"
+#   # endpoint        = "https://s3.eu-west-3.amazonaws.com"   # custom/MinIO/R2
+#   addressing_style  = "virtual"                              # or "path"
+#   # allow_http      = true                                   # non-https endpoints
+#
+#   # Credentials precedence (highest -> lowest):
+#   #   1. ${PREFIX}_AWS_ACCESS_KEY_ID / _SECRET_ACCESS_KEY / _SESSION_TOKEN
+#   #      where PREFIX is the dataset name uppercased, non-alphanumeric -> '_'
+#   #      (e.g. "events" -> EVENTS_AWS_ACCESS_KEY_ID).
+#   #   2. Inline access_key_id / secret_access_key below (dev only).
+#   #   3. Plain AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN.
+#   #   4. The engine's default chain (~/.aws/credentials, IMDS).
+#   # access_key_id     = "..."
+#   # secret_access_key = "..."

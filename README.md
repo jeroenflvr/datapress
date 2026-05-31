@@ -60,6 +60,16 @@ cargo install datapress --no-default-features --features duckdb
 cargo install datapress --features swagger,auth,metrics
 ```
 
+The installed binary resolves its config from (first match wins)
+`--config <FILE>`, `$DATAPRESS_CONFIG_FILE`, `./datasets.toml`, then
+`$HOME/datasets.toml`. Generate a starter template with `datapress init`
+(writes `datasets.toml.template` to a directory, or `$HOME` when omitted):
+
+```bash
+datapress init                 # ~/datasets.toml.template
+cp ~/datasets.toml.template ~/datasets.toml   # then edit and run `datapress`
+```
+
 ### From Python
 
 The same server can be configured and launched from Python via the

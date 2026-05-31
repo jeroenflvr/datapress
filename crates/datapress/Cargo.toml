@@ -37,6 +37,7 @@ actix-web.workspace  = true
 tokio.workspace      = true
 log.workspace        = true
 env_logger.workspace = true
+clap.workspace       = true
 
 [[bin]]
 name = "datapress"

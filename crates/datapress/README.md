@@ -6,7 +6,30 @@ DuckDB and DataFusion — and picks the active one at runtime from
 
 ```sh
 cargo install datapress    # installs the `datapress` binary
-datapress                  # reads ./datasets.toml (or $DATASETS_CONFIG)
+datapress                  # serves using the resolved datasets.toml
+```
+
+## Configuration file
+
+`datapress` resolves its config in this order (first match wins):
+
+1. `--config <FILE>` flag
+2. `$DATAPRESS_CONFIG_FILE` environment variable
+3. `./datasets.toml` (current directory)
+4. `$HOME/datasets.toml`
+
+Generate a starter config with the `init` subcommand. It writes a
+commented `datasets.toml.template` to the given directory, or your home
+directory when omitted:
+
+```sh
+datapress init                 # writes ~/datasets.toml.template
+datapress init ./config        # writes ./config/datasets.toml.template
+datapress init --force         # overwrite an existing template
+
+# then:
+cp ~/datasets.toml.template ~/datasets.toml   # and edit
+datapress
 ```
 
 ## Choosing a backend

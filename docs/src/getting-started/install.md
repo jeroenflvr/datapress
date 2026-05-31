@@ -19,6 +19,25 @@ cargo install datapress --no-default-features --features duckdb
 cargo install datapress --features swagger,auth,metrics
 ```
 
+### Configuration discovery
+
+The installed `datapress` binary finds its config in this order (first
+match wins):
+
+1. `--config <FILE>`
+2. `$DATAPRESS_CONFIG_FILE`
+3. `./datasets.toml`
+4. `$HOME/datasets.toml`
+
+Generate a commented starter template with `datapress init` (writes to
+`$HOME` when no directory is given):
+
+```bash
+datapress init                 # ~/datasets.toml.template
+datapress init ./config        # ./config/datasets.toml.template
+cp ~/datasets.toml.template ~/datasets.toml   # then edit and run `datapress`
+```
+
 ## From source (Rust binaries)
 
 Two binaries live in the workspace, one per backend. Both build from a
