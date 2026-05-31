@@ -288,7 +288,8 @@ async fn fetch_jwks(client: &reqwest::Client, url: &str) -> Result<JwkSet, Strin
 /// an array, so both shapes are accepted.
 #[derive(Debug, Deserialize)]
 struct Claims {
-    sub: String,
+    #[serde(default)]
+    sub: Option<String>,
     #[serde(default)]
     scope: Option<ScopeField>,
     #[serde(default)]
@@ -340,6 +341,22 @@ fn extract_tenant(c: &Claims, pointer: &str) -> Option<String> {
         serde_json::Value::Number(n) => Some(n.to_string()),
         _ => None,
     })
+}
+
+fn extract_subject(c: &Claims) -> Option<String> {
+    c.sub.clone().or_else(|| {
+        ["client_id", "azp", "appid", "oid"]
+            .iter()
+            .find_map(|claim| value_as_string(c.extra.get(*claim)))
+    })
+}
+
+fn value_as_string(value: Option<&serde_json::Value>) -> Option<String> {
+    match value {
+        Some(serde_json::Value::String(s)) => Some(s.clone()),
+        Some(serde_json::Value::Number(n)) => Some(n.to_string()),
+        _ => None,
+    }
 }
 
 fn algorithm_from(name: &str) -> Result<Algorithm, AppError> {
@@ -406,6 +423,12 @@ pub fn verify_token(
         .map_err(|e| AppError::Unauthorized(format!("token rejected: {e}")))?;
 
     let claims = data.claims;
+    let sub = extract_subject(&claims).ok_or_else(|| {
+        AppError::Unauthorized(
+            "token does not carry a subject claim (expected sub, client_id, azp, appid, or oid)"
+                .into(),
+        )
+    })?;
     let scopes = parse_scopes(&claims);
     let tenant = extract_tenant(&claims, &cfg.tenant_claim);
 
@@ -426,7 +449,7 @@ pub fn verify_token(
     }
 
     Ok(Principal {
-        sub: claims.sub,
+        sub,
         scopes,
         tenant,
     })
@@ -633,6 +656,49 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(extract_tenant(&c, "/org/id").as_deref(), Some("42"));
+    }
+
+    #[test]
+    fn extract_subject_accepts_client_credentials_claims() {
+        let c: Claims = serde_json::from_value(serde_json::json!({
+            "sub": "user-123",
+            "client_id": "service-client"
+        }))
+        .unwrap();
+        assert_eq!(extract_subject(&c).as_deref(), Some("user-123"));
+
+        let c: Claims = serde_json::from_value(serde_json::json!({
+            "client_id": "service-client"
+        }))
+        .unwrap();
+        assert_eq!(extract_subject(&c).as_deref(), Some("service-client"));
+
+        let c: Claims = serde_json::from_value(serde_json::json!({
+            "azp": "authorized-party"
+        }))
+        .unwrap();
+        assert_eq!(extract_subject(&c).as_deref(), Some("authorized-party"));
+    }
+
+    #[test]
+    fn client_credentials_claims_without_sub_are_accepted() {
+        let c: Claims = serde_json::from_value(serde_json::json!({
+            "iss": "https://issuer.test",
+            "nbf": 1_700_000_000,
+            "iat": 1_700_000_000,
+            "exp": 1_700_003_600,
+            "aud": ["api://datapress", "account"],
+            "scope": ["datasets:read", "datasets:reload"],
+            "client_id": "service-client",
+            "role": ["reader"],
+            "jti": "token-id"
+        }))
+        .unwrap();
+
+        assert_eq!(extract_subject(&c).as_deref(), Some("service-client"));
+        assert_eq!(parse_scopes(&c), vec!["datasets:read", "datasets:reload"]);
+        assert!(c.extra["aud"].is_array());
+        assert!(c.extra["role"].is_array());
     }
 
     #[test]
