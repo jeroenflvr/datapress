@@ -4,6 +4,7 @@ members  = [
     "crates/core",
     "crates/duckdb",
     "crates/datafusion",
+    "crates/datapress",
     "crates/python",
 ]
 

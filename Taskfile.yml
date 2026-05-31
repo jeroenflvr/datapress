@@ -33,6 +33,12 @@ tasks:
     cmds:
       - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion
 
+  build:cli:
+    desc: Build the unified `datapress` CLI (both backends bundled, release)
+    deps: [docs:build]
+    cmds:
+      - cargo build {{.RELEASE}} -p datapress --bin datapress --features docs,swagger,auth,metrics
+
   build:
     desc: Build both Rust binaries
     deps: [build:duckdb, build:datafusion]
@@ -119,9 +125,16 @@ tasks:
   # ---------------------------------------------------------------------
   # Release: stamp CHANGELOG, commit, tag, push.
   # Usage:  task release -- v0.2.0
+  #
+  # Pushing the `v*` tag triggers .github/workflows/publish.yml, which:
+  #   - builds + publishes the Python wheel to PyPI,
+  #   - publishes the Rust crates to crates.io (`cargo install datapress`),
+  #   - builds the standalone `datapress` CLI for linux amd64/arm64,
+  #     macOS arm64, and Windows amd64 and attaches them to the GitHub
+  #     Release for the tag.
   # ---------------------------------------------------------------------
   release:
-    desc: "Cut a release: bump version, update CHANGELOG, commit, tag, push. Usage: task release -- v0.2.0"
+    desc: "Cut a release: bump version, update CHANGELOG, commit, tag, push (triggers PyPI + crates.io + GitHub Release CLI builds). Usage: task release -- v0.2.0"
     vars:
       VERSION: '{{.CLI_ARGS}}'
       # Strip leading "v" for Cargo.toml (Cargo wants 0.2.0, git tag wants v0.2.0).

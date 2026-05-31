@@ -2438,6 +2438,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "datapress"
+version = "0.2.14"
+dependencies = [
+ "actix-web",
+ "datapress-core",
+ "datapress-datafusion",
+ "datapress-duckdb",
+ "env_logger",
+ "log",
+ "tokio",
+]
+
+[[package]]
 name = "datapress-core"
 version = "0.2.14"
 dependencies = [

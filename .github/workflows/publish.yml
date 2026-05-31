@@ -1,7 +1,8 @@
-name: Publish datapress to PyPI
+name: Publish datapress (PyPI + crates.io + GitHub Release)
 
-# Build wheels only on `v*` tags (which then publish to PyPI) and on
-# manual dispatch. Branch pushes and PRs no longer trigger a build.
+# Build wheels only on `v*` tags (which then publish to PyPI, crates.io,
+# and attach standalone CLI binaries to the GitHub Release) and on manual
+# dispatch. Branch pushes and PRs no longer trigger a build.
 on:
   push:
     tags: ['v*']
@@ -163,3 +164,126 @@ jobs:
         with:
           packages-dir: dist
           password: ${{ secrets.PYPI_API_TOKEN }}
+
+  # -----------------------------------------------------------------------
+  # Publish the Rust crates to crates.io (so `cargo install datapress`
+  # works). Runs only on `v*` tag push. Crates must be published
+  # bottom-up: each one's path deps carry a `version`, which `cargo
+  # publish` rewrites to a registry dep, so every dependency must already
+  # exist on crates.io before the crate that needs it.
+  #
+  # Auth: crates.io API token stored in repo secret CARGO_REGISTRY_TOKEN.
+  #   Create at https://crates.io/settings/tokens and add it under
+  #   GitHub → Settings → Secrets and variables → Actions → New secret.
+  #
+  # `cargo publish` (>=1.66) waits for each crate to be visible in the
+  # registry index before returning, so the next publish can resolve it.
+  # -----------------------------------------------------------------------
+  crates-io:
+    name: publish-to-crates-io
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: publish-crates-io
+      # DuckDB's bundled C++ build trips its `__GNUC__ < 5` ABI guard on
+      # some toolchains; mirror the wheel build's bypass so the verify
+      # step (a full compile) succeeds.
+      - name: Publish crates in dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          for crate in datapress-core datapress-duckdb datapress-datafusion datapress; do
+            echo "::group::cargo publish -p ${crate}"
+            cargo publish -p "${crate}" --locked
+            echo "::endgroup::"
+          done
+
+  # -----------------------------------------------------------------------
+  # Standalone `datapress` CLI binaries. Build the unified binary (both
+  # backends bundled) for each supported target and upload each as a
+  # workflow artifact. The `github-release` job below collects them and
+  # attaches them to the GitHub Release for the tag.
+  #
+  # Each target builds natively on a matching runner (no cross-compiling),
+  # so DuckDB's bundled C++ build uses a modern GCC/Clang and needs no ABI
+  # workaround. The MkDocs site is built first so the `docs` feature can
+  # embed it (mirrors the wheel jobs).
+  # -----------------------------------------------------------------------
+  cli:
+    name: cli-${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            runner: macos-14
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.12' }
+      - uses: astral-sh/setup-uv@v7
+      - name: Build MkDocs site
+        run: uv tool run --with 'mkdocs>=1.6,<2' --with 'mkdocs-material>=9.6,<10' mkdocs build -f docs/mkdocs.yml -d site --strict
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: cli-${{ matrix.target }}
+      - name: Build datapress CLI
+        run: cargo build --release -p datapress --bin datapress --features docs,swagger,auth,metrics --target ${{ matrix.target }}
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          archive="datapress-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
+          tar -czf "${archive}" -C "target/${{ matrix.target }}/release" datapress
+          echo "ASSET=${archive}" >> "${GITHUB_ENV}"
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archive = "datapress-${{ github.ref_name }}-${{ matrix.target }}.zip"
+          Compress-Archive -Path "target/${{ matrix.target }}/release/datapress.exe" -DestinationPath $archive
+          "ASSET=$archive" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cli-${{ matrix.target }}
+          path: ${{ env.ASSET }}
+
+  # -----------------------------------------------------------------------
+  # Attach the CLI binaries to the GitHub Release for the tag. Runs only
+  # on `v*` tag push, after all CLI builds succeed. `contents: write` is
+  # required to create/update the release and upload assets.
+  # -----------------------------------------------------------------------
+  github-release:
+    name: github-release
+    needs: [cli]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path:    cli-dist
+          pattern: 'cli-*'
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: cli-dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+

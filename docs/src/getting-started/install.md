@@ -1,5 +1,24 @@
 # Install
 
+## Prebuilt binary (crates.io)
+
+The quickest way to get a server without cloning the repo. The unified
+`datapress` binary bundles **both** the DuckDB and DataFusion backends and
+selects one at runtime from `server.backend` in your `datasets.toml`:
+
+```bash
+cargo install datapress
+datapress                  # reads ./datasets.toml (or $DATASETS_CONFIG)
+```
+
+For a slimmer single-backend build, or to opt into the docs / Swagger /
+metrics / auth features:
+
+```bash
+cargo install datapress --no-default-features --features duckdb
+cargo install datapress --features swagger,auth,metrics
+```
+
 ## From source (Rust binaries)
 
 Two binaries live in the workspace, one per backend. Both build from a
@@ -56,6 +75,9 @@ Enable at build time:
 task docs:build
 cargo build --release -p datapress-duckdb --features docs
 ```
+
+The same features are also forwarded by the unified `datapress` crate, so
+they work with `cargo install datapress --features docs` too.
 
 See [Configuration › Documentation site](../configuration/docs-site.md)
 for the runtime switch.

@@ -40,6 +40,26 @@ curl http://localhost:8080/api/v1/datasets
 `Taskfile.yml` wraps the typical `cargo build --release -p …` invocations;
 see [`task --list`](Taskfile.yml) for the full menu.
 
+### Install the prebuilt binary
+
+If you just want to run a server without cloning the repo, install the
+unified `datapress` binary from crates.io. It bundles **both** backends and
+picks the active one at runtime from `server.backend` in your
+`datasets.toml`:
+
+```bash
+cargo install datapress        # both DuckDB + DataFusion
+datapress                      # reads ./datasets.toml (or $DATASETS_CONFIG)
+```
+
+For a slimmer single-backend build, or to opt into the docs / Swagger /
+metrics / auth features:
+
+```bash
+cargo install datapress --no-default-features --features duckdb
+cargo install datapress --features swagger,auth,metrics
+```
+
 ### From Python
 
 The same server can be configured and launched from Python via the

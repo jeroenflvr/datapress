@@ -16,6 +16,13 @@ services.
 pip install datap-rs
 ```
 
+Prefer a standalone binary? Install it from crates.io — one `datapress`
+command bundles both the DuckDB and DataFusion backends:
+
+```bash
+cargo install datapress
+```
+
 ```python
 from datap_rs.datapress import DataPress, DataPressConfig, DatasetConfig
 

@@ -1,0 +1,43 @@
+[package]
+name             = "datapress"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Single `datapress` binary bundling both the DuckDB and DataFusion dataset HTTP backends, selectable at runtime via `server.backend`."
+documentation = "https://docs.rs/datapress"
+readme = "README.md"
+
+[features]
+# Both backends are bundled by default, so `cargo install datapress` gives
+# you a binary that can run either one (chosen by `server.backend` in
+# datasets.toml). Opt out with e.g. `--no-default-features --features duckdb`
+# to build a slimmer single-backend binary.
+default = ["duckdb", "datafusion"]
+
+duckdb     = ["dep:datapress-duckdb"]
+datafusion = ["dep:datapress-datafusion"]
+
+# Optional capabilities forwarded to whichever backends are enabled.
+docs    = ["datapress-duckdb?/docs", "datapress-datafusion?/docs"]
+swagger = ["datapress-duckdb?/swagger", "datapress-datafusion?/swagger"]
+metrics = ["datapress-duckdb?/metrics", "datapress-datafusion?/metrics"]
+auth    = ["datapress-duckdb?/auth", "datapress-datafusion?/auth"]
+
+[dependencies]
+datapress-core       = { workspace = true }
+datapress-duckdb     = { workspace = true, optional = true }
+datapress-datafusion = { workspace = true, optional = true }
+
+actix-web.workspace  = true
+tokio.workspace      = true
+log.workspace        = true
+env_logger.workspace = true
+
+[[bin]]
+name = "datapress"
+path = "src/main.rs"
