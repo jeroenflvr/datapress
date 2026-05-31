@@ -166,10 +166,20 @@ tasks:
         "
       # 2. Refresh Cargo.lock with the new version.
       - cargo update --workspace --offline 2>/dev/null || cargo check --workspace --quiet
-      # 3. Regenerate CHANGELOG stamped at the new tag.
+      # 3. Bump the version shown in the MkDocs header badge.
+      - |
+        python3 -c "
+        import re, pathlib
+        p = pathlib.Path('docs/mkdocs.yml')
+        s = p.read_text()
+        new, n = re.subn(r'(?m)^(\s*datapress_version:\s*).*$', r'\g<1>{{.BARE_VERSION}}', s, count=1)
+        assert n == 1, 'datapress_version line not found in docs/mkdocs.yml'
+        p.write_text(new)
+        "
+      # 4. Regenerate CHANGELOG stamped at the new tag.
       - uv tool run --from git-cliff git-cliff --config cliff.toml --tag {{.VERSION}} --output CHANGELOG.md
-      # 4. Commit, tag, push.
-      - git add Cargo.toml Cargo.lock CHANGELOG.md
+      # 5. Commit, tag, push.
+      - git add Cargo.toml Cargo.lock CHANGELOG.md docs/mkdocs.yml
       - 'git commit -m "chore(release): {{.VERSION}}"'
       - 'git tag -a {{.VERSION}} -m "Release {{.VERSION}}"'
       - git push --follow-tags

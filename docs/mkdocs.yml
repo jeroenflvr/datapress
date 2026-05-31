@@ -13,6 +13,7 @@ site_dir: site
 
 theme:
   name: material
+  custom_dir: overrides
   # Light + dark with a toggle, plus follow-system as the default.
   palette:
     - media: "(prefers-color-scheme)"
@@ -90,6 +91,8 @@ markdown_extensions:
   - pymdownx.tilde
 
 extra:
+  # Shown as a badge next to the repository link in the header.
+  datapress_version: 0.2.15
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/jeroenflvr/fast-api

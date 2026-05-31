@@ -9,7 +9,7 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 description = "Backend-agnostic core types, config, routing, and HTTP handlers for the datapress dataset server."
-documentation = "https://docs.rs/datapress-core"
+documentation = "https://docs.datap-rs.org"
 readme = "README.md"
 
 [features]

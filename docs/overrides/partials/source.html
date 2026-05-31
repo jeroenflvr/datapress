@@ -1,0 +1,23 @@
+{#-
+  Overrides the default Material `source.html` partial to show the project
+  version (from `extra.datapress_version` in mkdocs.yml) as a badge next to
+  the repository link in the header.
+-#}
+{% import "partials/language.html" as lang with context %}
+<a
+  href="{{ config.repo_url }}"
+  title="{{ lang.t('source.link.title') }}"
+  class="md-source"
+  data-md-component="source"
+>
+  <div class="md-source__icon md-icon">
+    {% set icon = config.theme.icon.repo or "fontawesome/brands/git-alt" %}
+    {% include ".icons/" ~ icon ~ ".svg" %}
+  </div>
+  <div class="md-source__repository">
+    {{ config.repo_name }}
+  </div>
+  {% if config.extra.datapress_version %}
+    <span class="md-source__version">v{{ config.extra.datapress_version }}</span>
+  {% endif %}
+</a>

@@ -15,7 +15,7 @@ license = "MIT"
 authors = ["Jeroen <jeroenflvr@users.noreply.github.com>"]
 repository = "https://github.com/jeroenflvr/fast-api"
 homepage = "https://github.com/jeroenflvr/fast-api"
-documentation = "https://docs.rs/datapress-core"
+documentation = "https://docs.datap-rs.org"
 keywords = ["parquet", "delta", "duckdb", "datafusion", "http"]
 categories = ["database", "web-programming::http-server"]
 

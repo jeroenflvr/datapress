@@ -9,7 +9,7 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 description = "Single `datapress` binary bundling both the DuckDB and DataFusion dataset HTTP backends, selectable at runtime via `server.backend`."
-documentation = "https://docs.rs/datapress"
+documentation = "https://docs.datap-rs.org"
 readme = "README.md"
 
 [features]

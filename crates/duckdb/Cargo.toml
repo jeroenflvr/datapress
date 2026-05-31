@@ -9,7 +9,7 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 description = "DuckDB-backed implementation of the datapress Parquet/Delta dataset HTTP server."
-documentation = "https://docs.rs/datapress-duckdb"
+documentation = "https://docs.datap-rs.org"
 readme = "README.md"
 
 [features]

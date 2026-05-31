@@ -9,7 +9,7 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 description = "Apache Arrow + DataFusion-backed implementation of the datapress Parquet/Delta dataset HTTP server."
-documentation = "https://docs.rs/datapress-datafusion"
+documentation = "https://docs.datap-rs.org"
 readme = "README.md"
 
 [features]

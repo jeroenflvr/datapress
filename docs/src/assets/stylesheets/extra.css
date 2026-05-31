@@ -5,3 +5,16 @@
   margin: 1.1rem 0 1.5rem;
   color: var(--md-default-fg-color--light);
 }
+
+/* Version badge next to the repository link in the header. */
+.md-source__version {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.2rem;
+  background-color: var(--md-primary-bg-color--light, rgba(255, 255, 255, 0.2));
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  align-self: center;
+}
