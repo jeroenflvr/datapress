@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.14] - 2026-05-31
+
+### Bug Fixes
+
+- Oidc on swagger ui ([6a8c0bc](https://github.com/jeroenflvr/fast-api/commit/6a8c0bc0daa8d968d72019a7e864e04a854853df))
+- *(sec)* Fix sec bugs ([9cc09f3](https://github.com/jeroenflvr/fast-api/commit/9cc09f32cbe4f9ba443770eb3249743f74fd2244))
+
 ## [0.2.13] - 2026-05-31
 
 ### Bug Fixes
