@@ -38,6 +38,41 @@ HTTP API.
 - `lazy = true` is meaningful but redundant — DuckDB always reads
   parquet on demand.
 
+## S3 reads
+
+For S3 parquet and Delta datasets, DataPress loads DuckDB's `httpfs`
+extension and creates a temporary DuckDB S3 secret for each dataset.
+The secret is scoped to the dataset bucket, for example `s3://bucket`.
+That scope reliably matches single files, globs, partitioned paths, and
+reloads without leaking credentials across buckets.
+
+When no inline `access_key_id` / `secret_access_key` pair is configured,
+DataPress asks DuckDB to use the AWS environment/profile chain
+(`env;config`). This avoids accidentally probing instance metadata from
+local or S3-compatible deployments, which can otherwise show up as a
+confusing `503` from `read_parquet`.
+
+For S3-compatible endpoints such as MinIO, R2, or Wasabi, set
+`endpoint`, `addressing_style`, and `allow_http` the same way as the
+DataFusion backend:
+
+DataPress config uses `addressing_style = "virtual" | "path"`. For DuckDB,
+DataPress translates `virtual` to DuckDB's `URL_STYLE 'vhost'` and `path`
+to `URL_STYLE 'path'`.
+
+```toml
+[[dataset]]
+name = "warehouse"
+source.kind = "parquet"
+source.location = "s3://warehouse/exports/*.parquet"
+
+[dataset.s3]
+region = "us-east-1"
+endpoint = "http://minio.local:9000"
+addressing_style = "path"
+allow_http = true
+```
+
 ## When to pick DuckDB
 
 - You want **SQL semantics you trust** and rich type coverage.

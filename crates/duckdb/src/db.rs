@@ -7,7 +7,7 @@ use duckdb::Connection;
 use datapress_core::backend::{
     ArrowIpcStream, Backend, DatasetSummary, ReloadStats, arrow_ipc_stream_channel,
 };
-use datapress_core::config::{AppConfig, DatasetConfig, QuackConfig, SourceKind};
+use datapress_core::config::{AddressingStyle, AppConfig, DatasetConfig, QuackConfig, SourceKind};
 use datapress_core::errors::AppError;
 use datapress_core::models::{CountRequest, QueryRequest};
 use datapress_core::schema::{ColumnInfo, DatasetSchema, LogicalType};
@@ -305,9 +305,15 @@ fn build_scan_clause(cfg: &DatasetConfig) -> Result<String, AppError> {
 }
 
 /// Issue a `CREATE OR REPLACE SECRET` for one S3 dataset. The secret is
-/// scoped to the dataset's `s3://bucket/prefix` so peers with different
-/// credentials don't collide.
+/// scoped to the dataset bucket so globs, partitioned paths, and reloads all
+/// match the same DuckDB secret without leaking across buckets.
 fn apply_s3_secret(conn: &Connection, cfg: &DatasetConfig) -> Result<(), AppError> {
+    let sql = build_s3_secret_sql(cfg)?;
+    conn.execute_batch(&sql)?;
+    Ok(())
+}
+
+fn build_s3_secret_sql(cfg: &DatasetConfig) -> Result<String, AppError> {
     let creds = cfg.resolved_creds();
     // If we have no explicit creds, leave DuckDB to use its own provider
     // chain (env, IMDS, ~/.aws/credentials). We still want region/endpoint
@@ -316,23 +322,19 @@ fn apply_s3_secret(conn: &Connection, cfg: &DatasetConfig) -> Result<(), AppErro
     let s3 = cfg.s3.clone().unwrap_or_default();
     let region = cfg.resolved_region();
 
-    let mut parts: Vec<String> = vec!["TYPE S3".to_string()];
-    parts.push(format!("REGION '{}'", region.replace('\'', "''")));
-    if let Some(ep) = s3.endpoint.as_deref().filter(|s| !s.is_empty()) {
-        // DuckDB wants endpoint *without* the scheme.
-        let bare = ep
-            .trim_start_matches("http://")
-            .trim_start_matches("https://");
-        parts.push(format!("ENDPOINT '{}'", bare.replace('\'', "''")));
-    }
-    parts.push(format!("URL_STYLE '{}'", s3.addressing_style.as_str()));
-    if s3.allow_http {
-        parts.push("USE_SSL false".to_string());
-    }
+    let mut parts: Vec<String> = vec!["TYPE s3".to_string()];
     if let (Some(k), Some(s)) = (
         creds.access_key_id.as_deref(),
         creds.secret_access_key.as_deref(),
     ) {
+        parts.push("PROVIDER config".to_string());
+        if let Some(ep) = s3.endpoint.as_deref().filter(|s| !s.is_empty()) {
+            // DuckDB wants endpoint *without* the scheme.
+            let bare = ep
+                .trim_start_matches("http://")
+                .trim_start_matches("https://");
+            parts.push(format!("ENDPOINT '{}'", bare.replace('\'', "''")));
+        }
         parts.push(format!("KEY_ID '{}'", k.replace('\'', "''")));
         parts.push(format!("SECRET '{}'", s.replace('\'', "''")));
         if let Some(t) = creds.session_token.as_deref() {
@@ -344,12 +346,31 @@ fn apply_s3_secret(conn: &Connection, cfg: &DatasetConfig) -> Result<(), AppErro
             cfg.name
         )));
     } else {
-        // No explicit keys — ask DuckDB to use its credential chain.
+        // No explicit keys — ask DuckDB to use env/profile credentials.
+        // Avoid instance-metadata probing by default; that path can surface
+        // as a confusing 503 on local machines and many S3-compatible stores.
         parts.push("PROVIDER credential_chain".to_string());
+        parts.push("CHAIN 'env;config'".to_string());
+        if let Some(ep) = s3.endpoint.as_deref().filter(|s| !s.is_empty()) {
+            // DuckDB wants endpoint *without* the scheme.
+            let bare = ep
+                .trim_start_matches("http://")
+                .trim_start_matches("https://");
+            parts.push(format!("ENDPOINT '{}'", bare.replace('\'', "''")));
+        }
     }
+    parts.push(format!("REGION '{}'", region.replace('\'', "''")));
+    parts.push(format!(
+        "URL_STYLE '{}'",
+        duckdb_s3_url_style(s3.addressing_style)
+    ));
+    parts.push(format!(
+        "USE_SSL {}",
+        if s3.allow_http { "false" } else { "true" }
+    ));
     parts.push(format!(
         "SCOPE '{}'",
-        cfg.source.location.replace('\'', "''")
+        s3_secret_scope(cfg)?.replace('\'', "''")
     ));
 
     // Secret name: dataset name normalised. DuckDB identifiers are
@@ -365,8 +386,19 @@ fn apply_s3_secret(conn: &Connection, cfg: &DatasetConfig) -> Result<(), AppErro
         "CREATE OR REPLACE SECRET {secret_name} ({});",
         parts.join(", ")
     );
-    conn.execute_batch(&sql)?;
-    Ok(())
+    Ok(sql)
+}
+
+fn s3_secret_scope(cfg: &DatasetConfig) -> Result<String, AppError> {
+    let (bucket, _) = cfg.source.s3_bucket()?;
+    Ok(format!("s3://{bucket}"))
+}
+
+fn duckdb_s3_url_style(style: AddressingStyle) -> &'static str {
+    match style {
+        AddressingStyle::Virtual => "vhost",
+        AddressingStyle::Path => "path",
+    }
 }
 
 /// Atomically replace the dataset's table by re-reading its source.
@@ -616,5 +648,71 @@ impl Backend for Registry {
 
     async fn reload(&self, name: &str) -> Result<ReloadStats, AppError> {
         Registry::reload(self, name).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use datapress_core::config::{
+        AddressingStyle, DatasetConfig, IndexConfig, S3Config, SourceConfig, SourceKind,
+    };
+
+    use super::{build_s3_secret_sql, duckdb_s3_url_style, s3_secret_scope};
+
+    fn dataset(location: &str) -> DatasetConfig {
+        DatasetConfig {
+            name: "x".into(),
+            source: SourceConfig {
+                kind: SourceKind::Parquet,
+                location: location.into(),
+            },
+            s3: None,
+            index: IndexConfig::default(),
+            columns: vec![],
+            dict_encode: true,
+            lazy: false,
+        }
+    }
+
+    #[test]
+    fn s3_secret_scope_uses_bucket() {
+        assert_eq!(
+            s3_secret_scope(&dataset("s3://bucket/path/*.parquet")).unwrap(),
+            "s3://bucket"
+        );
+        assert_eq!(
+            s3_secret_scope(&dataset("s3://bucket/year=*/part-?.parquet")).unwrap(),
+            "s3://bucket"
+        );
+        assert_eq!(
+            s3_secret_scope(&dataset("s3://bucket/path/file.parquet")).unwrap(),
+            "s3://bucket"
+        );
+    }
+
+    #[test]
+    fn duckdb_s3_url_style_uses_httpfs_values() {
+        assert_eq!(duckdb_s3_url_style(AddressingStyle::Virtual), "vhost");
+        assert_eq!(duckdb_s3_url_style(AddressingStyle::Path), "path");
+    }
+
+    #[test]
+    fn explicit_s3_secret_matches_duckdb_scoped_format() {
+        let mut dataset = dataset("s3://proxy-aws-bucket01/path/*.parquet");
+        dataset.name = "myaws".into();
+        dataset.s3 = Some(S3Config {
+            region: Some("eu-west-3".into()),
+            endpoint: Some("https://s3.eu-west-3.amazonaws.com".into()),
+            addressing_style: AddressingStyle::Virtual,
+            allow_http: false,
+            access_key_id: Some("aws access key".into()),
+            secret_access_key: Some("aws secret key id".into()),
+            session_token: None,
+        });
+
+        assert_eq!(
+            build_s3_secret_sql(&dataset).unwrap(),
+            "CREATE OR REPLACE SECRET ds_myaws (TYPE s3, PROVIDER config, ENDPOINT 's3.eu-west-3.amazonaws.com', KEY_ID 'aws access key', SECRET 'aws secret key id', REGION 'eu-west-3', URL_STYLE 'vhost', USE_SSL true, SCOPE 's3://proxy-aws-bucket01');"
+        );
     }
 }
