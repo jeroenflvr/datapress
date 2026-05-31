@@ -37,6 +37,10 @@ use std::pin::Pin;
 use crate::config::AuthConfig;
 use crate::errors::AppError;
 
+fn install_jwt_crypto_provider() {
+    let _ = jsonwebtoken::crypto::rust_crypto::DEFAULT_PROVIDER.install_default();
+}
+
 // ---------------------------------------------------------------------------
 // Principal — what handlers see after a successful auth
 // ---------------------------------------------------------------------------
@@ -139,6 +143,8 @@ impl JwksCache {
     /// In either case a background refresher is spawned on the current
     /// tokio runtime.
     pub async fn boot(cfg: &AuthConfig) -> Result<Self, AppError> {
+        install_jwt_crypto_provider();
+
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
             .build()
@@ -347,6 +353,8 @@ pub fn verify_token(
     cfg: &AuthConfig,
     jwks: &JwksCache,
 ) -> Result<Principal, AppError> {
+    install_jwt_crypto_provider();
+
     let snap = jwks
         .snapshot()
         .ok_or_else(|| AppError::Unavailable("auth: JWKS not yet available".into()))?;

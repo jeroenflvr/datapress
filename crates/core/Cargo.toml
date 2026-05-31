@@ -35,7 +35,7 @@ metrics    = ["dep:actix-web-prom"]
 # when enabled, `[auth]` config block must be provided. The Swagger UI's
 # SSO support (`[swagger.oauth2]`) is independent of this and only
 # drives the UI; the actual API enforcement lives behind this feature.
-auth       = ["dep:jsonwebtoken", "dep:reqwest", "dep:arc-swap"]
+auth       = ["dep:jsonwebtoken", "jsonwebtoken/rust_crypto", "dep:reqwest", "dep:arc-swap"]
 
 [dependencies]
 actix-web.workspace   = true
