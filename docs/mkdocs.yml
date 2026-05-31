@@ -3,7 +3,7 @@ site_description: |
   Configuration-driven, columnar HTTP query server over Parquet / Delta —
   one config, two backends (DuckDB and Arrow + DataFusion).
 site_author: DataPress contributors
-site_url: https://datapress.example/        # adjust when published
+site_url: https://docs.datap-rs.org/
 repo_url: https://github.com/jeroenflvr/fast-api
 repo_name: jeroenflvr/fast-api
 edit_uri: edit/main/docs/
