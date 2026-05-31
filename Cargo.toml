@@ -8,7 +8,7 @@ members  = [
 ]
 
 [workspace.package]
-version = "0.2.9"
+version = "0.2.10"
 edition = "2024"
 license = "MIT"
 authors = ["Jeroen <jeroenflvr@users.noreply.github.com>"]
@@ -21,9 +21,9 @@ categories = ["database", "web-programming::http-server"]
 [workspace.dependencies]
 # Internal crates (path deps). Versions are required so the crates can be
 # published to crates.io while still resolving to the local path in-tree.
-datapress-core       = { path = "crates/core", version = "0.2.9" }
-datapress-duckdb     = { path = "crates/duckdb", version = "0.2.9" }
-datapress-datafusion = { path = "crates/datafusion", version = "0.2.9" }
+datapress-core       = { path = "crates/core", version = "0.2.10" }
+datapress-duckdb     = { path = "crates/duckdb", version = "0.2.10" }
+datapress-datafusion = { path = "crates/datafusion", version = "0.2.10" }
 
 # Shared third-party deps. Pinning versions here keeps every crate aligned.
 actix-web   = { version = "4.12.1", features = ["compress-gzip", "compress-brotli", "compress-zstd"] }

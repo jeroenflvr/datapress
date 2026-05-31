@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.10] - 2026-05-31
+
+### Bug Fixes
+
+- *(oidc)* Aud and scope are allowed to return both arrays and strings ([53074e4](https://github.com/jeroenflvr/fast-api/commit/53074e48345d8cd442518a6078d375101fd24070))
+
 ## [0.2.9] - 2026-05-31
 
 ### Documentation
