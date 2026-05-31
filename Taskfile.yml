@@ -73,10 +73,11 @@ tasks:
       - cargo clean
 
   py:develop:
-    desc: Build the `datapress` wheel in dev mode and install into ./.venv
+    desc: Build the `datapress` wheel in dev mode and install into ./.venv with the published feature set
+    deps: [docs:build]
     cmds:
       - uv venv --allow-existing
-      - uv tool run --with maturin maturin develop --release --uv
+      - uv tool run --with maturin maturin develop --release --uv --features docs,swagger,auth,metrics
 
   py:build:
     desc: Build a release wheel into ./target/wheels/ with the published feature set
