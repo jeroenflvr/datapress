@@ -16,11 +16,75 @@ cfg = DataPressConfig(
     max_page_size=100_000,        # clamp query page_size above this
     request_timeout_ms=30_000,    # 504 above this; 0 disables
     shutdown_timeout_secs=30,     # SIGTERM/SIGINT grace period
+    swagger_enabled=True,
+    swagger_path="/docs",
 )
 ```
 
 Every kwarg mirrors the TOML `[server]` block. See
 [Configuration › Server](../configuration/server.md) for full semantics.
+
+### Swagger UI OAuth2 / OIDC
+
+`AuthConfig` protects the API. The `swagger_oauth2_*` fields only make
+the Swagger UI's **Authorize** button log in and attach a bearer token to
+"Try it out" requests.
+
+```python
+from datap_rs.datapress import AuthConfig, DataPressConfig
+
+cfg = DataPressConfig(
+    backend="duckdb",
+    port=8000,
+    swagger_enabled=True,
+    swagger_path="/docs",
+    swagger_oauth2_issuer="https://issuer.example.com",
+    swagger_oauth2_client_id="datapress-swagger",
+    swagger_oauth2_scopes=["openid", "profile", "datasets:read"],
+    swagger_oauth2_pkce=True,
+)
+
+auth = AuthConfig(
+    enabled=True,
+    issuer="https://issuer.example.com",
+    audience="datapress-api",
+    read_scopes=["datasets:read"],
+    reload_scopes=["datasets:reload"],
+)
+```
+
+`swagger_oauth2_pkce=True` enables the browser-safe Authorization Code
+with PKCE flow in Swagger UI. PKCE adds a one-time `code_verifier` /
+`code_challenge` pair so the UI can obtain a token without embedding a
+client secret in the page. Keep it enabled for public Swagger UI clients
+unless your identity provider explicitly cannot support PKCE.
+
+Register this redirect URI with your IdP:
+
+```text
+http://localhost:8000/docs/oauth2-redirect.html
+```
+
+For production, use your public HTTPS origin instead.
+
+For machine-to-machine access, use the OAuth2 client credentials grant
+outside Swagger UI. Request a token from your IdP's token endpoint with
+`grant_type=client_credentials`, then call DataPress with the returned
+access token:
+
+```python
+headers = {"Authorization": f"Bearer {access_token}"}
+```
+
+Do not put a client secret in Swagger UI or other browser code. If you
+want to try a client-credentials token from the docs page, obtain the
+token separately and paste it into Swagger UI's bearer authorization
+dialog.
+
+The built-in Swagger UI configuration is intended for interactive OIDC
+login. It discovers the provider from `swagger_oauth2_issuer`, requests
+the configured scopes, and sends the access token on API calls; it does
+not store or exchange client secrets.
 
 ## `DatasetConfig`
 

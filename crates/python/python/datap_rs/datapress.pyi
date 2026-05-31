@@ -123,6 +123,12 @@ class DataPressConfig:
     quack_read_only: bool
     metrics_enabled: bool
     metrics_path: str
+    swagger_enabled: bool
+    swagger_path: str
+    swagger_oauth2_issuer: str
+    swagger_oauth2_client_id: str
+    swagger_oauth2_scopes: list[str]
+    swagger_oauth2_pkce: bool
 
     def __init__(
         self,
@@ -143,6 +149,12 @@ class DataPressConfig:
         quack_read_only: bool = True,
         metrics_enabled: bool = False,
         metrics_path: str = "/metrics",
+        swagger_enabled: bool = True,
+        swagger_path: str = "/docs",
+        swagger_oauth2_issuer: str = "",
+        swagger_oauth2_client_id: str = "",
+        swagger_oauth2_scopes: Optional[list[str]] = None,
+        swagger_oauth2_pkce: bool = True,
     ) -> None:
         """Build a :class:`DataPressConfig`.
 
@@ -185,6 +197,18 @@ class DataPressConfig:
                 with ``/`` and not end with ``/``. The endpoint is
                 unauthenticated — isolate it at the network layer. Default
                 ``"/metrics"``.
+            swagger_enabled: Serve the embedded Swagger UI at
+                ``swagger_path``. Requires a wheel built with the ``swagger``
+                feature. Default ``True``.
+            swagger_path: Path the Swagger UI is served on. Default
+                ``"/docs"``.
+            swagger_oauth2_issuer: OIDC issuer used by Swagger UI's
+                Authorize button. Empty disables UI OAuth2 login.
+            swagger_oauth2_client_id: Public OAuth2 client id registered for
+                Swagger UI.
+            swagger_oauth2_scopes: Scopes requested by default in Swagger UI.
+            swagger_oauth2_pkce: Use PKCE for the authorization-code flow.
+                Default ``True``.
         """
         ...
 

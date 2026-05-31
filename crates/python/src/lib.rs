@@ -24,6 +24,7 @@ use datapress_core::config::{
     AddressingStyle, AppConfig, AuthConfig as CoreAuthConfig, Backend,
     DatasetConfig as CoreDatasetConfig, IndexConfig, IndexMode, MetricsConfig as CoreMetricsConfig,
     S3Config as CoreS3Config, ServerConfig, SourceConfig, SourceKind,
+    SwaggerConfig as CoreSwaggerConfig, SwaggerOAuth2Config as CoreSwaggerOAuth2Config,
 };
 
 // ---------------------------------------------------------------------------
@@ -411,6 +412,27 @@ pub struct PyDataPressConfig {
     /// network layer. Default ``"/metrics"``.
     #[pyo3(get, set)]
     pub metrics_path: String,
+    /// Serve the embedded Swagger UI. Requires the wheel to be built with the
+    /// ``swagger`` Cargo feature. Default ``True``.
+    #[pyo3(get, set)]
+    pub swagger_enabled: bool,
+    /// Path the Swagger UI is served on. Default ``"/docs"``.
+    #[pyo3(get, set)]
+    pub swagger_path: String,
+    /// OIDC issuer used by Swagger UI's Authorize button. Empty disables UI
+    /// OAuth2 login. This does not enable server-side auth; pass
+    /// ``AuthConfig`` to ``DataPress`` for API enforcement.
+    #[pyo3(get, set)]
+    pub swagger_oauth2_issuer: String,
+    /// Public OAuth2 client id registered for Swagger UI.
+    #[pyo3(get, set)]
+    pub swagger_oauth2_client_id: String,
+    /// Scopes requested by default in Swagger UI.
+    #[pyo3(get, set)]
+    pub swagger_oauth2_scopes: Vec<String>,
+    /// Use PKCE for Swagger UI's authorization-code flow.
+    #[pyo3(get, set)]
+    pub swagger_oauth2_pkce: bool,
 }
 
 #[pymethods]
@@ -468,6 +490,12 @@ impl PyDataPressConfig {
         quack_read_only   = true,
         metrics_enabled    = false,
         metrics_path       = "/metrics".to_string(),
+        swagger_enabled    = true,
+        swagger_path       = "/docs".to_string(),
+        swagger_oauth2_issuer    = String::new(),
+        swagger_oauth2_client_id = String::new(),
+        swagger_oauth2_scopes    = Vec::new(),
+        swagger_oauth2_pkce      = true,
     ))]
     #[allow(clippy::too_many_arguments)] // user-facing kwargs surface
     fn new(
@@ -488,6 +516,12 @@ impl PyDataPressConfig {
         quack_read_only: bool,
         metrics_enabled: bool,
         metrics_path: String,
+        swagger_enabled: bool,
+        swagger_path: String,
+        swagger_oauth2_issuer: String,
+        swagger_oauth2_client_id: String,
+        swagger_oauth2_scopes: Vec<String>,
+        swagger_oauth2_pkce: bool,
     ) -> Self {
         Self {
             backend,
@@ -507,6 +541,12 @@ impl PyDataPressConfig {
             quack_read_only,
             metrics_enabled,
             metrics_path,
+            swagger_enabled,
+            swagger_path,
+            swagger_oauth2_issuer,
+            swagger_oauth2_client_id,
+            swagger_oauth2_scopes,
+            swagger_oauth2_pkce,
         }
     }
 }
@@ -578,6 +618,58 @@ impl PyDataPressConfig {
         Ok(CoreMetricsConfig {
             enabled: self.metrics_enabled,
             path: self.metrics_path.clone(),
+        })
+    }
+
+    fn swagger_into_core(&self) -> PyResult<CoreSwaggerConfig> {
+        if !self.swagger_path.starts_with('/') {
+            return Err(PyValueError::new_err(format!(
+                "DataPressConfig.swagger_path must start with '/' (got '{}')",
+                self.swagger_path
+            )));
+        }
+        if self.swagger_path.len() > 1 && self.swagger_path.ends_with('/') {
+            return Err(PyValueError::new_err(format!(
+                "DataPressConfig.swagger_path must not end with '/' (got '{}')",
+                self.swagger_path
+            )));
+        }
+
+        let oauth2 = if self.swagger_oauth2_issuer.trim().is_empty()
+            && self.swagger_oauth2_client_id.trim().is_empty()
+        {
+            None
+        } else {
+            if self.swagger_oauth2_issuer.trim().is_empty() {
+                return Err(PyValueError::new_err(
+                    "DataPressConfig.swagger_oauth2_issuer is required when swagger_oauth2_client_id is set",
+                ));
+            }
+            if self.swagger_oauth2_client_id.trim().is_empty() {
+                return Err(PyValueError::new_err(
+                    "DataPressConfig.swagger_oauth2_client_id is required when swagger_oauth2_issuer is set",
+                ));
+            }
+            if !(self.swagger_oauth2_issuer.starts_with("https://")
+                || self.swagger_oauth2_issuer.starts_with("http://"))
+            {
+                return Err(PyValueError::new_err(format!(
+                    "DataPressConfig.swagger_oauth2_issuer must be an absolute http(s) URL (got '{}')",
+                    self.swagger_oauth2_issuer
+                )));
+            }
+            Some(CoreSwaggerOAuth2Config {
+                issuer: self.swagger_oauth2_issuer.clone(),
+                client_id: self.swagger_oauth2_client_id.clone(),
+                scopes: self.swagger_oauth2_scopes.clone(),
+                pkce: self.swagger_oauth2_pkce,
+            })
+        };
+
+        Ok(CoreSwaggerConfig {
+            enabled: self.swagger_enabled,
+            path: self.swagger_path.clone(),
+            oauth2,
         })
     }
 }
@@ -814,6 +906,7 @@ impl PyDataPress {
         auth: Option<PyAuthConfig>,
     ) -> PyResult<Self> {
         let metrics = config.metrics_into_core()?;
+        let swagger = config.swagger_into_core()?;
         let server = config.into_core()?;
         let datasets = datasets
             .into_iter()
@@ -827,7 +920,7 @@ impl PyDataPress {
             cfg: AppConfig {
                 server,
                 docs: datapress_core::config::DocsConfig::default(),
-                swagger: datapress_core::config::SwaggerConfig::default(),
+                swagger,
                 metrics,
                 auth,
                 datasets,
