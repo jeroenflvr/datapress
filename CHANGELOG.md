@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.9] - 2026-05-31
+
+### Documentation
+
+- Update links (pypi) ([31c81b5](https://github.com/jeroenflvr/fast-api/commit/31c81b50fadb0ccf1be4906863cedeccc92feb4d))
+- Update entry page ([aee0a87](https://github.com/jeroenflvr/fast-api/commit/aee0a87f68688073558bedca9ab58418d28c1bfd))
+
+### Miscellaneous
+
+- *(doc)* Fmt ([ea21b58](https://github.com/jeroenflvr/fast-api/commit/ea21b5809f2a5934db45c8e6ee660f980b31855c))
+- *(doc)* Fmt ([438ba1c](https://github.com/jeroenflvr/fast-api/commit/438ba1c54cb4bc87f2c351ef5b20af88e8a07afe))
+
 ## [0.2.8] - 2026-05-31
 
 ### Bug Fixes
