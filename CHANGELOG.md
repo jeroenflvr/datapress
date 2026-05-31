@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.12] - 2026-05-31
+
+### Features
+
+- Add auth to swagger ui from python ([d5a3ada](https://github.com/jeroenflvr/fast-api/commit/d5a3adaf343cf09e2a242e0040fcc8c66233bc5f))
+
 ## [0.2.11] - 2026-05-31
 
 ### Bug Fixes
