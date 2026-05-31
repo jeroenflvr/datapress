@@ -15,6 +15,8 @@
 ![DuckDB](https://img.shields.io/badge/backend-DuckDB-yellow?logo=duckdb)
 ![DataFusion](https://img.shields.io/badge/backend-DataFusion-blue)
 
+[Documentation](https://docs.datap-rs.org) · [Source](https://github.com/jeroenflvr/fast-api) · [PyPI](https://pypi.org/project/datap-rs/)
+
 
 
 

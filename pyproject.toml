@@ -27,9 +27,10 @@ classifiers     = [
 ]
 
 [project.urls]
-Homepage   = "https://github.com/jeroenflvr/fast-api"
-Source     = "https://github.com/jeroenflvr/fast-api"
-Issues     = "https://github.com/jeroenflvr/fast-api/issues"
+Homepage      = "https://docs.datap-rs.org"
+Documentation = "https://docs.datap-rs.org"
+Source        = "https://github.com/jeroenflvr/fast-api"
+Issues        = "https://github.com/jeroenflvr/fast-api/issues"
 
 [tool.maturin]
 # The Cargo package lives in crates/python; the cdylib is exposed as the
