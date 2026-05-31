@@ -928,11 +928,17 @@ impl PyDataPress {
         })
     }
 
-    /// Start the HTTP server and run until SIGINT (Ctrl-C).
+    /// Start the HTTP server and run until interrupted (Ctrl-C / SIGINT).
     ///
     /// Returns a Python awaitable that resolves when the server stops.
     /// The server runs on a dedicated OS thread with its own actix
     /// runtime, so the caller's asyncio event loop is not blocked.
+    ///
+    /// Shutdown is graceful and host-driven: DataPress does **not** install
+    /// its own OS signal handlers (which would fight CPython's). Instead the
+    /// awaitable watches for `Ctrl+C` on the host runtime; on interrupt it
+    /// asks the server to stop, waits for in-flight requests to drain, and
+    /// then resolves cleanly.
     ///
     /// Returns:
     ///     Awaitable[None]: Completes cleanly on graceful shutdown.
@@ -942,17 +948,43 @@ impl PyDataPress {
     fn run<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let cfg = clone_app_config(&self.cfg);
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let (tx, rx) = tokio::sync::oneshot::channel::<std::io::Result<()>>();
+            // `done` carries the server's exit result back from its thread;
+            // `stop` asks the server to begin a graceful shutdown.
+            let (done_tx, mut done_rx) = tokio::sync::oneshot::channel::<std::io::Result<()>>();
+            let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+
             std::thread::spawn(move || {
                 let result = actix_web::rt::System::new().block_on(async move {
+                    // Resolves when `stop_tx` is sent *or* dropped, so the
+                    // server also stops if the host future is cancelled.
+                    let shutdown = async move {
+                        let _ = stop_rx.await;
+                    };
                     match cfg.server.backend {
-                        Backend::Duckdb => datapress_duckdb::serve(cfg).await,
-                        Backend::Datafusion => datapress_datafusion::serve(cfg).await,
+                        Backend::Duckdb => {
+                            datapress_duckdb::serve_with_shutdown(cfg, shutdown).await
+                        }
+                        Backend::Datafusion => {
+                            datapress_datafusion::serve_with_shutdown(cfg, shutdown).await
+                        }
                     }
                 });
-                let _ = tx.send(result);
+                let _ = done_tx.send(result);
             });
-            match rx.await {
+
+            // Race the server finishing on its own (bind error / panic)
+            // against a host interrupt. On Ctrl+C we trigger a graceful
+            // stop and then wait for the server to finish draining, so the
+            // awaitable resolves *after* a clean shutdown rather than
+            // leaving a detached, unstoppable server thread behind.
+            let result = tokio::select! {
+                res = &mut done_rx => res,
+                _ = tokio::signal::ctrl_c() => {
+                    let _ = stop_tx.send(());
+                    (&mut done_rx).await
+                }
+            };
+            match result {
                 Ok(Ok(())) => Ok(()),
                 Ok(Err(e)) => Err(PyRuntimeError::new_err(e.to_string())),
                 Err(_) => Err(PyRuntimeError::new_err("DataPress server thread panicked")),

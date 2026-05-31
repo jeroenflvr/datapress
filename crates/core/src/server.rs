@@ -1,6 +1,8 @@
 //! Shared actix-web bootstrap. Both backends call [`serve`] from their
 //! own thin `serve(cfg)` entry point.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,6 +12,19 @@ use crate::backend::Backend;
 use crate::config::AppConfig;
 use crate::handlers;
 use crate::timeout::Timeout;
+
+/// How the running server is asked to begin a graceful shutdown.
+enum Shutdown {
+    /// Install `SIGINT`/`SIGTERM` (or `Ctrl+C`) handlers and stop when one
+    /// arrives. Used by the standalone binaries, which own the process and
+    /// its signal disposition.
+    Signals,
+    /// Stop when the given future resolves. Used when DataPress is embedded
+    /// (e.g. the Python extension), where the *host* owns signal handling
+    /// and drives shutdown by completing this future. No OS signal handlers
+    /// are installed, so we never fight the host's handlers.
+    External(Pin<Box<dyn Future<Output = ()> + Send>>),
+}
 
 /// Bind the HTTP server, register the generic handler set against
 /// `backend`, and run until the process receives `SIGINT` or `SIGTERM`.
@@ -21,6 +36,33 @@ use crate::timeout::Timeout;
 /// `label` is the human-readable backend name used in the startup log
 /// line (e.g. `"DuckDB"`, `"DataFusion"`).
 pub async fn serve(cfg: AppConfig, backend: Arc<dyn Backend>, label: &str) -> std::io::Result<()> {
+    run_server(cfg, backend, label, Shutdown::Signals).await
+}
+
+/// Like [`serve`], but driven to a graceful stop by `shutdown` instead of
+/// OS signals.
+///
+/// Intended for embedding DataPress inside another runtime (the Python
+/// extension's `DataPress.run()`), where installing process-global signal
+/// handlers would race the host's own. The caller resolves `shutdown` —
+/// for example when its asyncio task is cancelled by `Ctrl+C` — and the
+/// server then drains in-flight requests within
+/// `cfg.server.shutdown_timeout_secs` and returns.
+pub async fn serve_with_shutdown(
+    cfg: AppConfig,
+    backend: Arc<dyn Backend>,
+    label: &str,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
+    run_server(cfg, backend, label, Shutdown::External(Box::pin(shutdown))).await
+}
+
+async fn run_server(
+    cfg: AppConfig,
+    backend: Arc<dyn Backend>,
+    label: &str,
+    shutdown: Shutdown,
+) -> std::io::Result<()> {
     let addr = (cfg.server.listen, cfg.server.port);
     let workers = cfg.server.workers;
     let prefix = cfg.server.prefix.clone();
@@ -132,6 +174,32 @@ pub async fn serve(cfg: AppConfig, backend: Arc<dyn Backend>, label: &str) -> st
         log::info!("    GET    {}/openapi.json", swagger_cfg.path);
     }
 
+    // Resolve the Swagger UI's OIDC login endpoints once, before binding.
+    // We emit an explicit `oauth2` authorizationCode flow in the spec (see
+    // `swagger::ResolvedOAuth2`); discovering the authorize/token URLs here
+    // keeps the operator-facing config to just an `issuer`. On failure we
+    // log and serve the docs *without* a login button rather than shipping
+    // an empty Authorize dialog.
+    #[cfg(feature = "swagger")]
+    let swagger_oauth2 = if swagger_cfg.enabled {
+        match swagger_cfg.oauth2.as_ref() {
+            Some(o) => match crate::swagger::resolve_oauth2(o).await {
+                Ok(resolved) => Some(resolved),
+                Err(e) => {
+                    log::warn!(
+                        "[swagger.oauth2] OIDC discovery for issuer {} failed ({e}); \
+                         serving docs without the Authorize button",
+                        o.issuer
+                    );
+                    None
+                }
+            },
+            None => None,
+        }
+    } else {
+        None
+    };
+
     // Build the Prometheus middleware once, outside the worker closure, so
     // every worker shares a single registry (counts aggregate correctly).
     // Constructed whenever the feature is compiled; the runtime `enabled`
@@ -174,6 +242,8 @@ pub async fn serve(cfg: AppConfig, backend: Arc<dyn Backend>, label: &str) -> st
         let docs_cfg = docs_cfg.clone();
         #[cfg(feature = "swagger")]
         let swagger_cfg = swagger_cfg.clone();
+        #[cfg(feature = "swagger")]
+        let swagger_oauth2 = swagger_oauth2.clone();
         #[cfg(feature = "auth")]
         let auth_state = auth_state.clone();
         #[cfg(feature = "metrics")]
@@ -228,7 +298,7 @@ pub async fn serve(cfg: AppConfig, backend: Arc<dyn Backend>, label: &str) -> st
         #[cfg(feature = "swagger")]
         let app = if swagger_cfg.enabled {
             app.configure(|c| {
-                crate::swagger::configure(&swagger_cfg.path, swagger_cfg.oauth2.as_ref(), c)
+                crate::swagger::configure(&swagger_cfg.path, swagger_oauth2.as_ref(), c)
             })
         } else {
             app
@@ -258,18 +328,32 @@ pub async fn serve(cfg: AppConfig, backend: Arc<dyn Backend>, label: &str) -> st
         .disable_signals()
         .run();
     let handle = running.handle();
-    tokio::spawn(shutdown_listener(handle, shutdown_secs));
+    tokio::spawn(shutdown_listener(handle, shutdown_secs, shutdown));
 
     running.await
 }
 
-/// Wait for `SIGINT` / `SIGTERM` (or `Ctrl+C` on non-Unix), log which one
-/// arrived, then ask the actix server handle to stop gracefully.
-async fn shutdown_listener(handle: actix_web::dev::ServerHandle, grace_secs: u64) {
-    let which = wait_for_signal().await;
-    log::info!(
-        "Received {which}, shutting down gracefully (up to {grace_secs}s for in-flight requests)..."
-    );
+/// Wait for the configured shutdown trigger (OS signal or an external
+/// future), log it, then ask the actix server handle to stop gracefully.
+async fn shutdown_listener(
+    handle: actix_web::dev::ServerHandle,
+    grace_secs: u64,
+    shutdown: Shutdown,
+) {
+    match shutdown {
+        Shutdown::Signals => {
+            let which = wait_for_signal().await;
+            log::info!(
+                "Received {which}, shutting down gracefully (up to {grace_secs}s for in-flight requests)..."
+            );
+        }
+        Shutdown::External(fut) => {
+            fut.await;
+            log::info!(
+                "Shutdown requested by host, draining in-flight requests (up to {grace_secs}s)..."
+            );
+        }
+    }
     handle.stop(true).await;
     log::info!("Shutdown complete.");
 }

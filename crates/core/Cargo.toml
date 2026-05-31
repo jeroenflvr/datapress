@@ -24,8 +24,11 @@ datafusion = ["dep:arrow", "dep:parquet", "dep:datafusion"]
 docs       = ["dep:include_dir", "dep:mime_guess"]
 # Embed Swagger UI + a hand-written OpenAPI spec. Served from
 # `[swagger].path` (default `/docs`). Off by default at compile time;
-# can be disabled at runtime via `[swagger].enabled = false`.
-swagger    = ["dep:utoipa", "dep:utoipa-swagger-ui"]
+# can be disabled at runtime via `[swagger].enabled = false`. Pulls in
+# `reqwest` to run OIDC discovery at startup when `[swagger.oauth2]` is
+# configured, so the UI's Authorize dialog gets explicit authorize/token
+# endpoints (an `oauth2` flow) instead of an empty `openIdConnect` form.
+swagger    = ["dep:utoipa", "dep:utoipa-swagger-ui", "dep:reqwest"]
 # Expose a Prometheus `/metrics` endpoint plus per-request HTTP metrics
 # (counts + latency histograms) via middleware. Served from
 # `[metrics].path` (default `/metrics`). Off by default at compile time;

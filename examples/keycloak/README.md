@@ -87,11 +87,30 @@ Add to your DataPress config:
 
 ```toml
 [swagger.oauth2]
-client_id          = "datapress-swagger"
-authorization_url  = "http://localhost:8080/realms/datapress/protocol/openid-connect/auth"
-token_url          = "http://localhost:8080/realms/datapress/protocol/openid-connect/token"
-scopes             = ["datasets:read", "datasets:reload"]
-use_pkce           = true
+client_id = "datapress-swagger"
+issuer    = "http://localhost:8080/realms/datapress"
+scopes    = ["datasets:read", "datasets:reload"]
+pkce      = true
+```
+
+DataPress runs OIDC discovery against
+`<issuer>/.well-known/openid-configuration` at startup and emits an
+`oauth2` `authorizationCode` flow (with the discovered authorize/token
+endpoints) into the OpenAPI spec, so the Swagger UI's **Authorize**
+dialog shows the scope checkboxes and login button. If discovery is
+unreachable at boot, the docs are still served — just without the
+Authorize button.
+
+From Python, set the equivalent kwargs on `DataPressConfig`:
+
+```python
+DataPressConfig(
+    backend="duckdb",
+    swagger_oauth2_issuer="http://localhost:8080/realms/datapress",
+    swagger_oauth2_client_id="datapress-swagger",
+    swagger_oauth2_scopes=["datasets:read", "datasets:reload"],
+    swagger_oauth2_pkce=True,
+)
 ```
 
 ## Stop / reset

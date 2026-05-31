@@ -16,6 +16,102 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use crate::config::SwaggerOAuth2Config;
 
+/// OIDC endpoints + UI parameters resolved from a [`SwaggerOAuth2Config`]
+/// at server startup.
+///
+/// We emit an OpenAPI `oauth2` security scheme with an explicit
+/// `authorizationCode` flow (authorize + token URLs) rather than a bare
+/// `openIdConnect` scheme. Swagger UI renders an `oauth2` flow directly
+/// from the spec — scope checkboxes, the Authorize button, PKCE — whereas
+/// an `openIdConnect` scheme forces the browser to fetch the issuer's
+/// discovery document client-side, which silently yields an *empty*
+/// Authorize dialog when that fetch is blocked by CORS or unreachable.
+///
+/// The authorize/token URLs are discovered once at boot via
+/// [`resolve_oauth2`]; the caller falls back to skipping the UI login
+/// (no Authorize button) if discovery fails, rather than shipping a
+/// broken dialog.
+#[derive(Debug, Clone)]
+pub struct ResolvedOAuth2 {
+    /// Public OAuth2 client id registered for the Swagger UI.
+    pub client_id: String,
+    /// `authorization_endpoint` from the issuer's OIDC metadata.
+    pub authorization_url: String,
+    /// `token_endpoint` from the issuer's OIDC metadata.
+    pub token_url: String,
+    /// Scopes offered in the Authorize dialog (`openid` always included).
+    pub scopes: Vec<String>,
+    /// Whether to drive the authorization-code flow with PKCE.
+    pub pkce: bool,
+}
+
+/// Run OIDC discovery for the Swagger UI's login flow: GET
+/// `{issuer}/.well-known/openid-configuration` and pull out the
+/// `authorization_endpoint` and `token_endpoint`. Scopes come from the
+/// operator's config (with `openid` ensured); the issuer's
+/// `scopes_supported` is only used as a fallback when none are
+/// configured.
+///
+/// Returns `Err` on a network failure, a non-success HTTP status, or a
+/// metadata body that lacks either endpoint. The issuer's trailing
+/// slash (if any) is trimmed so the well-known URL never doubles up.
+pub async fn resolve_oauth2(cfg: &SwaggerOAuth2Config) -> Result<ResolvedOAuth2, String> {
+    #[derive(serde::Deserialize)]
+    struct OidcMetadata {
+        authorization_endpoint: Option<String>,
+        token_endpoint: Option<String>,
+        #[serde(default)]
+        scopes_supported: Vec<String>,
+    }
+
+    let disco_url = format!(
+        "{}/.well-known/openid-configuration",
+        cfg.issuer.trim_end_matches('/')
+    );
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("reqwest client: {e}"))?;
+    let resp = client
+        .get(&disco_url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("discovery {disco_url} → HTTP {}", resp.status()));
+    }
+    let meta = resp
+        .json::<OidcMetadata>()
+        .await
+        .map_err(|e| format!("discovery {disco_url} body: {e}"))?;
+    let authorization_url = meta
+        .authorization_endpoint
+        .ok_or_else(|| format!("discovery {disco_url}: missing authorization_endpoint"))?;
+    let token_url = meta
+        .token_endpoint
+        .ok_or_else(|| format!("discovery {disco_url}: missing token_endpoint"))?;
+
+    let mut scopes = if cfg.scopes.is_empty() {
+        meta.scopes_supported
+    } else {
+        cfg.scopes.clone()
+    };
+    if !scopes.iter().any(|s| s == "openid") {
+        scopes.insert(0, "openid".to_string());
+    }
+
+    log::info!(
+        "swagger: OIDC discovery ok (authorize={authorization_url}, token={token_url})"
+    );
+    Ok(ResolvedOAuth2 {
+        client_id: cfg.client_id.clone(),
+        authorization_url,
+        token_url,
+        scopes,
+        pkce: cfg.pkce,
+    })
+}
+
 /// Build the [`SwaggerUi`] actix service for the given mount path.
 ///
 /// Visiting `<mount>/` (e.g. `/docs/`) loads the interactive UI;
@@ -24,24 +120,21 @@ use crate::config::SwaggerOAuth2Config;
 /// The mount is registered with a tail-capture (`{_:.*}`) so Swagger
 /// UI's nested assets resolve correctly.
 ///
-/// When `oauth2` is `Some`, the spec advertises an `OpenIdConnect`
-/// security scheme (auto-discovered from the issuer's well-known URL)
-/// and the UI's `initOAuth` is preconfigured with `client_id`, scopes,
-/// and PKCE so users can sign in directly from the docs page.
+/// When `oauth2` is `Some`, the spec advertises an `oauth2`
+/// security scheme (`authorizationCode` flow with the issuer's
+/// discovered authorize/token endpoints) and the UI's `initOAuth` is
+/// preconfigured with `client_id`, scopes, and PKCE so users can sign
+/// in directly from the docs page.
 pub fn service(
     mount: &str,
-    oauth2: Option<&SwaggerOAuth2Config>,
+    oauth2: Option<&ResolvedOAuth2>,
 ) -> impl HttpServiceFactory + use<> {
     let ui = SwaggerUi::new(format!("{mount}/{{_:.*}}"))
         .url(format!("{mount}/openapi.json"), openapi(oauth2));
     if let Some(o) = oauth2 {
-        let mut scopes: Vec<String> = o.scopes.clone();
-        if !scopes.iter().any(|s| s == "openid") {
-            scopes.insert(0, "openid".to_string());
-        }
         let oauth_cfg = utoipa_swagger_ui::oauth::Config::new()
             .client_id(&o.client_id)
-            .scopes(scopes)
+            .scopes(o.scopes.clone())
             .use_pkce_with_authorization_code_grant(o.pkce);
         ui.oauth(oauth_cfg)
     } else {
@@ -54,7 +147,7 @@ pub fn service(
 /// Without the redirect, visiting the bare mount path (e.g. `/docs`)
 /// 404s because `SwaggerUi`'s tail-capture route requires the trailing
 /// slash to match the empty asset path.
-pub fn configure(mount: &str, oauth2: Option<&SwaggerOAuth2Config>, cfg: &mut web::ServiceConfig) {
+pub fn configure(mount: &str, oauth2: Option<&ResolvedOAuth2>, cfg: &mut web::ServiceConfig) {
     let redirect_target = format!("{mount}/");
     cfg.service(
         web::resource(mount.to_string()).route(web::get().to(move || {
@@ -74,7 +167,7 @@ pub fn configure(mount: &str, oauth2: Option<&SwaggerOAuth2Config>, cfg: &mut we
 /// the API surface is small and stable, and a hand-written spec gives
 /// us full control over examples + descriptions without scattering
 /// attributes across the handler tree.
-fn openapi(oauth2: Option<&SwaggerOAuth2Config>) -> OpenApi {
+fn openapi(oauth2: Option<&ResolvedOAuth2>) -> OpenApi {
     let version = env!("CARGO_PKG_VERSION");
     // Reusable inline parameter — utoipa doesn't accept `$ref`-style
     // parameters at the Operation level, so we splice the object in
@@ -378,19 +471,20 @@ fn openapi(oauth2: Option<&SwaggerOAuth2Config>) -> OpenApi {
         }
     });
 
-    // Splice in the OIDC security scheme if SSO is configured. Done
-    // outside the json! literal so the macro stays static and the
-    // optional bits live in plain Rust.
-    if let Some(o) = oauth2 {
-        let scheme = serde_json::json!({
-            "type":             "openIdConnect",
-            "openIdConnectUrl": format!("{}/.well-known/openid-configuration", o.issuer),
-            "description":      "Sign in with your identity provider. The Swagger UI \
-                                 will attach the resulting access token as \
-                                 `Authorization: Bearer …` to every \"Try it out\" \
-                                 request.",
-        });
-        json["components"]["securitySchemes"]["OpenIdConnect"] = scheme;
+    // Wire up the OAuth2 security scheme if SSO is configured. The
+    // *scheme object* is built with utoipa's typed API and inserted after
+    // deserialisation (below) rather than as JSON: utoipa's OAuth2 `Flow`
+    // is an untagged enum, so a hand-written `authorizationCode` object
+    // round-trips into the `implicit` variant and silently drops
+    // `tokenUrl`. Here we only adjust the *requirements* + remove the
+    // admin-token scheme, which are plain JSON and safe to splice.
+    //
+    // We emit an `oauth2` scheme (not `openIdConnect`) because Swagger UI
+    // renders the former's authorize/token URLs and scopes straight from
+    // the spec, while the latter relies on a client-side discovery fetch
+    // that yields an empty Authorize dialog when CORS/reachability blocks
+    // it.
+    if oauth2.is_some() {
         json["components"]["securitySchemes"]
             .as_object_mut()
             .expect("securitySchemes is an object")
@@ -400,9 +494,11 @@ fn openapi(oauth2: Option<&SwaggerOAuth2Config>) -> OpenApi {
         // requirements per operation can be tightened later when the
         // server actually enforces tokens.
         let scopes = serde_json::Value::Array(
-            o.scopes
-                .iter()
-                .map(|s| serde_json::Value::String(s.clone()))
+            oauth2
+                .map(|o| o.scopes.clone())
+                .unwrap_or_default()
+                .into_iter()
+                .map(serde_json::Value::String)
                 .collect(),
         );
         json["security"] = serde_json::json!([ { "OpenIdConnect": scopes } ]);
@@ -413,7 +509,34 @@ fn openapi(oauth2: Option<&SwaggerOAuth2Config>) -> OpenApi {
     // The hand-written literal above is type-checked at runtime by
     // `serde`; if a future edit produces invalid OpenAPI, this panics
     // at server start (covered by the integration test below).
-    serde_json::from_value(json).expect("hand-written OpenAPI spec is well-formed")
+    let mut spec: OpenApi =
+        serde_json::from_value(json).expect("hand-written OpenAPI spec is well-formed");
+
+    if let Some(o) = oauth2 {
+        use utoipa::openapi::security::{
+            AuthorizationCode, Flow, OAuth2, Scopes, SecurityScheme,
+        };
+        let scopes =
+            Scopes::from_iter(o.scopes.iter().map(|s| (s.clone(), String::new())));
+        let flow = Flow::AuthorizationCode(AuthorizationCode::new(
+            o.authorization_url.clone(),
+            o.token_url.clone(),
+            scopes,
+        ));
+        let scheme = SecurityScheme::OAuth2(OAuth2::with_description(
+            [flow],
+            "Sign in with your identity provider. The Swagger UI will attach the \
+             resulting access token as `Authorization: Bearer …` to every \
+             \"Try it out\" request.",
+        ));
+        spec.components
+            .as_mut()
+            .expect("spec always has components")
+            .security_schemes
+            .insert("OpenIdConnect".to_string(), scheme);
+    }
+
+    spec
 }
 
 #[cfg(test)]
@@ -427,22 +550,29 @@ mod tests {
     }
 
     #[test]
-    fn openapi_with_oauth2_advertises_openid_connect_scheme() {
-        let cfg = SwaggerOAuth2Config {
-            issuer: "https://issuer.example.com".into(),
+    fn openapi_with_oauth2_advertises_oauth2_scheme() {
+        let resolved = ResolvedOAuth2 {
             client_id: "dp-swagger".into(),
+            authorization_url: "https://issuer.example.com/authorize".into(),
+            token_url: "https://issuer.example.com/token".into(),
             scopes: vec!["openid".into(), "datasets:read".into()],
             pkce: true,
         };
-        let spec = openapi(Some(&cfg));
+        let spec = openapi(Some(&resolved));
         let json = serde_json::to_value(&spec).unwrap();
+        let scheme = &json["components"]["securitySchemes"]["OpenIdConnect"];
+        assert_eq!(scheme["type"], "oauth2");
         assert_eq!(
-            json["components"]["securitySchemes"]["OpenIdConnect"]["type"],
-            "openIdConnect"
+            scheme["flows"]["authorizationCode"]["authorizationUrl"],
+            "https://issuer.example.com/authorize"
         );
         assert_eq!(
-            json["components"]["securitySchemes"]["OpenIdConnect"]["openIdConnectUrl"],
-            "https://issuer.example.com/.well-known/openid-configuration"
+            scheme["flows"]["authorizationCode"]["tokenUrl"],
+            "https://issuer.example.com/token"
+        );
+        assert!(
+            scheme["flows"]["authorizationCode"]["scopes"]["datasets:read"].is_string(),
+            "configured scopes must appear in the authorizationCode flow"
         );
         assert!(json["components"]["securitySchemes"]["AdminToken"].is_null());
         assert!(json["security"][0]["OpenIdConnect"].is_array());
