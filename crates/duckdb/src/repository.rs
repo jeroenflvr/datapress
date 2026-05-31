@@ -7,7 +7,7 @@ use arrow::datatypes::Schema;
 use arrow::ipc::writer::StreamWriter;
 
 use datapress_core::errors::AppError;
-use datapress_core::models::{AggOp, AggPlan, Predicate, QueryRequest};
+use datapress_core::models::{AggPlan, Predicate, QueryRequest};
 use datapress_core::schema::DatasetSchema;
 
 // ---------------------------------------------------------------------------
@@ -109,23 +109,19 @@ fn group_json_obj_pairs(schema: &DatasetSchema, plan: &AggPlan) -> String {
 /// Build a raw SELECT list (no `json_object`) for an aggregation plan:
 /// `group_col1, group_col2, …, <agg_expr> AS <alias>, …`. Used by the
 /// Arrow IPC path so the client gets typed columns.
-fn agg_select_list(plan: &AggPlan) -> String {
+fn agg_select_list(plan: &AggPlan) -> Result<String, AppError> {
     let mut parts: Vec<String> = Vec::with_capacity(plan.group_cols.len() + plan.aggs.len());
     for name in &plan.group_cols {
         parts.push(DatasetSchema::quote_ident(name));
     }
     for a in &plan.aggs {
-        let expr = match (a.op, a.col.as_deref()) {
-            (AggOp::Count, None) => "COUNT(*)".to_string(),
-            (op, Some(c)) => format!("{}({})", op.as_sql(), DatasetSchema::quote_ident(c)),
-            _ => unreachable!(),
-        };
+        let expr = a.sql_expr()?;
         parts.push(format!(
             "{expr} AS {}",
             DatasetSchema::quote_ident(&a.alias)
         ));
     }
-    parts.join(", ")
+    Ok(parts.join(", "))
 }
 
 fn stream_as_json_array(
@@ -211,7 +207,7 @@ impl<'a> DatasetRepository<'a> {
             // json_object. Emitting the aliases only inside json_object
             // would hide them from the outer scope and DuckDB would reject
             // `ORDER BY <alias>`.
-            let inner_select = agg_select_list(plan);
+            let inner_select = agg_select_list(plan)?;
             let group_by = plan
                 .group_cols
                 .iter()
@@ -317,7 +313,7 @@ impl<'a> DatasetRepository<'a> {
         // Build the SELECT list — column refs for the row path, or
         // `<expr> AS <alias>` items for the aggregation path.
         let projection: String = if let Some(plan) = &agg_plan {
-            agg_select_list(plan)
+            agg_select_list(plan)?
         } else if req.columns.is_empty() {
             "*".into()
         } else {

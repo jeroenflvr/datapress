@@ -89,7 +89,6 @@ pub enum AggOp {
     Min,
     Max,
 }
-
 impl AggOp {
     pub fn as_sql(self) -> &'static str {
         match self {
@@ -107,6 +106,31 @@ impl AggOp {
             AggOp::Avg => "avg",
             AggOp::Min => "min",
             AggOp::Max => "max",
+        }
+    }
+}
+
+impl AggSpec {
+    /// Render the SQL aggregate expression for this spec, e.g. `COUNT(*)`
+    /// or `SUM("amount")`. The column name is quoted via
+    /// [`DatasetSchema::quote_ident`].
+    ///
+    /// By construction (see [`QueryRequest::agg_plan`]) every non-`COUNT`
+    /// op carries a resolved column and `COUNT` may omit one. If that
+    /// invariant is ever violated this returns `AppError::Internal`
+    /// rather than panicking, since the value flows onto a live HTTP path.
+    pub fn sql_expr(&self) -> Result<String, AppError> {
+        match (self.op, self.col.as_deref()) {
+            (AggOp::Count, None) => Ok("COUNT(*)".to_string()),
+            (op, Some(c)) => Ok(format!(
+                "{}({})",
+                op.as_sql(),
+                DatasetSchema::quote_ident(c)
+            )),
+            (op, None) => Err(AppError::Internal(format!(
+                "aggregation '{}' resolved without a column (planner invariant violated)",
+                op.name()
+            ))),
         }
     }
 }
@@ -190,14 +214,10 @@ impl QueryRequest {
                 }
                 (_, Some(c)) => Some(schema.find(c)?.name.clone()),
             };
-            let alias = a
-                .alias
-                .clone()
-                .unwrap_or_else(|| match (op, col.as_deref()) {
-                    (AggOp::Count, None) => "count".into(),
-                    (_, Some(c)) => format!("{}_{}", op.name(), c.to_lowercase()),
-                    _ => unreachable!(),
-                });
+            let alias = a.alias.clone().unwrap_or_else(|| match col.as_deref() {
+                Some(c) => format!("{}_{}", op.name(), c.to_lowercase()),
+                None => "count".into(),
+            });
             aggs.push(AggSpec { col, op, alias });
         }
 

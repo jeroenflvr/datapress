@@ -1251,11 +1251,7 @@ fn build_query_sql_with_suffix(
             .map(|c| DatasetSchema::quote_ident(c))
             .collect();
         for a in &plan.aggs {
-            let expr = match (a.op, a.col.as_deref()) {
-                (datapress_core::models::AggOp::Count, None) => "COUNT(*)".to_string(),
-                (op, Some(c)) => format!("{}({})", op.as_sql(), DatasetSchema::quote_ident(c)),
-                _ => unreachable!(),
-            };
+            let expr = a.sql_expr()?;
             parts.push(format!(
                 "{expr} AS {}",
                 DatasetSchema::quote_ident(&a.alias)

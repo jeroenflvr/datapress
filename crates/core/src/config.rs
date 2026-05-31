@@ -594,10 +594,29 @@ impl AppConfig {
     pub fn load(path: &str) -> Result<Self, AppError> {
         let raw = std::fs::read_to_string(path)
             .map_err(|e| AppError::Internal(format!("failed to read {path}: {e}")))?;
-        let cfg: AppConfig =
+        let mut cfg: AppConfig =
             toml::from_str(&raw).map_err(|e| AppError::Internal(format!("invalid {path}: {e}")))?;
+        cfg.normalize();
         cfg.validate()?;
         Ok(cfg)
+    }
+
+    /// Canonicalise fields that are compared case-insensitively at runtime.
+    ///
+    /// Token scopes are lowercased when parsed out of a JWT (see `auth.rs`),
+    /// so the configured `read_scopes` / `reload_scopes` are lowercased here
+    /// once at load time. Without this an operator who writes
+    /// `"Datasets:Read"` would silently 403 every caller, since the token
+    /// side would have become `datasets:read`.
+    fn normalize(&mut self) {
+        for s in self
+            .auth
+            .read_scopes
+            .iter_mut()
+            .chain(self.auth.reload_scopes.iter_mut())
+        {
+            *s = s.to_ascii_lowercase();
+        }
     }
 
     fn validate(&self) -> Result<(), AppError> {
@@ -1081,6 +1100,25 @@ mod tests {
             };
             assert!(cfg.validate().is_err(), "prefix {p:?} should fail");
         }
+    }
+
+    #[test]
+    fn normalize_lowercases_configured_scopes() {
+        let mut cfg = AppConfig {
+            server: ServerConfig::default(),
+            docs: DocsConfig::default(),
+            swagger: SwaggerConfig::default(),
+            metrics: MetricsConfig::default(),
+            auth: AuthConfig {
+                read_scopes: vec!["Datasets:Read".into(), "API.READ".into()],
+                reload_scopes: vec!["Datasets:Reload".into()],
+                ..Default::default()
+            },
+            datasets: vec![],
+        };
+        cfg.normalize();
+        assert_eq!(cfg.auth.read_scopes, vec!["datasets:read", "api.read"]);
+        assert_eq!(cfg.auth.reload_scopes, vec!["datasets:reload"]);
     }
 
     #[test]
