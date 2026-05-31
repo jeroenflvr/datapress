@@ -104,7 +104,7 @@ auth = AuthConfig(
 | kwarg                  | Default          | Meaning                                                                |
 |------------------------|------------------|------------------------------------------------------------------------|
 | `enabled`              | `False`          | Master switch. When `False` all other fields are ignored.              |
-| `issuer`               | `""`             | Provider issuer URL; use discovery `issuer` / JWT `iss`.                 |
+| `issuer`               | `""`             | Provider issuer URL; use discovery `issuer` / `iss`.                     |
 | `audience`             | `""`             | Expected `aud` claim. Empty = skip audience check.                     |
 | `read_scopes`          | `[]`             | Scopes required for `GET` endpoints.                                   |
 | `reload_scopes`        | `[]`             | Scopes required for reload / admin endpoints.                          |
