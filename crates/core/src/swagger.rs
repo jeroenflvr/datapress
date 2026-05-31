@@ -289,7 +289,7 @@ fn openapi(oauth2: Option<&SwaggerOAuth2Config>) -> OpenApi {
                 "post": {
                     "tags":    ["admin"],
                     "summary": "Rebuild a dataset from its source",
-                    "description": "Requires the `X-Admin-Token` header to match the configured admin token.",
+                    "description": "Requires the configured reload/admin permission. Without OIDC, pass the configured `X-Admin-Token` header.",
                     "parameters": [ dataset_name_param ],
                     "security": [ { "AdminToken": [] } ],
                     "responses": {
@@ -391,6 +391,11 @@ fn openapi(oauth2: Option<&SwaggerOAuth2Config>) -> OpenApi {
                                  request.",
         });
         json["components"]["securitySchemes"]["OpenIdConnect"] = scheme;
+        json["components"]["securitySchemes"]
+            .as_object_mut()
+            .expect("securitySchemes is an object")
+            .remove("AdminToken");
+
         // Apply globally so every operation shows the lock icon. Scope
         // requirements per operation can be tightened later when the
         // server actually enforces tokens.
@@ -401,6 +406,8 @@ fn openapi(oauth2: Option<&SwaggerOAuth2Config>) -> OpenApi {
                 .collect(),
         );
         json["security"] = serde_json::json!([ { "OpenIdConnect": scopes } ]);
+        json["paths"]["/api/v1/datasets/{name}/reload"]["post"]["security"] =
+            json["security"].clone();
     }
 
     // The hand-written literal above is type-checked at runtime by
@@ -437,6 +444,11 @@ mod tests {
             json["components"]["securitySchemes"]["OpenIdConnect"]["openIdConnectUrl"],
             "https://issuer.example.com/.well-known/openid-configuration"
         );
+        assert!(json["components"]["securitySchemes"]["AdminToken"].is_null());
         assert!(json["security"][0]["OpenIdConnect"].is_array());
+        assert_eq!(
+            json["paths"]["/api/v1/datasets/{name}/reload"]["post"]["security"],
+            json["security"]
+        );
     }
 }
