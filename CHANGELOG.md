@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.16] - 2026-05-31
+
+### Documentation
+
+- Update readme and doc links ([8fd6701](https://github.com/jeroenflvr/fast-api/commit/8fd67013b791cd32032cfb372970e5812abc8aee))
+
+### Features
+
+- Add option to generate dataseets.toml template from datapress ([878f1a2](https://github.com/jeroenflvr/fast-api/commit/878f1a2b60ba6b578b20a0c147ce60f2d243112d))
+
 ## [0.2.15] - 2026-05-31
 
 ### Features
