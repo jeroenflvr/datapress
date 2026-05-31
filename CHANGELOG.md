@@ -3,6 +3,20 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.8] - 2026-05-31
+
+### Bug Fixes
+
+- Oidc crypto provider ([5a61131](https://github.com/jeroenflvr/fast-api/commit/5a611318e2be1be20f3ebbf7bf792fa3c47c2738))
+
+### CI
+
+- Publish mkdocs site ([29e0bb8](https://github.com/jeroenflvr/fast-api/commit/29e0bb893db8c982f3c23975aecde4b46dc62e32))
+
+### Documentation
+
+- Update for oidc integration ([acfcdff](https://github.com/jeroenflvr/fast-api/commit/acfcdff0f66252bc836164d6dc1dfee7209a9aab))
+
 ## [0.2.7] - 2026-05-31
 
 ### Bug Fixes
