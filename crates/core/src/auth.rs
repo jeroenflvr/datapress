@@ -14,8 +14,8 @@
 //!    [`Principal::tenant`] to enforce per-route policy.
 //!
 //! The scope strings come from either the standard `scope` claim
-//! (space-separated, per RFC 8693) or a `scp` array (Azure AD style).
-//! Whichever is present is fine.
+//! (usually space-separated, per RFC 8693) or `scp` (Azure AD style).
+//! Both string and array forms are accepted.
 //!
 //! The Swagger UI's SSO support (`crate::swagger`) is independent of
 //! this module — that one only drives the UI login dialog.
@@ -283,15 +283,16 @@ async fn fetch_jwks(client: &reqwest::Client, url: &str) -> Result<JwkSet, Strin
 // ---------------------------------------------------------------------------
 
 /// Subset of JWT claims we care about. Everything else is ignored.
-/// `scope`/`scp` are both accepted for backwards compatibility with
-/// IdPs that use one or the other.
+/// `scope`/`scp` are both accepted for compatibility with IdPs that use
+/// one or the other. Some providers emit `scope` as a string; others use
+/// an array, so both shapes are accepted.
 #[derive(Debug, Deserialize)]
 struct Claims {
     sub: String,
     #[serde(default)]
-    scope: Option<String>,
+    scope: Option<ScopeField>,
     #[serde(default)]
-    scp: Option<ScpField>,
+    scp: Option<ScopeField>,
     // Allow arbitrary extras for tenant-claim extraction.
     #[serde(flatten)]
     extra: HashMap<String, serde_json::Value>,
@@ -299,26 +300,28 @@ struct Claims {
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-enum ScpField {
+enum ScopeField {
     String(String),
     List(Vec<String>),
 }
 
 fn parse_scopes(c: &Claims) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    if let Some(s) = &c.scope {
-        out.extend(s.split_whitespace().map(|s| s.to_ascii_lowercase()));
-    }
-    match &c.scp {
-        Some(ScpField::String(s)) => {
+    extend_scopes(&mut out, c.scope.as_ref());
+    extend_scopes(&mut out, c.scp.as_ref());
+    out
+}
+
+fn extend_scopes(out: &mut Vec<String>, field: Option<&ScopeField>) {
+    match field {
+        Some(ScopeField::String(s)) => {
             out.extend(s.split_whitespace().map(|s| s.to_ascii_lowercase()));
         }
-        Some(ScpField::List(l)) => {
+        Some(ScopeField::List(l)) => {
             out.extend(l.iter().map(|s| s.to_ascii_lowercase()));
         }
         None => {}
     }
-    out
 }
 
 fn extract_tenant(c: &Claims, pointer: &str) -> Option<String> {
@@ -593,6 +596,17 @@ mod tests {
         let s = parse_scopes(&c);
         assert!(s.contains(&"openid".into()));
         assert!(s.contains(&"datasets:read".into()));
+
+        let c: Claims = serde_json::from_value(serde_json::json!({
+            "sub": "u",
+            "aud": ["api://datapress", "account"],
+            "scope": ["openid", "datasets:read"]
+        }))
+        .unwrap();
+        let s = parse_scopes(&c);
+        assert!(s.contains(&"openid".into()));
+        assert!(s.contains(&"datasets:read".into()));
+        assert!(c.extra["aud"].is_array());
 
         let c: Claims = serde_json::from_value(serde_json::json!({
             "sub": "u",

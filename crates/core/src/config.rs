@@ -1106,7 +1106,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("a.parquet");
-        std::fs::File::create(&file).unwrap().write_all(b"x").unwrap();
+        std::fs::File::create(&file)
+            .unwrap()
+            .write_all(b"x")
+            .unwrap();
 
         let cfg = AppConfig {
             server: ServerConfig::default(),
