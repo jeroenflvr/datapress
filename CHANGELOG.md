@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.15] - 2026-05-31
+
+### Features
+
+- Add cli tool, installable binary ([6ac8538](https://github.com/jeroenflvr/fast-api/commit/6ac8538ffcb189ff63a9d9acff1f7cf8fc0eb386))
+
 ## [0.2.14] - 2026-05-31
 
 ### Bug Fixes
