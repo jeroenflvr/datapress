@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.13] - 2026-05-31
+
+### Bug Fixes
+
+- Swagger auth ([0307c7a](https://github.com/jeroenflvr/fast-api/commit/0307c7a4070a499fd08750d3045a732eb894655d))
+
 ## [0.2.12] - 2026-05-31
 
 ### Features
