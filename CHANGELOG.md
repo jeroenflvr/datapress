@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.17] - 2026-06-01
+
+### Features
+
+- Pass in callable for hmac secrets fetching with python ([8757887](https://github.com/jeroenflvr/fast-api/commit/8757887741e746b071746e68fba199031304754a))
+
+### Styling
+
+- Better version badge in mkdocs (css) ([345ea2d](https://github.com/jeroenflvr/fast-api/commit/345ea2d174c1844443ad208fa9a10926710db01d))
+
 ## [0.2.16] - 2026-05-31
 
 ### Documentation
