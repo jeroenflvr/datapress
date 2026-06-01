@@ -99,13 +99,14 @@ curl -X POST http://localhost:8000/api/v1/datasets/accidents/query \
 
 ## API surface
 
-Six public classes, no module-level state:
+Seven public classes, no module-level state:
 
 | Class             | Purpose                                                              |
 |-------------------|----------------------------------------------------------------------|
 | `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `max_page_size`, `request_timeout_ms`, `shutdown_timeout_secs`, `metrics_enabled`, `metrics_path`. |
 | `DatasetConfig`   | One dataset: `name`, `source`, `format`, `mode`, optional S3 + index.|
 | `S3Config`        | S3 / S3-compatible credentials and endpoint config.                  |
+| `HMACKeyPair`     | Access/secret key pair returned by an `S3Config` credentials provider. |
 | `DataPress`       | Built from a `DataPressConfig` + list of `DatasetConfig` + optional `AuthConfig`. `await .run()`. |
 | `AuthConfig`      | OIDC / OAuth2 bearer enforcement (requires the `auth` feature in the wheel). |
 | `DataPressClient` | Sync HTTP client for talking to a running server (stdlib + lazy pyarrow). |
@@ -135,6 +136,33 @@ ds = DatasetConfig(
 Credentials fall back to the standard AWS env vars
 (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`,
 `AWS_REGION`) when not set inline.
+
+#### Dynamic credentials provider
+
+Pass a zero-argument callable returning an `HMACKeyPair` to resolve
+credentials at startup (e.g. from a secrets manager). It is invoked once
+when `DataPress(...)` is constructed, the result is cached indefinitely,
+and it takes precedence over any inline `access_key_id` /
+`secret_access_key`:
+
+```python
+from datap_rs.datapress import S3Config, HMACKeyPair
+
+def fetch_creds() -> HMACKeyPair:
+    secret = my_secrets_client.get("datapress/s3")
+    return HMACKeyPair(
+        access_key=secret["access_key_id"],
+        secret_key=secret["secret_access_key"],
+    )
+
+s3 = S3Config(
+    region="us-east-1",
+    endpoint="http://localhost:9000",
+    allow_http=True,
+    credentials_provider=fetch_creds,
+)
+```
+
 
 ### Behind a reverse proxy
 

@@ -1,7 +1,27 @@
 """Type stubs for the `datap_rs.datapress` extension module."""
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from typing import Optional
+
+
+class HMACKeyPair:
+    """A resolved HMAC access-key / secret-key pair.
+
+    Returned by a :attr:`S3Config.credentials_provider` callable to supply
+    object-store credentials at construction time.
+    """
+
+    access_key: str
+    secret_key: str
+
+    def __init__(self, access_key: str, secret_key: str) -> None:
+        """Build an :class:`HMACKeyPair`.
+
+        Args:
+            access_key: The access-key id.
+            secret_key: The secret access key. Redacted in ``repr``.
+        """
+        ...
 
 
 class S3Config:
@@ -19,6 +39,7 @@ class S3Config:
     access_key_id: Optional[str]
     secret_access_key: Optional[str]
     session_token: Optional[str]
+    credentials_provider: Optional[Callable[[], HMACKeyPair]]
 
     def __init__(
         self,
@@ -29,6 +50,7 @@ class S3Config:
         access_key_id: Optional[str] = None,
         secret_access_key: Optional[str] = None,
         session_token: Optional[str] = None,
+        credentials_provider: Optional[Callable[[], HMACKeyPair]] = None,
     ) -> None:
         """Build an :class:`S3Config`.
 
@@ -40,6 +62,12 @@ class S3Config:
             access_key_id: Static access-key override.
             secret_access_key: Static secret-key override.
             session_token: Temporary STS session token.
+            credentials_provider: Optional zero-argument callable returning an
+                :class:`HMACKeyPair`. When supplied it takes precedence over
+                ``access_key_id`` / ``secret_access_key`` (the static HMAC
+                credentials are ignored). The callable is invoked once when the
+                owning :class:`DataPress` is constructed and the resolved keys
+                are cached indefinitely.
         """
         ...
 
@@ -336,4 +364,4 @@ class DataPress:
         ...
 
 
-__all__ = ["AuthConfig", "DataPress", "DataPressConfig", "DatasetConfig", "S3Config"]
+__all__ = ["AuthConfig", "DataPress", "DataPressConfig", "DatasetConfig", "HMACKeyPair", "S3Config"]

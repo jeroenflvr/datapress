@@ -334,6 +334,9 @@ name = "events"
 3. Plain `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`.
 4. The backend's default credential chain (`~/.aws/credentials`, IMDS, etc.).
 
+> **Python:** the `S3Config` binding also accepts a `credentials_provider` — a zero-argument callable returning an `HMACKeyPair`. It is invoked once when `DataPress(...)` is constructed, the result is cached indefinitely, and it overrides any inline `access_key_id` / `secret_access_key`. See the [Python S3 docs](https://docs.datap-rs.org/python/config/#s3config).
+
+
 > When `kind = "delta"` and `location` is an `s3://…` URL, both backends fully materialise the table at startup. There is no incremental scan path — switch to `parquet` if you need on-demand page reads.
 
 ### Equality-index policy (DataFusion only)

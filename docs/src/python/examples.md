@@ -60,7 +60,129 @@ ds = DatasetConfig(
 cfg = DataPressConfig(backend="datafusion", port=8000)
 ```
 
+## S3 with a dynamic credentials provider
+
+Resolve credentials at startup from a secrets manager instead of
+hard-coding them. Pass any zero-argument callable returning an
+`HMACKeyPair` as `credentials_provider`. It runs **once** during
+`DataPress(...)` construction, the result is cached indefinitely, and it
+overrides any inline `access_key_id` / `secret_access_key`.
+
+```python
+from datap_rs.datapress import (
+    DataPress, DataPressConfig, DatasetConfig, S3Config, HMACKeyPair,
+)
+
+def fetch_creds() -> HMACKeyPair:
+    secret = my_secrets_client.get("datapress/s3")   # Vault, AWS SM, ...
+    return HMACKeyPair(
+        access_key=secret["access_key_id"],
+        secret_key=secret["secret_access_key"],
+    )
+
+s3 = S3Config(
+    region="us-east-1",
+    endpoint="http://minio.local:9000",
+    addressing_style="path",
+    allow_http=True,
+    credentials_provider=fetch_creds,   # overrides any inline static creds
+)
+
+ds  = DatasetConfig(name="events", source="s3://events/2025/", s3=s3)
+cfg = DataPressConfig(backend="datafusion", port=8000)
+dp  = DataPress(cfg, [ds])             # fetch_creds() called exactly once here
+```
+
+### AWS Secrets Manager (boto3)
+
+```python
+import json
+import boto3
+from datap_rs.datapress import S3Config, HMACKeyPair
+
+def aws_secret_provider() -> HMACKeyPair:
+    sm = boto3.client("secretsmanager", region_name="us-east-1")
+    secret = json.loads(
+        sm.get_secret_value(SecretId="datapress/s3")["SecretString"]
+    )
+    return HMACKeyPair(
+        access_key=secret["AWS_ACCESS_KEY_ID"],
+        secret_key=secret["AWS_SECRET_ACCESS_KEY"],
+    )
+
+s3 = S3Config(region="us-east-1", credentials_provider=aws_secret_provider)
+```
+
+### HashiCorp Vault (hvac)
+
+```python
+import hvac
+from datap_rs.datapress import S3Config, HMACKeyPair
+
+def vault_provider() -> HMACKeyPair:
+    client = hvac.Client(url="https://vault.internal:8200")
+    client.auth.approle.login(role_id=ROLE_ID, secret_id=SECRET_ID)
+    data = client.secrets.kv.v2.read_secret_version(
+        path="datapress/s3"
+    )["data"]["data"]
+    return HMACKeyPair(
+        access_key=data["access_key_id"],
+        secret_key=data["secret_access_key"],
+    )
+
+s3 = S3Config(
+    region="us-east-1",
+    endpoint="https://s3.internal:9000",
+    addressing_style="path",
+    credentials_provider=vault_provider,
+)
+```
+
+### Sharing one provider across datasets with a closure
+
+A single callable can serve every dataset — the result is cached on first
+use, so the secrets backend is hit at most once:
+
+```python
+from datap_rs.datapress import (
+    DataPress, DataPressConfig, DatasetConfig, S3Config, HMACKeyPair,
+)
+
+def make_provider(secret_path: str):
+    def provider() -> HMACKeyPair:
+        secret = my_secrets_client.get(secret_path)
+        return HMACKeyPair(secret["access_key_id"], secret["secret_access_key"])
+    return provider
+
+events_creds = make_provider("datapress/events")
+
+datasets = [
+    DatasetConfig(
+        name="events",
+        source="s3://events/2025/",
+        s3=S3Config(region="us-east-1", credentials_provider=events_creds),
+    ),
+    DatasetConfig(
+        name="events_archive",
+        source="s3://events/archive/",
+        s3=S3Config(region="us-east-1", credentials_provider=events_creds),
+    ),
+]
+
+dp = DataPress(DataPressConfig(backend="datafusion", port=8000), datasets)
+```
+
+!!! note "Error handling"
+
+    The callable must return an `HMACKeyPair` with both keys non-empty.
+    Anything else — a wrong return type, an empty key, or an exception
+    raised inside the callable — surfaces as a `ValueError` (or the
+    original exception) from `DataPress(...)`, so a misconfigured provider
+    fails fast at startup rather than at first query.
+
+
 ## Jupyter notebook
+
 
 ```python
 import asyncio, nest_asyncio

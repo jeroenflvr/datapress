@@ -8,7 +8,7 @@ submodule. Typical usage::
     cfg = datapress.DataPressConfig(...)
     dp  = datapress.DataPress(cfg)
 
-The four public classes are also re-exported at the top level for
+The public classes are also re-exported at the top level for
 convenience::
 
     from datap_rs import DataPress, DataPressConfig, DatasetConfig, S3Config
@@ -20,6 +20,7 @@ from .datapress import (
     DataPress,
     DataPressConfig,
     DatasetConfig,
+    HMACKeyPair,
     S3Config,
 )
 from .client import DataPressClient, DataPressHTTPError
@@ -30,6 +31,7 @@ __all__ = [
     "DataPress",
     "DataPressConfig",
     "DatasetConfig",
+    "HMACKeyPair",
     "S3Config",
     "DataPressClient",
     "DataPressHTTPError",

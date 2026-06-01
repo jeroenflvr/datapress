@@ -138,6 +138,47 @@ Credentials fall back to the standard AWS env vars
 [Configuration › S3](../configuration/s3.md) for the full precedence
 chain and per-dataset env var overrides.
 
+### Dynamic credentials with `credentials_provider`
+
+Instead of hard-coding `access_key_id` / `secret_access_key`, pass a
+zero-argument callable that returns an `HMACKeyPair`. DataPress invokes it
+**once** while `DataPress(...)` is being constructed and caches the
+resolved keys indefinitely. This is handy when credentials live in a
+secrets manager (Vault, AWS Secrets Manager, …) or are minted on demand.
+
+```python
+from datap_rs.datapress import HMACKeyPair, S3Config
+
+def fetch_creds() -> HMACKeyPair:
+    # e.g. read from Vault / AWS Secrets Manager / your own broker
+    secret = my_secrets_client.get("datapress/s3")
+    return HMACKeyPair(
+        access_key=secret["access_key_id"],
+        secret_key=secret["secret_access_key"],
+    )
+
+s3 = S3Config(
+    region="us-east-1",
+    endpoint="http://localhost:9000",
+    allow_http=True,
+    credentials_provider=fetch_creds,   # overrides static creds below
+    access_key_id="ignored-when-provider-set",
+    secret_access_key="ignored-when-provider-set",
+)
+```
+
+When `credentials_provider` is set it **takes precedence** over any inline
+`access_key_id` / `secret_access_key` (those are ignored). The callable
+must return an `HMACKeyPair` with both keys non-empty, otherwise
+construction raises `ValueError`. The secret is redacted in the object's
+`repr`:
+
+```python
+>>> HMACKeyPair("AKIA...", "super-secret")
+HMACKeyPair(access_key="AKIA...", secret_key='***')
+```
+
+
 ## `AuthConfig`
 
 Available when the wheel is built with the `auth` Cargo feature

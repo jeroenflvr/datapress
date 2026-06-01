@@ -15,13 +15,14 @@ Windows (x86_64) against CPython 3.9+ (abi3).
 
 ## Surface
 
-Five classes, no module-level state:
+Six classes, no module-level state:
 
 | Class             | Purpose                                                            |
 |-------------------|--------------------------------------------------------------------|
 | `DataPressConfig` | Server tuning. See [Server config](config.md).                     |
 | `DatasetConfig`   | One dataset.                                                       |
 | `S3Config`        | S3 / S3-compatible credentials and endpoint.                       |
+| `HMACKeyPair`     | Access/secret key pair returned by an `S3Config` credentials provider. |
 | `DataPress`       | Built from a config + datasets. `await .run()`.                    |
 | `DataPressClient` | Sync HTTP client (stdlib + lazy `pyarrow`). See [Client](client.md). |
 

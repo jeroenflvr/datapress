@@ -16,6 +16,7 @@
 
 use std::net::IpAddr;
 use std::str::FromStr;
+use std::sync::{Arc, OnceLock};
 
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -26,6 +27,50 @@ use datapress_core::config::{
     S3Config as CoreS3Config, ServerConfig, SourceConfig, SourceKind,
     SwaggerConfig as CoreSwaggerConfig, SwaggerOAuth2Config as CoreSwaggerOAuth2Config,
 };
+
+// ---------------------------------------------------------------------------
+// HMACKeyPair
+// ---------------------------------------------------------------------------
+
+/// An access-key / secret-key pair returned by an
+/// :class:`S3Config` ``credentials_provider`` callable.
+///
+/// The provider is invoked once and the resulting pair is cached
+/// indefinitely for that :class:`S3Config`, so the callable is never
+/// asked for credentials a second time.
+///
+/// Args:
+///     access_key (str): The S3 access-key id.
+///     secret_key (str): The S3 secret access-key.
+#[pyclass(name = "HMACKeyPair", module = "datap_rs.datapress", from_py_object)]
+#[derive(Clone)]
+pub struct PyHMACKeyPair {
+    #[pyo3(get, set)]
+    pub access_key: String,
+    #[pyo3(get, set)]
+    pub secret_key: String,
+}
+
+#[pymethods]
+impl PyHMACKeyPair {
+    /// Build an :class:`HMACKeyPair`.
+    ///
+    /// Args:
+    ///     access_key (str): The S3 access-key id.
+    ///     secret_key (str): The S3 secret access-key.
+    #[new]
+    fn new(access_key: String, secret_key: String) -> Self {
+        Self {
+            access_key,
+            secret_key,
+        }
+    }
+
+    /// Redacted repr — never prints the secret key.
+    fn __repr__(&self) -> String {
+        format!("HMACKeyPair(access_key={:?}, secret_key='***')", self.access_key)
+    }
+}
 
 // ---------------------------------------------------------------------------
 // S3Config
@@ -46,8 +91,14 @@ use datapress_core::config::{
 ///     access_key_id (str | None): Static credential override.
 ///     secret_access_key (str | None): Static credential override.
 ///     session_token (str | None): Temporary STS session token.
+///     credentials_provider (Callable[[], HMACKeyPair] | None): A zero-arg
+///         callable that returns an :class:`HMACKeyPair`. When provided it
+///         takes precedence over the static ``access_key_id`` /
+///         ``secret_access_key`` / ``session_token`` fields (those are
+///         ignored). The callable is invoked once when the server is built
+///         and the returned pair is cached indefinitely.
 #[pyclass(name = "S3Config", module = "datap_rs.datapress", from_py_object)]
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct PyS3Config {
     #[pyo3(get, set)]
     pub region: Option<String>,
@@ -64,6 +115,31 @@ pub struct PyS3Config {
     pub secret_access_key: Option<String>,
     #[pyo3(get, set)]
     pub session_token: Option<String>,
+    /// Optional zero-arg Python callable returning an `HMACKeyPair`.
+    /// When set, it overrides the static HMAC credentials above. Stored
+    /// behind an `Arc` because `Py<PyAny>` is not `Clone` on its own.
+    /// Exposed to Python via the `credentials_provider` getter/setter.
+    credentials_provider: Option<Arc<Py<PyAny>>>,
+    /// Caches the keypair returned by `credentials_provider`, so the
+    /// callable is invoked at most once. Shared across clones of this
+    /// config (the cache lives behind an `Arc`).
+    cached_creds: Arc<OnceLock<PyHMACKeyPair>>,
+}
+
+impl Default for PyS3Config {
+    fn default() -> Self {
+        Self {
+            region: None,
+            endpoint: None,
+            addressing_style: "virtual".to_string(),
+            allow_http: false,
+            access_key_id: None,
+            secret_access_key: None,
+            session_token: None,
+            credentials_provider: None,
+            cached_creds: Arc::new(OnceLock::new()),
+        }
+    }
 }
 
 #[pymethods]
@@ -78,6 +154,10 @@ impl PyS3Config {
     ///     access_key_id (str | None): Static access-key override.
     ///     secret_access_key (str | None): Static secret-key override.
     ///     session_token (str | None): Temporary STS session token.
+    ///     credentials_provider (Callable[[], HMACKeyPair] | None): Zero-arg
+    ///         callable returning an :class:`HMACKeyPair`. Overrides (and
+    ///         ignores) the static HMAC credentials when set; invoked once
+    ///         and cached indefinitely.
     #[new]
     #[pyo3(signature = (
         region            = None,
@@ -87,7 +167,9 @@ impl PyS3Config {
         access_key_id     = None,
         secret_access_key = None,
         session_token     = None,
+        credentials_provider = None,
     ))]
+    #[allow(clippy::too_many_arguments)] // mirrors the user-facing Python kwargs surface
     fn new(
         region: Option<String>,
         endpoint: Option<String>,
@@ -96,6 +178,7 @@ impl PyS3Config {
         access_key_id: Option<String>,
         secret_access_key: Option<String>,
         session_token: Option<String>,
+        credentials_provider: Option<Py<PyAny>>,
     ) -> Self {
         Self {
             region,
@@ -105,12 +188,52 @@ impl PyS3Config {
             access_key_id,
             secret_access_key,
             session_token,
+            credentials_provider: credentials_provider.map(Arc::new),
+            cached_creds: Arc::new(OnceLock::new()),
         }
+    }
+
+    /// The configured ``credentials_provider`` callable, or ``None``.
+    #[getter]
+    fn get_credentials_provider(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        self.credentials_provider
+            .as_ref()
+            .map(|p| p.clone_ref(py))
+    }
+
+    /// Set or clear the ``credentials_provider`` callable.
+    #[setter]
+    fn set_credentials_provider(&mut self, value: Option<Py<PyAny>>) {
+        self.credentials_provider = value.map(Arc::new);
     }
 }
 
 impl PyS3Config {
-    fn into_core(self) -> PyResult<CoreS3Config> {
+    /// Resolve the keypair from `credentials_provider`, caching it
+    /// indefinitely so the callable runs at most once. Errors if the
+    /// callable raises or returns an `HMACKeyPair` with an empty key.
+    fn resolve_provider_creds(
+        &self,
+        py: Python<'_>,
+        provider: &Py<PyAny>,
+    ) -> PyResult<PyHMACKeyPair> {
+        if let Some(cached) = self.cached_creds.get() {
+            return Ok(cached.clone());
+        }
+        let result = provider.bind(py).call0()?;
+        let pair: PyHMACKeyPair = result.extract()?;
+        if pair.access_key.is_empty() || pair.secret_key.is_empty() {
+            return Err(PyValueError::new_err(
+                "S3Config.credentials_provider must return an HMACKeyPair with \
+                 non-empty access_key and secret_key",
+            ));
+        }
+        // First writer wins; concurrent callers are serialised by the GIL.
+        let _ = self.cached_creds.set(pair.clone());
+        Ok(pair)
+    }
+
+    fn into_core(self, py: Python<'_>) -> PyResult<CoreS3Config> {
         let addressing_style = match self.addressing_style.as_str() {
             "virtual" => AddressingStyle::Virtual,
             "path" => AddressingStyle::Path,
@@ -120,14 +243,31 @@ impl PyS3Config {
                 )));
             }
         };
+
+        // A credentials provider takes precedence over (and ignores) the
+        // static HMAC credentials. The session token is dropped too, since
+        // the provider yields a long-lived access/secret keypair.
+        let (access_key_id, secret_access_key, session_token) =
+            match &self.credentials_provider {
+                Some(provider) => {
+                    let pair = self.resolve_provider_creds(py, provider.as_ref())?;
+                    (Some(pair.access_key), Some(pair.secret_key), None)
+                }
+                None => (
+                    self.access_key_id.clone(),
+                    self.secret_access_key.clone(),
+                    self.session_token.clone(),
+                ),
+            };
+
         Ok(CoreS3Config {
-            region: self.region,
-            endpoint: self.endpoint,
+            region: self.region.clone(),
+            endpoint: self.endpoint.clone(),
             addressing_style,
             allow_http: self.allow_http,
-            access_key_id: self.access_key_id,
-            secret_access_key: self.secret_access_key,
-            session_token: self.session_token,
+            access_key_id,
+            secret_access_key,
+            session_token,
         })
     }
 }
@@ -261,7 +401,7 @@ impl PyDatasetConfig {
 }
 
 impl PyDatasetConfig {
-    fn into_core(self) -> PyResult<CoreDatasetConfig> {
+    fn into_core(self, py: Python<'_>) -> PyResult<CoreDatasetConfig> {
         let kind = match self.format.as_str() {
             "parquet" => SourceKind::Parquet,
             "delta" => SourceKind::Delta,
@@ -293,7 +433,7 @@ impl PyDatasetConfig {
             index.max_cardinality = n;
         }
 
-        let s3 = self.s3.map(|s| s.into_core()).transpose()?;
+        let s3 = self.s3.map(|s| s.into_core(py)).transpose()?;
 
         Ok(CoreDatasetConfig {
             name: self.name,
@@ -901,6 +1041,7 @@ impl PyDataPress {
     #[new]
     #[pyo3(signature = (config, datasets, auth = None))]
     fn new(
+        py: Python<'_>,
         config: PyDataPressConfig,
         datasets: Vec<PyDatasetConfig>,
         auth: Option<PyAuthConfig>,
@@ -910,7 +1051,7 @@ impl PyDataPress {
         let server = config.into_core()?;
         let datasets = datasets
             .into_iter()
-            .map(|d| d.into_core())
+            .map(|d| d.into_core(py))
             .collect::<PyResult<Vec<_>>>()?;
         let auth = match auth {
             Some(a) => a.into_core()?,
@@ -1028,6 +1169,7 @@ fn datapress(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .try_init();
 
+    m.add_class::<PyHMACKeyPair>()?;
     m.add_class::<PyS3Config>()?;
     m.add_class::<PyDatasetConfig>()?;
     m.add_class::<PyDataPressConfig>()?;
