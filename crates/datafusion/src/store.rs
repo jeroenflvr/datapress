@@ -935,7 +935,7 @@ async fn discover_s3_hive_keys(ctx: &SessionContext, url: &ListingTableUrl) -> V
         };
         let mut next: Option<object_store::path::Path> = None;
         for cp in &listing.common_prefixes {
-            if let Some(seg) = cp.parts().last() {
+            if let Some(seg) = cp.parts().next_back() {
                 let seg = seg.as_ref().to_string();
                 if let Some((k, v)) = seg.split_once('=')
                     && !k.is_empty()
