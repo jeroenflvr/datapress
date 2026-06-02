@@ -48,3 +48,8 @@ include        = [
     { path = "LICENSE",                        format = "sdist" },
     { path = "crates/python/README.md",        format = "sdist" },
 ]
+
+[tool.uv.workspace]
+members = [
+    "demo/client",
+]

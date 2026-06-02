@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DuckDB Shell</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css" />
+<style>
+  html, body { margin: 0; height: 100%; background: #2b2b2b; }
+  #shell { position: fixed; inset: 0; padding: 8px; background: #2b2b2b; }
+  #boot {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #bdbdbd; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px;
+    background: #2b2b2b; z-index: 10; transition: opacity .3s ease; text-align: center; padding: 20px;
+  }
+  #boot.hide { opacity: 0; pointer-events: none; }
+  #toast {
+    position: fixed; left: 12px; bottom: 12px; z-index: 20;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+    padding: 8px 12px; border-radius: 6px; background: #1d1d22; color: #d6d4cd;
+    border: 1px solid #3a3a42; max-width: 72ch; opacity: 0; transition: opacity .3s ease;
+  }
+  #toast.show { opacity: 1; }
+  #toast.ok  { border-color: #3f5f33; }
+  #toast.err { border-color: #6e3a31; }
+</style>
+</head>
+<body>
+  <div id="boot">loading duckdb&hellip;</div>
+  <div id="toast"></div>
+  <div id="shell"></div>
+
+<script type="module">
+  // ── Version ──────────────────────────────────────────────────────────────
+  // The npm "latest"/dev builds are currently on DuckDB v1.5.1, where quack's
+  // wasm binary is NOT published — only v1.5.3 has it. So we must land on a
+  // 1.5.3 engine. Builds are also published under the "next" dist-tag, which is
+  // the likeliest 1.5.3 build. If after reload the banner does NOT say v1.5.3,
+  // try these in turn (just change this one line, hard-reload each time):
+  //   "1.33.1-dev45.0"   (newest dev build)
+  //   "latest"           (currently v1.5.1 — quack will 404)
+  // If none report v1.5.3, npm has no 1.5.3 build under a normal tag and the
+  // sure fix is self-hosting shell.duckdb.org's 1.5.3 dist files.
+  const VERSION = "next";
+
+  // quack lives in the core_nightly repo and autoloads on first use. Set false
+  // to skip the explicit install. Connecting to a quack server still needs a
+  // reachable server (e.g. the TLS-proxied deploy that shell.duckdb.org uses).
+  const RUN_QUACK = true;
+
+  const boot  = document.getElementById("boot");
+  const toast = document.getElementById("toast");
+  const showToast = (msg, kind) => {
+    toast.textContent = msg;
+    toast.className = "show " + (kind || "");
+    if (kind === "ok") setTimeout(() => toast.classList.remove("show"), 8000);
+  };
+
+  (async () => {
+    try {
+      if (location.protocol === "file:") {
+        boot.innerHTML =
+          "Serve over HTTP, don't open from disk (file://).<br><br>" +
+          "&nbsp;&nbsp;python3 -m http.server 8080<br>then open http://localhost:8080<br><br>" +
+          "GitHub Pages (https) works directly.";
+        return;
+      }
+
+      boot.textContent = "loading engine \u2014 @duckdb/duckdb-wasm@" + VERSION + " \u2026";
+      const duckdb = await import(`https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@${VERSION}/+esm`);
+      const shell  = await import(`https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm-shell@${VERSION}/+esm`);
+      const SHELL_MODULE = `https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm-shell@${VERSION}/dist/shell_bg.wasm`;
+
+      // getJsDelivrBundles() returns wasm URLs pinned to THIS library version,
+      // so the engine that boots matches VERSION. On GitHub Pages (no COOP/COEP)
+      // selectBundle picks the eh/mvp build (no cross-origin isolation needed).
+      const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+      const workerUrl = URL.createObjectURL(
+        new Blob([`importScripts("${bundle.mainWorker}");`], { type: "text/javascript" })
+      );
+      const worker = new Worker(workerUrl);
+      const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING);
+      const db = new duckdb.AsyncDuckDB(logger, worker);
+      await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+      URL.revokeObjectURL(workerUrl);
+
+      await db.open({ path: ":memory:", allowUnsignedExtensions: true });
+
+      // ── version check + quack ───────────────────────────────────────────
+      let note = null;
+      {
+        const conn = await db.connect();
+        let ver = "?";
+        try { ver = (await conn.query("SELECT version() AS v;")).toArray()[0].v; } catch (_) {}
+        if (RUN_QUACK) {
+          boot.textContent = "loading quack \u2026";
+          try {
+            await conn.query("INSTALL quack FROM core_nightly;");
+            await conn.query("LOAD quack;");
+            note = ["DuckDB " + ver + " \u2014 quack loaded. Connect with: CREATE SECRET (TYPE quack, TOKEN '\u2026'); ATTACH 'quack:host' AS r;", "ok"];
+          } catch (e) {
+            note = ["DuckDB " + ver + " \u2014 quack not loaded: " + (e.message || e), "err"];
+          }
+        } else {
+          note = ["DuckDB " + ver, "ok"];
+        }
+        await conn.close();
+      }
+
+      await shell.embed({
+        shellModule: SHELL_MODULE,
+        container: document.getElementById("shell"),
+        resolveDatabase: async () => db,
+      });
+      boot.classList.add("hide");
+      if (note) showToast(note[0], note[1]);
+    } catch (err) {
+      console.error(err);
+      boot.textContent = "failed to load: " + (err && err.message ? err.message : err);
+    }
+  })();
+</script>
+</body>
+</html>

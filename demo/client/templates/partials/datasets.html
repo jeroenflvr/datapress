@@ -1,0 +1,35 @@
+{% if error %}
+  <div class="alert alert-danger py-2 mb-0" role="alert">
+    {{ error }}
+  </div>
+{% elif datasets %}
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ds in datasets %}
+          <tr>
+            <td>
+              <code>{{ ds.name if ds is mapping else ds }}</code>
+            </td>
+            <td class="text-secondary">
+              {{ ds.description if ds is mapping else "" }}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-secondary small mt-2 mb-0">
+    {{ datasets | length }} dataset(s) on <code>{{ server_url }}</code>.
+  </p>
+{% else %}
+  <div class="alert alert-secondary py-2 mb-0" role="alert">
+    No datasets found on <code>{{ server_url }}</code>.
+  </div>
+{% endif %}
