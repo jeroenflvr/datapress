@@ -44,6 +44,7 @@ struct IndexTemplate {
     backend_label: String,
     explorer_base: String,
     api_base: String,
+    asset_version: &'static str,
     datasets: Vec<DatasetListItem>,
     datasets_json: String,
 }
@@ -59,7 +60,8 @@ struct DatasetListItem {
 #[template(path = "explorer/terminal.html")]
 struct TerminalTemplate {
     backend_label: String,
-    datasets_json: String,
+    explorer_base: String,
+    asset_version: &'static str,
 }
 
 #[derive(Template)]
@@ -130,6 +132,10 @@ pub fn configure(state: web::Data<ExplorerState>, cfg: &mut web::ServiceConfig) 
             web::scope(&mount)
                 .route("/", web::get().to(index))
                 .route("/terminal", web::get().to(terminal))
+                .route("/assets/explorer.css", web::get().to(asset_explorer_css))
+                .route("/assets/explorer.js", web::get().to(asset_explorer_js))
+                .route("/assets/terminal.css", web::get().to(asset_terminal_css))
+                .route("/assets/terminal.js", web::get().to(asset_terminal_js))
                 .route("/datasets/{name}", web::get().to(dataset_detail)),
         );
 }
@@ -177,6 +183,7 @@ async fn index(state: web::Data<ExplorerState>) -> HttpResponse {
         backend_label: state.backend_label.clone(),
         explorer_base: state.explorer_base.clone(),
         api_base: state.api_base.clone(),
+        asset_version: env!("CARGO_PKG_VERSION"),
         datasets: items,
         datasets_json,
     };
@@ -184,12 +191,42 @@ async fn index(state: web::Data<ExplorerState>) -> HttpResponse {
 }
 
 async fn terminal(state: web::Data<ExplorerState>) -> HttpResponse {
-    let (_, datasets_json) = collect_datasets(&state);
     let tpl = TerminalTemplate {
         backend_label: state.backend_label.clone(),
-        datasets_json,
+        explorer_base: state.explorer_base.clone(),
+        asset_version: env!("CARGO_PKG_VERSION"),
     };
     render(&tpl)
+}
+
+// Static assets are embedded into the binary at compile time and served with
+// long-lived cache headers; they carry no per-request state.
+const EXPLORER_CSS: &str = include_str!("../assets/explorer/explorer.css");
+const EXPLORER_JS: &str = include_str!("../assets/explorer/explorer.js");
+const TERMINAL_CSS: &str = include_str!("../assets/explorer/terminal.css");
+const TERMINAL_JS: &str = include_str!("../assets/explorer/terminal.js");
+
+fn asset(content_type: &'static str, body: &'static str) -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type(content_type)
+        .insert_header((header::CACHE_CONTROL, "public, max-age=3600"))
+        .body(body)
+}
+
+async fn asset_explorer_css() -> HttpResponse {
+    asset("text/css; charset=utf-8", EXPLORER_CSS)
+}
+
+async fn asset_explorer_js() -> HttpResponse {
+    asset("application/javascript; charset=utf-8", EXPLORER_JS)
+}
+
+async fn asset_terminal_css() -> HttpResponse {
+    asset("text/css; charset=utf-8", TERMINAL_CSS)
+}
+
+async fn asset_terminal_js() -> HttpResponse {
+    asset("application/javascript; charset=utf-8", TERMINAL_JS)
 }
 
 async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>) -> HttpResponse {

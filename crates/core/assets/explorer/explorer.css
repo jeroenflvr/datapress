@@ -1,0 +1,14 @@
+/* DataPress explorer UI styles. Served at {explorer_base}/assets/explorer.css
+   and embedded in the binary via include_str!. */
+body { min-height: 100vh; }
+.navbar-brand i { color: #6ea8fe; }
+.dataset-list .list-group-item { cursor: pointer; }
+.stat-card .display-6 { font-size: 1.9rem; }
+.schema-table td, .schema-table th { white-space: nowrap; }
+.mono { font-family: var(--bs-font-monospace); font-size: .85rem; }
+pre.sample { max-height: 260px; overflow: auto; background: var(--bs-tertiary-bg); padding: .75rem; border-radius: .375rem; }
+#terminal-wrap { background: #0b0e14; border-radius: .375rem; }
+.result-table { font-size: .85rem; }
+.htmx-indicator { opacity: 0; transition: opacity .2s; }
+.htmx-request .htmx-indicator { opacity: 1; }
+.terminal-frame { width: 100%; height: 540px; border: 0; display: block; background: #2b2b2b; }

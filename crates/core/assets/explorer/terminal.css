@@ -1,0 +1,19 @@
+/* DataPress full-page DuckDB-WASM shell styles. Served at
+   {explorer_base}/assets/terminal.css and embedded via include_str!. */
+html, body { margin: 0; height: 100%; background: #2b2b2b; }
+#shell { position: fixed; inset: 0; padding: 8px; background: #2b2b2b; }
+#boot {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: #bdbdbd; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px;
+  background: #2b2b2b; z-index: 10; transition: opacity .3s ease; text-align: center; padding: 20px;
+}
+#boot.hide { opacity: 0; pointer-events: none; }
+#toast {
+  position: fixed; left: 12px; bottom: 12px; z-index: 20;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  padding: 8px 12px; border-radius: 6px; background: #1d1d22; color: #d6d4cd;
+  border: 1px solid #3a3a42; max-width: 80ch; opacity: 0; transition: opacity .3s ease;
+}
+#toast.show { opacity: 1; }
+#toast.ok  { border-color: #3f5f33; }
+#toast.err { border-color: #6e3a31; }
