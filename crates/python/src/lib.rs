@@ -23,9 +23,10 @@ use pyo3::prelude::*;
 
 use datapress_core::config::{
     AddressingStyle, AppConfig, AuthConfig as CoreAuthConfig, Backend, BucketInHost,
-    DatasetConfig as CoreDatasetConfig, IndexConfig, IndexMode, MetricsConfig as CoreMetricsConfig,
-    Partitioning, S3Config as CoreS3Config, ServerConfig, SourceConfig, SourceKind,
-    SwaggerConfig as CoreSwaggerConfig, SwaggerOAuth2Config as CoreSwaggerOAuth2Config,
+    DatasetConfig as CoreDatasetConfig, ExplorerConfig as CoreExplorerConfig, IndexConfig,
+    IndexMode, MetricsConfig as CoreMetricsConfig, Partitioning, S3Config as CoreS3Config,
+    ServerConfig, SourceConfig, SourceKind, SwaggerConfig as CoreSwaggerConfig,
+    SwaggerOAuth2Config as CoreSwaggerOAuth2Config,
 };
 
 // ---------------------------------------------------------------------------
@@ -617,6 +618,15 @@ pub struct PyDataPressConfig {
     /// Use PKCE for Swagger UI's authorization-code flow.
     #[pyo3(get, set)]
     pub swagger_oauth2_pkce: bool,
+    /// Serve the embedded dataset explorer UI (Discovery + DuckDB console).
+    /// Requires the wheel to be built with the ``explorer`` Cargo feature.
+    /// Default ``True``.
+    #[pyo3(get, set)]
+    pub explorer_enabled: bool,
+    /// Path the explorer UI is served on. Must start with ``/`` and not end
+    /// with ``/``. Default ``"/explore"``.
+    #[pyo3(get, set)]
+    pub explorer_path: String,
 }
 
 #[pymethods]
@@ -655,6 +665,12 @@ impl PyDataPressConfig {
     ///     metrics_path (str): Path the metrics endpoint is served on.
     ///         Must start with ``/`` and not end with ``/``. The endpoint
     ///         is unauthenticated. Default ``"/metrics"``.
+    ///     explorer_enabled (bool): Serve the embedded dataset explorer UI.
+    ///         Requires a wheel built with the ``explorer`` feature.
+    ///         Default ``True``.
+    ///     explorer_path (str): Path the explorer UI is served on. Must
+    ///         start with ``/`` and not end with ``/``. Default
+    ///         ``"/explore"``.
     #[new]
     #[pyo3(signature = (
         backend            = "duckdb".to_string(),
@@ -680,6 +696,8 @@ impl PyDataPressConfig {
         swagger_oauth2_client_id = String::new(),
         swagger_oauth2_scopes    = Vec::new(),
         swagger_oauth2_pkce      = true,
+        explorer_enabled   = true,
+        explorer_path      = "/explore".to_string(),
     ))]
     #[allow(clippy::too_many_arguments)] // user-facing kwargs surface
     fn new(
@@ -706,6 +724,8 @@ impl PyDataPressConfig {
         swagger_oauth2_client_id: String,
         swagger_oauth2_scopes: Vec<String>,
         swagger_oauth2_pkce: bool,
+        explorer_enabled: bool,
+        explorer_path: String,
     ) -> Self {
         Self {
             backend,
@@ -731,6 +751,8 @@ impl PyDataPressConfig {
             swagger_oauth2_client_id,
             swagger_oauth2_scopes,
             swagger_oauth2_pkce,
+            explorer_enabled,
+            explorer_path,
         }
     }
 }
@@ -854,6 +876,27 @@ impl PyDataPressConfig {
             enabled: self.swagger_enabled,
             path: self.swagger_path.clone(),
             oauth2,
+        })
+    }
+
+    /// Build the core `ExplorerConfig`, validating the path the same way
+    /// `AppConfig::validate()` does.
+    fn explorer_into_core(&self) -> PyResult<CoreExplorerConfig> {
+        if !self.explorer_path.starts_with('/') {
+            return Err(PyValueError::new_err(format!(
+                "DataPressConfig.explorer_path must start with '/' (got '{}')",
+                self.explorer_path
+            )));
+        }
+        if self.explorer_path.len() > 1 && self.explorer_path.ends_with('/') {
+            return Err(PyValueError::new_err(format!(
+                "DataPressConfig.explorer_path must not end with '/' (got '{}')",
+                self.explorer_path
+            )));
+        }
+        Ok(CoreExplorerConfig {
+            enabled: self.explorer_enabled,
+            path: self.explorer_path.clone(),
         })
     }
 }
@@ -1092,6 +1135,7 @@ impl PyDataPress {
     ) -> PyResult<Self> {
         let metrics = config.metrics_into_core()?;
         let swagger = config.swagger_into_core()?;
+        let explorer = config.explorer_into_core()?;
         let server = config.into_core()?;
         let datasets = datasets
             .into_iter()
@@ -1107,6 +1151,7 @@ impl PyDataPress {
                 docs: datapress_core::config::DocsConfig::default(),
                 swagger,
                 metrics,
+                explorer,
                 auth,
                 datasets,
             },
@@ -1198,6 +1243,7 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
         docs: cfg.docs.clone(),
         swagger: cfg.swagger.clone(),
         metrics: cfg.metrics.clone(),
+        explorer: cfg.explorer.clone(),
         auth: cfg.auth.clone(),
         datasets: cfg.datasets.clone(),
     }

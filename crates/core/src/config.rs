@@ -51,6 +51,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub metrics: MetricsConfig,
     #[serde(default)]
+    pub explorer: ExplorerConfig,
+    #[serde(default)]
     pub auth: AuthConfig,
     #[serde(rename = "dataset", default)]
     pub datasets: Vec<DatasetConfig>,
@@ -331,6 +333,34 @@ impl Default for MetricsConfig {
         Self {
             enabled: false,
             path: "/metrics".into(),
+        }
+    }
+}
+
+/// Embedded dataset explorer UI (`[explorer]` block).
+///
+/// A server-rendered web app (Actix + Askama templates + htmx +
+/// Bootstrap) served at [`ExplorerConfig::path`] (default `/explore`).
+/// It offers a *discovery* view — per-dataset stats, schema, index and
+/// source configuration — and an in-browser *DuckDB* console (DuckDB-WASM)
+/// that queries each dataset's Parquet export directly.
+///
+/// Enabled by default. When the binary was built without the `explorer`
+/// cargo feature, `enabled = true` is harmless: the server logs a warning
+/// at startup and skips the mount. Set `enabled = false` to suppress it at
+/// runtime even when the feature is compiled in.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ExplorerConfig {
+    pub enabled: bool,
+    pub path: String,
+}
+
+impl Default for ExplorerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            path: "/explore".into(),
         }
     }
 }
@@ -852,6 +882,42 @@ impl AppConfig {
             }
         }
 
+        // Explorer UI mount path. Validated even when disabled so an
+        // inactive config typo can't go unnoticed.
+        {
+            let ep = &self.explorer.path;
+            if !ep.starts_with('/') {
+                return Err(AppError::Internal(format!(
+                    "explorer.path must start with '/' (got '{ep}')"
+                )));
+            }
+            if ep.len() > 1 && ep.ends_with('/') {
+                return Err(AppError::Internal(format!(
+                    "explorer.path must not end with '/' (got '{ep}')"
+                )));
+            }
+            if RESERVED_MOUNTS.iter().any(|r| *r == ep) {
+                return Err(AppError::Internal(format!(
+                    "explorer.path '{ep}' collides with a reserved route"
+                )));
+            }
+            if ep == &self.docs.path {
+                return Err(AppError::Internal(format!(
+                    "explorer.path and docs.path must differ (both '{ep}')"
+                )));
+            }
+            if ep == &self.swagger.path {
+                return Err(AppError::Internal(format!(
+                    "explorer.path and swagger.path must differ (both '{ep}')"
+                )));
+            }
+            if ep == &self.metrics.path {
+                return Err(AppError::Internal(format!(
+                    "explorer.path and metrics.path must differ (both '{ep}')"
+                )));
+            }
+        }
+
         // Auth block — only meaningful when `enabled = true`. The cargo
         // feature gate is enforced separately in `server::serve` so a
         // binary built without `--features auth` and a config with
@@ -1223,6 +1289,7 @@ mod tests {
                 docs: DocsConfig::default(),
                 swagger: SwaggerConfig::default(),
                 metrics: MetricsConfig::default(),
+                explorer: ExplorerConfig::default(),
                 auth: AuthConfig::default(),
                 datasets: vec![],
             };
@@ -1237,6 +1304,7 @@ mod tests {
             docs: DocsConfig::default(),
             swagger: SwaggerConfig::default(),
             metrics: MetricsConfig::default(),
+            explorer: ExplorerConfig::default(),
             auth: AuthConfig {
                 read_scopes: vec!["Datasets:Read".into(), "API.READ".into()],
                 reload_scopes: vec!["Datasets:Reload".into()],
@@ -1256,6 +1324,7 @@ mod tests {
             docs: DocsConfig::default(),
             swagger: SwaggerConfig::default(),
             metrics: MetricsConfig::default(),
+            explorer: ExplorerConfig::default(),
             auth: AuthConfig::default(),
             datasets: vec![],
         };
@@ -1282,6 +1351,7 @@ mod tests {
             docs: DocsConfig::default(),
             swagger: SwaggerConfig::default(),
             metrics: MetricsConfig::default(),
+            explorer: ExplorerConfig::default(),
             auth: AuthConfig {
                 enabled: true,
                 issuer: "https://tenant.example.com/".into(),
@@ -1320,6 +1390,7 @@ mod tests {
             docs: DocsConfig::default(),
             swagger: SwaggerConfig::default(),
             metrics: MetricsConfig::default(),
+            explorer: ExplorerConfig::default(),
             auth: AuthConfig::default(),
             datasets: vec![DatasetConfig {
                 name: "x".into(),

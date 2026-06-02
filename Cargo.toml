@@ -66,6 +66,9 @@ actix-web-prom      = "0.10"
 jsonwebtoken        = "10"
 reqwest             = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
+# Embedded explorer UI templating (feature-gated via `explorer` on datapress-core).
+askama              = "0.12"
+
 [profile.release]
 opt-level     = 3
 # Fat LTO + codegen-units = 1 OOM-kills rustc when cross-building the

@@ -12,6 +12,8 @@ pub mod config;
 #[cfg(feature = "docs")]
 pub mod docs;
 pub mod errors;
+#[cfg(feature = "explorer")]
+pub mod explorer;
 pub mod handlers;
 pub mod models;
 pub mod schema;

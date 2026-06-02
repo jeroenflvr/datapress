@@ -31,6 +31,12 @@ port    = 8080
 # enabled = true
 # path    = "/metrics"
 
+# Embedded dataset explorer UI — Discovery view + in-browser DuckDB console
+# (requires a binary built with the `explorer` feature).
+# [explorer]
+# enabled = true
+# path    = "/explore"
+
 # -- Local parquet file -----------------------------------------------------
 [[dataset]]
 name = "example"

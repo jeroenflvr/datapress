@@ -78,6 +78,7 @@ fn make_registry_at(location: &str) -> Arc<Registry> {
         swagger: datapress_core::config::SwaggerConfig::default(),
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
+        explorer: datapress_core::config::ExplorerConfig::default(),
         datasets: vec![DatasetConfig {
             name: "people".into(),
             source: SourceConfig {

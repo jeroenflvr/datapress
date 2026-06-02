@@ -27,6 +27,7 @@ docs    = ["datapress-duckdb?/docs", "datapress-datafusion?/docs"]
 swagger = ["datapress-duckdb?/swagger", "datapress-datafusion?/swagger"]
 metrics = ["datapress-duckdb?/metrics", "datapress-datafusion?/metrics"]
 auth    = ["datapress-duckdb?/auth", "datapress-datafusion?/auth"]
+explorer = ["datapress-duckdb?/explorer", "datapress-datafusion?/explorer"]
 
 [dependencies]
 datapress-core       = { workspace = true }

@@ -37,7 +37,7 @@ tasks:
     desc: Build the unified `datapress` CLI (both backends bundled, release)
     deps: [docs:build]
     cmds:
-      - cargo build {{.RELEASE}} -p datapress --bin datapress --features docs,swagger,auth,metrics
+      - cargo build {{.RELEASE}} -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer
 
   build:
     desc: Build both Rust binaries
@@ -47,14 +47,14 @@ tasks:
     desc: Run the DuckDB binary (release, with embedded docs site + swagger UI)
     deps: [docs:build]
     cmds:
-      - cargo build {{.RELEASE}} -p datapress-duckdb --bin datapress-duckdb --features docs,swagger,metrics
+      - cargo build {{.RELEASE}} -p datapress-duckdb --bin datapress-duckdb --features docs,swagger,metrics,explorer
       - RUST_LOG=info ./target/release/datapress-duckdb
 
   run:datafusion:
     desc: Run the DataFusion binary (release, with embedded docs site + swagger UI)
     deps: [docs:build]
     cmds:
-      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion --features docs,swagger,metrics
+      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion --features docs,swagger,metrics,explorer
       - RUST_LOG=info ./target/release/datapress-datafusion
 
   check:
@@ -83,13 +83,13 @@ tasks:
     deps: [docs:build]
     cmds:
       - uv venv --allow-existing
-      - uv tool run --with maturin maturin develop --release --uv --features docs,swagger,auth,metrics
+      - uv tool run --with maturin maturin develop --release --uv --features docs,swagger,auth,metrics,explorer
 
   py:build:
     desc: Build a release wheel into ./target/wheels/ with the published feature set
     deps: [docs:build]
     cmds:
-      - uv tool run --with maturin maturin build --release --features docs,swagger,auth,metrics
+      - uv tool run --with maturin maturin build --release --features docs,swagger,auth,metrics,explorer
 
   # ---------------------------------------------------------------------
   # Documentation (MkDocs + Material)

@@ -39,6 +39,11 @@ metrics    = ["dep:actix-web-prom"]
 # SSO support (`[swagger.oauth2]`) is independent of this and only
 # drives the UI; the actual API enforcement lives behind this feature.
 auth       = ["dep:jsonwebtoken", "jsonwebtoken/aws_lc_rs", "dep:reqwest", "dep:arc-swap"]
+# Embed the dataset explorer UI (Actix + Askama templates + htmx +
+# Bootstrap). Served from `[explorer].path` (default `/explore`). Off by
+# default at compile time; can be toggled at runtime via
+# `[explorer].enabled`.
+explorer   = ["dep:askama"]
 
 [dependencies]
 actix-web.workspace   = true
@@ -65,6 +70,7 @@ actix-web-prom    = { workspace = true, optional = true }
 jsonwebtoken      = { workspace = true, optional = true }
 reqwest           = { workspace = true, optional = true }
 arc-swap          = { workspace = true, optional = true }
+askama            = { workspace = true, optional = true }
 
 [dev-dependencies]
 arrow = { workspace = true }

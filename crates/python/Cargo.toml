@@ -30,6 +30,7 @@ swagger = ["datapress-duckdb/swagger", "datapress-datafusion/swagger"]
 # so local dev wheels stay slim. Published wheels enable it.
 metrics = ["datapress-duckdb/metrics", "datapress-datafusion/metrics"]
 auth    = ["datapress-duckdb/auth", "datapress-datafusion/auth"]
+explorer = ["datapress-duckdb/explorer", "datapress-datafusion/explorer"]
 
 [dependencies]
 datapress-core       = { workspace = true, features = ["duckdb", "datafusion"] }

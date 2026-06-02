@@ -74,6 +74,7 @@ async fn run_server(
     let docs_cfg = cfg.docs.clone();
     let swagger_cfg = cfg.swagger.clone();
     let metrics_cfg = cfg.metrics.clone();
+    let explorer_cfg = cfg.explorer.clone();
 
     // Warn (but don't fail) when the operator asked for docs in TOML but
     // this binary was built without the cargo feature that embeds them.
@@ -103,6 +104,13 @@ async fn run_server(
         log::warn!(
             "[metrics] enabled = true in config, but this binary was built \
              without --features metrics; skipping Prometheus endpoint"
+        );
+    }
+    #[cfg(not(feature = "explorer"))]
+    if explorer_cfg.enabled {
+        log::warn!(
+            "[explorer] enabled = true in config, but this binary was built \
+             without --features explorer; skipping explorer UI"
         );
     }
 
@@ -174,6 +182,13 @@ async fn run_server(
         log::info!("    GET    {}/openapi.json", swagger_cfg.path);
     }
 
+    #[cfg(feature = "explorer")]
+    if explorer_cfg.enabled {
+        log::info!("  {} (explorer UI):", explorer_cfg.path);
+        log::info!("    GET    {}/", explorer_cfg.path);
+        log::info!("    GET    {}/datasets/{{name}}", explorer_cfg.path);
+    }
+
     // Resolve the Swagger UI's OIDC login endpoints once, before binding.
     // We emit an explicit `oauth2` authorizationCode flow in the spec (see
     // `swagger::ResolvedOAuth2`); discovering the authorize/token URLs here
@@ -236,6 +251,21 @@ async fn run_server(
     // bytes for the ranged requests a Parquet reader makes.
     let parquet_cache = web::Data::new(handlers::ParquetCache::default());
 
+    // One shared explorer state across all workers (it wraps an Arc backend).
+    // Built once here; each worker clones the `web::Data` handle.
+    #[cfg(feature = "explorer")]
+    let explorer_state = if explorer_cfg.enabled {
+        Some(web::Data::new(crate::explorer::ExplorerState {
+            backend: backend.clone(),
+            datasets: cfg.datasets.clone(),
+            explorer_base: explorer_cfg.path.clone(),
+            api_base: format!("{prefix}/api/v1"),
+            backend_label: label.to_string(),
+        }))
+    } else {
+        None
+    };
+
     let mut server = HttpServer::new(move || {
         let backend = backend.clone();
         let prefix = prefix.clone();
@@ -245,6 +275,8 @@ async fn run_server(
         let timeout = Timeout::new(Duration::from_millis(timeout_ms.max(1)));
         #[cfg(feature = "docs")]
         let docs_cfg = docs_cfg.clone();
+        #[cfg(feature = "explorer")]
+        let explorer_state = explorer_state.clone();
         #[cfg(feature = "swagger")]
         let swagger_cfg = swagger_cfg.clone();
         #[cfg(feature = "swagger")]
@@ -308,6 +340,13 @@ async fn run_server(
             })
         } else {
             app
+        };
+        // Explorer UI — registered (like docs/swagger) BEFORE the
+        // `web::scope(prefix)` catch-all so an empty prefix can't shadow it.
+        #[cfg(feature = "explorer")]
+        let app = match explorer_state {
+            Some(state) => app.configure(|c| crate::explorer::configure(state, c)),
+            None => app,
         };
         app.service(
             web::scope(prefix.as_str())

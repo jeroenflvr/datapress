@@ -166,6 +166,8 @@ class DataPressConfig:
     swagger_oauth2_client_id: str
     swagger_oauth2_scopes: list[str]
     swagger_oauth2_pkce: bool
+    explorer_enabled: bool
+    explorer_path: str
 
     def __init__(
         self,
@@ -192,6 +194,8 @@ class DataPressConfig:
         swagger_oauth2_client_id: str = "",
         swagger_oauth2_scopes: Optional[list[str]] = None,
         swagger_oauth2_pkce: bool = True,
+        explorer_enabled: bool = True,
+        explorer_path: str = "/explore",
     ) -> None:
         """Build a :class:`DataPressConfig`.
 
@@ -246,6 +250,11 @@ class DataPressConfig:
             swagger_oauth2_scopes: Scopes requested by default in Swagger UI.
             swagger_oauth2_pkce: Use PKCE for the authorization-code flow.
                 Default ``True``.
+            explorer_enabled: Serve the embedded dataset explorer UI
+                (Discovery + DuckDB console) at ``explorer_path``. Requires a
+                wheel built with the ``explorer`` feature. Default ``True``.
+            explorer_path: Path the explorer UI is served on. Must start with
+                ``/`` and not end with ``/``. Default ``"/explore"``.
         """
         ...
 

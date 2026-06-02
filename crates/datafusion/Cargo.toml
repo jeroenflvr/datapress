@@ -18,6 +18,7 @@ docs    = ["datapress-core/docs"]
 swagger = ["datapress-core/swagger"]
 metrics = ["datapress-core/metrics"]
 auth    = ["datapress-core/auth"]
+explorer = ["datapress-core/explorer"]
 
 [dependencies]
 datapress-core = { workspace = true, features = ["datafusion"] }

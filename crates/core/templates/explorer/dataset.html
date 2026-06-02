@@ -1,0 +1,79 @@
+<div class="d-flex align-items-center mb-3">
+  <h4 class="mb-0"><i class="bi bi-table"></i> {{ name }}</h4>
+  <span class="badge text-bg-secondary ms-2">{{ source_kind }}</span>
+  {% if lazy %}<span class="badge text-bg-info ms-1">lazy</span>{% endif %}
+</div>
+
+<div class="row g-2 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card stat-card text-center"><div class="card-body py-3">
+      <div class="display-6">{{ rows }}</div><div class="text-secondary small">rows</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card text-center"><div class="card-body py-3">
+      <div class="display-6">{{ column_count }}</div><div class="text-secondary small">columns</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card text-center"><div class="card-body py-3">
+      <div class="display-6">{{ indexed_count }}</div><div class="text-secondary small">indexed</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card text-center"><div class="card-body py-3">
+      <div class="display-6">{{ nullable_count }}</div><div class="text-secondary small">nullable</div>
+    </div></div>
+  </div>
+</div>
+
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-sm btn-outline-primary" href="{{ parquet_url }}"><i class="bi bi-download"></i> Parquet</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ schema_url }}" target="_blank">Schema JSON</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ datasets_url }}" target="_blank">Datasets API</a>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><i class="bi bi-gear"></i> Configuration</div>
+  <div class="card-body">
+    <dl class="row mb-0 small">
+      <dt class="col-sm-3">Source</dt><dd class="col-sm-9 mono">{{ source_kind }} · {{ source_location }}</dd>
+      <dt class="col-sm-3">Index mode</dt><dd class="col-sm-9">{{ index_mode }}{% if !index_columns.is_empty() %} · <span class="mono">{{ index_columns }}</span>{% endif %}</dd>
+      <dt class="col-sm-3">Projection</dt><dd class="col-sm-9 mono">{{ projection }}</dd>
+      <dt class="col-sm-3">Dictionary encode</dt><dd class="col-sm-9">{{ dict_encode }}</dd>
+      <dt class="col-sm-3">Lazy</dt><dd class="col-sm-9">{{ lazy }}</dd>
+      {% if has_s3 %}
+      <dt class="col-sm-3">S3 region</dt><dd class="col-sm-9 mono">{{ s3_region }}</dd>
+      <dt class="col-sm-3">S3 endpoint</dt><dd class="col-sm-9 mono">{{ s3_endpoint }}</dd>
+      <dt class="col-sm-3">S3 addressing</dt><dd class="col-sm-9">{{ s3_addressing }} · partitioning {{ s3_partitioning }}</dd>
+      <dt class="col-sm-3">S3 credentials</dt><dd class="col-sm-9">{{ s3_creds }}</dd>
+      {% endif %}
+    </dl>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><i class="bi bi-list-columns"></i> Schema</div>
+  <div class="table-responsive">
+    <table class="table table-sm schema-table mb-0">
+      <thead><tr><th>#</th><th>Column</th><th>Logical</th><th>SQL type</th><th>Nullable</th><th>Indexed</th></tr></thead>
+      <tbody>
+        {% for c in columns %}
+        <tr>
+          <td class="text-secondary">{{ loop.index }}</td>
+          <td class="mono">{{ c.name }}</td>
+          <td><span class="badge text-bg-secondary">{{ c.logical }}</span></td>
+          <td class="mono small">{{ c.sql_type }}</td>
+          <td>{% if c.nullable %}<i class="bi bi-check text-success"></i>{% else %}<i class="bi bi-dash text-secondary"></i>{% endif %}</td>
+          <td>{% if c.indexed %}<i class="bi bi-lightning-charge-fill text-warning"></i>{% else %}<i class="bi bi-dash text-secondary"></i>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><i class="bi bi-braces"></i> Sample row</div>
+  <div class="card-body"><pre class="sample mono mb-0">{{ sample_pretty }}</pre></div>
+</div>

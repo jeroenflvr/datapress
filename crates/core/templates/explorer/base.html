@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}DataPress Explorer{% endblock %}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"
+          integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
+  <style>
+    body { min-height: 100vh; }
+    .navbar-brand i { color: #6ea8fe; }
+    .dataset-list .list-group-item { cursor: pointer; }
+    .stat-card .display-6 { font-size: 1.9rem; }
+    .schema-table td, .schema-table th { white-space: nowrap; }
+    .mono { font-family: var(--bs-font-monospace); font-size: .85rem; }
+    pre.sample { max-height: 260px; overflow: auto; background: var(--bs-tertiary-bg); padding: .75rem; border-radius: .375rem; }
+    #terminal-wrap { background: #0b0e14; border-radius: .375rem; }
+    .result-table { font-size: .85rem; }
+    .htmx-indicator { opacity: 0; transition: opacity .2s; }
+    .htmx-request .htmx-indicator { opacity: 1; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <nav class="navbar navbar-expand bg-body-tertiary border-bottom px-3">
+    <span class="navbar-brand mb-0 h1"><i class="bi bi-compass-fill"></i> DataPress Explorer</span>
+    <span class="badge text-bg-secondary ms-auto">{{ backend_label }}</span>
+  </nav>
+  <main class="container-fluid py-3">
+    {% block content %}{% endblock %}
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+          integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

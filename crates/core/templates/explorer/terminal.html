@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ backend_label }} · DuckDB-WASM terminal</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"
+        integrity="sha256-OF1FpC7+jR9P0ITNc8jHntECsaB1n+kfDleQ0K1RTGY=" crossorigin="anonymous" />
+  <style>
+    html, body { margin: 0; height: 100%; background: #2b2b2b; }
+    #shell { position: fixed; inset: 0; padding: 8px; background: #2b2b2b; }
+    #boot {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      color: #bdbdbd; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px;
+      background: #2b2b2b; z-index: 10; transition: opacity .3s ease; text-align: center; padding: 20px;
+    }
+    #boot.hide { opacity: 0; pointer-events: none; }
+    #toast {
+      position: fixed; left: 12px; bottom: 12px; z-index: 20;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+      padding: 8px 12px; border-radius: 6px; background: #1d1d22; color: #d6d4cd;
+      border: 1px solid #3a3a42; max-width: 80ch; opacity: 0; transition: opacity .3s ease;
+    }
+    #toast.show { opacity: 1; }
+    #toast.ok  { border-color: #3f5f33; }
+    #toast.err { border-color: #6e3a31; }
+  </style>
+</head>
+<body>
+  <div id="boot">loading duckdb&hellip;</div>
+  <div id="toast"></div>
+  <div id="shell"></div>
+
+  <script id="datasets-data" type="application/json">{{ datasets_json|safe }}</script>
+  <script type="module">
+    // Standalone full-page DuckDB-WASM shell. Datasets exposed by this server
+    // are pre-registered as views over their Parquet exports, so you can query
+    // them directly, e.g. `SELECT * FROM my_dataset LIMIT 10;`.
+    const VERSION = "1.29.0";
+
+    const datasets = JSON.parse(document.getElementById("datasets-data").textContent || "[]");
+    const boot  = document.getElementById("boot");
+    const toast = document.getElementById("toast");
+    const showToast = (msg, kind) => {
+      toast.textContent = msg;
+      toast.className = "show " + (kind || "");
+      if (kind === "ok") setTimeout(() => toast.classList.remove("show"), 10000);
+    };
+
+    (async () => {
+      try {
+        if (location.protocol === "file:") {
+          boot.innerHTML = "Serve over HTTP, don't open from disk (file://).";
+          return;
+        }
+
+        boot.textContent = "loading engine \u2014 @duckdb/duckdb-wasm@" + VERSION + " \u2026";
+        const duckdb = await import(`https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@${VERSION}/+esm`);
+        const shell  = await import(`https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm-shell@${VERSION}/+esm`);
+        const SHELL_MODULE = `https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm-shell@${VERSION}/dist/shell_bg.wasm`;
+
+        const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+        const workerUrl = URL.createObjectURL(
+          new Blob([`importScripts("${bundle.mainWorker}");`], { type: "text/javascript" })
+        );
+        const worker = new Worker(workerUrl);
+        const logger = new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING);
+        const db = new duckdb.AsyncDuckDB(logger, worker);
+        await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+        URL.revokeObjectURL(workerUrl);
+        await db.open({ path: ":memory:" });
+
+        let note;
+        {
+          boot.textContent = "registering datasets \u2026";
+          const conn = await db.connect();
+          let ver = "?";
+          try { ver = (await conn.query("SELECT version() AS v;")).toArray()[0].v; } catch (_) {}
+          const ok = [];
+          const failed = [];
+          for (const d of datasets) {
+            try {
+              const url = new URL(d.parquet, window.location.origin).href;
+              const ident = d.name.replace(/"/g, '""');
+              await conn.query(
+                `CREATE OR REPLACE VIEW "${ident}" AS SELECT * FROM read_parquet('${url.replace(/'/g, "''")}')`
+              );
+              ok.push(d.name);
+            } catch (e) {
+              failed.push(d.name);
+            }
+          }
+          await conn.close();
+          if (failed.length) {
+            note = [`DuckDB ${ver} \u2014 ${ok.length} dataset view(s) ready; failed: ${failed.join(", ")}`, "err"];
+          } else if (ok.length) {
+            note = [`DuckDB ${ver} \u2014 view(s) ready: ${ok.join(", ")}. Try: SELECT * FROM ${ok[0]} LIMIT 10;`, "ok"];
+          } else {
+            note = [`DuckDB ${ver} \u2014 no datasets registered.`, "ok"];
+          }
+        }
+
+        await shell.embed({
+          shellModule: SHELL_MODULE,
+          container: document.getElementById("shell"),
+          resolveDatabase: async () => db,
+        });
+        boot.classList.add("hide");
+        if (note) showToast(note[0], note[1]);
+      } catch (err) {
+        console.error(err);
+        boot.textContent = "failed to load: " + (err && err.message ? err.message : err);
+      }
+    })();
+  </script>
+</body>
+</html>
