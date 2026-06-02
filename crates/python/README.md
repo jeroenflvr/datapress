@@ -11,9 +11,9 @@
                                                                
 
 [![PyPI](https://img.shields.io/pypi/v/datap-rs.svg)](https://pypi.org/project/datap-rs/)
-[![Python](https://img.shields.io/pypi/pyversions/datap-rs.svg)](https://pypi.org/project/datap-rs/)![PyPI - Downloads](https://img.shields.io/pypi/dm/datap-rs)![Rust](https://img.shields.io/badge/built%20with-Rust-orange?logo=rust)
+[![Python](https://img.shields.io/pypi/pyversions/datap-rs.svg)](https://pypi.org/project/datap-rs/)![PyPI - Downloads](https://badgen.net/pypi/dm/datap-rs)![Rust](https://img.shields.io/badge/built%20with-Rust-orange?logo=rust)
 ![DuckDB](https://img.shields.io/badge/backend-DuckDB-yellow?logo=duckdb)
-![DataFusion](https://img.shields.io/badge/backend-DataFusion-blue)
+![DataFusion](https://img.shields.io/badge/backend-DataFusion-blue?logo=apache)
 
 [Documentation](https://docs.datap-rs.org) · [Source](https://github.com/jeroenflvr/fast-api) · [PyPI](https://pypi.org/project/datap-rs/)
 

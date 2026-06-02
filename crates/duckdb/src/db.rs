@@ -7,7 +7,9 @@ use duckdb::Connection;
 use datapress_core::backend::{
     ArrowIpcStream, Backend, DatasetSummary, ReloadStats, arrow_ipc_stream_channel,
 };
-use datapress_core::config::{AddressingStyle, AppConfig, DatasetConfig, QuackConfig, SourceKind};
+use datapress_core::config::{
+    AddressingStyle, AppConfig, DatasetConfig, Partitioning, QuackConfig, SourceKind,
+};
 use datapress_core::errors::AppError;
 use datapress_core::models::{CountRequest, QueryRequest};
 use datapress_core::schema::{ColumnInfo, DatasetSchema, LogicalType};
@@ -293,9 +295,18 @@ fn build_scan_clause(cfg: &DatasetConfig) -> Result<String, AppError> {
             Ok(format!("read_parquet([{file_list}])"))
         }
         (SourceKind::Parquet, true) => {
-            // DuckDB accepts a single URL or a glob; pass the location through.
-            let loc = cfg.source.location.replace('\'', "''");
-            Ok(format!("read_parquet('{loc}')"))
+            // DuckDB passes the URL straight to httpfs, so a bare prefix won't
+            // expand on its own. Auto-append a recursive `**/*.parquet` glob for
+            // plain prefixes (mirrors DataFusion's ListingTable behaviour);
+            // configs that already carry a glob pass through unchanged.
+            let loc = cfg.source.s3_recursive_parquet_glob().replace('\'', "''");
+            let hive = match cfg.s3.as_ref().map(|s| s.partitioning).unwrap_or_default() {
+                Partitioning::Hive => ", hive_partitioning => true",
+                Partitioning::None => ", hive_partitioning => false",
+                // Auto: let DuckDB infer from the path layout (its default).
+                Partitioning::Auto => "",
+            };
+            Ok(format!("read_parquet('{loc}'{hive})"))
         }
         (SourceKind::Delta, _) => {
             let loc = cfg.source.location.replace('\'', "''");
@@ -708,6 +719,7 @@ mod tests {
             access_key_id: Some("aws access key".into()),
             secret_access_key: Some("aws secret key id".into()),
             session_token: None,
+            ..Default::default()
         });
 
         assert_eq!(

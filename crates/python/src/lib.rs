@@ -22,9 +22,9 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
 use datapress_core::config::{
-    AddressingStyle, AppConfig, AuthConfig as CoreAuthConfig, Backend,
+    AddressingStyle, AppConfig, AuthConfig as CoreAuthConfig, Backend, BucketInHost,
     DatasetConfig as CoreDatasetConfig, IndexConfig, IndexMode, MetricsConfig as CoreMetricsConfig,
-    S3Config as CoreS3Config, ServerConfig, SourceConfig, SourceKind,
+    Partitioning, S3Config as CoreS3Config, ServerConfig, SourceConfig, SourceKind,
     SwaggerConfig as CoreSwaggerConfig, SwaggerOAuth2Config as CoreSwaggerOAuth2Config,
 };
 
@@ -115,6 +115,13 @@ pub struct PyS3Config {
     pub secret_access_key: Option<String>,
     #[pyo3(get, set)]
     pub session_token: Option<String>,
+    /// Hive partition discovery: `"auto"` (default), `"hive"`, or `"none"`.
+    #[pyo3(get, set)]
+    pub partitioning: String,
+    /// Whether to fold the bucket name into the endpoint host:
+    /// `"auto"` (default, follows `addressing_style`), `"true"`, or `"false"`.
+    #[pyo3(get, set)]
+    pub endpoint_bucket_in_host: String,
     /// Optional zero-arg Python callable returning an `HMACKeyPair`.
     /// When set, it overrides the static HMAC credentials above. Stored
     /// behind an `Arc` because `Py<PyAny>` is not `Clone` on its own.
@@ -136,6 +143,8 @@ impl Default for PyS3Config {
             access_key_id: None,
             secret_access_key: None,
             session_token: None,
+            partitioning: "auto".to_string(),
+            endpoint_bucket_in_host: "auto".to_string(),
             credentials_provider: None,
             cached_creds: Arc::new(OnceLock::new()),
         }
@@ -154,6 +163,11 @@ impl PyS3Config {
     ///     access_key_id (str | None): Static access-key override.
     ///     secret_access_key (str | None): Static secret-key override.
     ///     session_token (str | None): Temporary STS session token.
+    ///     partitioning (str): Hive partition discovery: ``"auto"`` (default),
+    ///         ``"hive"``, or ``"none"``.
+    ///     endpoint_bucket_in_host (str): Fold the bucket into the endpoint
+    ///         host: ``"auto"`` (default, follows ``addressing_style``),
+    ///         ``"true"``, or ``"false"``.
     ///     credentials_provider (Callable[[], HMACKeyPair] | None): Zero-arg
     ///         callable returning an :class:`HMACKeyPair`. Overrides (and
     ///         ignores) the static HMAC credentials when set; invoked once
@@ -167,6 +181,8 @@ impl PyS3Config {
         access_key_id     = None,
         secret_access_key = None,
         session_token     = None,
+        partitioning      = "auto".to_string(),
+        endpoint_bucket_in_host = "auto".to_string(),
         credentials_provider = None,
     ))]
     #[allow(clippy::too_many_arguments)] // mirrors the user-facing Python kwargs surface
@@ -178,6 +194,8 @@ impl PyS3Config {
         access_key_id: Option<String>,
         secret_access_key: Option<String>,
         session_token: Option<String>,
+        partitioning: String,
+        endpoint_bucket_in_host: String,
         credentials_provider: Option<Py<PyAny>>,
     ) -> Self {
         Self {
@@ -188,6 +206,8 @@ impl PyS3Config {
             access_key_id,
             secret_access_key,
             session_token,
+            partitioning,
+            endpoint_bucket_in_host,
             credentials_provider: credentials_provider.map(Arc::new),
             cached_creds: Arc::new(OnceLock::new()),
         }
@@ -244,6 +264,28 @@ impl PyS3Config {
             }
         };
 
+        let partitioning = match self.partitioning.as_str() {
+            "auto" => Partitioning::Auto,
+            "hive" => Partitioning::Hive,
+            "none" => Partitioning::None,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "S3Config.partitioning must be 'auto', 'hive', or 'none' (got '{other}')"
+                )));
+            }
+        };
+
+        let endpoint_bucket_in_host = match self.endpoint_bucket_in_host.as_str() {
+            "auto" => BucketInHost::Auto,
+            "true" => BucketInHost::True,
+            "false" => BucketInHost::False,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "S3Config.endpoint_bucket_in_host must be 'auto', 'true', or 'false' (got '{other}')"
+                )));
+            }
+        };
+
         // A credentials provider takes precedence over (and ignores) the
         // static HMAC credentials. The session token is dropped too, since
         // the provider yields a long-lived access/secret keypair.
@@ -268,6 +310,8 @@ impl PyS3Config {
             access_key_id,
             secret_access_key,
             session_token,
+            partitioning,
+            endpoint_bucket_in_host,
         })
     }
 }

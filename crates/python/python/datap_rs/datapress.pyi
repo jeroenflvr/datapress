@@ -39,6 +39,8 @@ class S3Config:
     access_key_id: Optional[str]
     secret_access_key: Optional[str]
     session_token: Optional[str]
+    partitioning: str
+    endpoint_bucket_in_host: str
     credentials_provider: Optional[Callable[[], HMACKeyPair]]
 
     def __init__(
@@ -50,6 +52,8 @@ class S3Config:
         access_key_id: Optional[str] = None,
         secret_access_key: Optional[str] = None,
         session_token: Optional[str] = None,
+        partitioning: str = "auto",
+        endpoint_bucket_in_host: str = "auto",
         credentials_provider: Optional[Callable[[], HMACKeyPair]] = None,
     ) -> None:
         """Build an :class:`S3Config`.
@@ -62,6 +66,11 @@ class S3Config:
             access_key_id: Static access-key override.
             secret_access_key: Static secret-key override.
             session_token: Temporary STS session token.
+            partitioning: Hive partition discovery: ``"auto"`` (default),
+                ``"hive"``, or ``"none"``.
+            endpoint_bucket_in_host: Fold the bucket into the endpoint host:
+                ``"auto"`` (default, follows ``addressing_style``), ``"true"``,
+                or ``"false"``.
             credentials_provider: Optional zero-argument callable returning an
                 :class:`HMACKeyPair`. When supplied it takes precedence over
                 ``access_key_id`` / ``secret_access_key`` (the static HMAC

@@ -41,7 +41,7 @@ read_only = true                    # allow reads plus Quack attach handshake
 
 ## DuckDB Quack server
 
-DuckDB builds can optionally start DuckDB's experimental Quack remote
+DuckDB builds can optionally start DuckDB's experimental <sup>1</sup> Quack remote
 protocol server after datasets are registered:
 
 ```toml
@@ -93,6 +93,16 @@ CREATE SECRET (
 ATTACH 'quack:localhost' AS datapress (TYPE quack);
 FROM datapress.accidents LIMIT 10;
 ```
+
+Or simplified, using the secret directly in ATTACH statement:
+
+```sql
+ATTACH 'quack:localhost' AS datapress (TOKEN 'analytics-token');
+FROM datapress.accidents LIMIT 10;
+```
+
+<sup>1</sup> Quack is still highly experimental. Among other things, `SHOW TABLES;` is not yet supported.
+
 
 ## Behind a reverse proxy
 

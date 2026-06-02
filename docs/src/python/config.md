@@ -129,6 +129,8 @@ s3 = S3Config(
     access_key_id=None,
     secret_access_key=None,
     session_token=None,
+    partitioning="auto",                # "auto" | "hive" | "none"
+    endpoint_bucket_in_host="auto",     # "auto" | "true" | "false"
 )
 ```
 
@@ -137,6 +139,13 @@ Credentials fall back to the standard AWS env vars
 `AWS_REGION`) when not set inline. See
 [Configuration › S3](../configuration/s3.md) for the full precedence
 chain and per-dataset env var overrides.
+
+`partitioning` controls Hive partition discovery (`auto` detects
+`key=value/` paths, `hive` forces it on, `none` off) and
+`endpoint_bucket_in_host` controls whether the bucket is folded into the
+endpoint hostname (`auto` follows `addressing_style`). The defaults make
+a plain `s3://bucket/prefix/` source behave identically on the DuckDB and
+DataFusion backends.
 
 ### Dynamic credentials with `credentials_provider`
 

@@ -21,7 +21,7 @@ use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
 use datafusion::datasource::{MemTable, TableProvider};
-use datafusion::prelude::{ParquetReadOptions, SessionContext};
+use datafusion::prelude::SessionContext;
 use datafusion::scalar::ScalarValue;
 
 use object_store::aws::AmazonS3Builder;
@@ -31,8 +31,8 @@ use datapress_core::backend::{
     ArrowIpcStream, Backend, DatasetSummary, ReloadStats, arrow_ipc_stream_channel,
 };
 use datapress_core::config::{
-    AddressingStyle, AppConfig, DatasetConfig, IndexConfig, IndexMode, ResolvedCreds, S3Config,
-    SourceKind,
+    AddressingStyle, AppConfig, DatasetConfig, IndexConfig, IndexMode, Partitioning, ResolvedCreds,
+    S3Config, SourceKind,
 };
 use datapress_core::errors::AppError;
 use datapress_core::models::{CountRequest, Predicate, QueryRequest};
@@ -752,45 +752,31 @@ fn discover_hive_keys(base: &std::path::Path) -> Vec<String> {
 }
 
 /// Lazy S3 parquet: register the dataset's S3 object store on `ctx`, then
-/// build a `ListingTable` rooted at the `s3://bucket/prefix/` location.
-/// DataFusion does the directory listing through the registered store and
-/// streams row groups on each query — no local enumeration needed.
+/// build a `ListingTable` rooted at the `s3://bucket/prefix/` location with
+/// any discovered hive partition columns. DataFusion does the directory
+/// listing through the registered store and streams row groups on each
+/// query — no local enumeration needed.
 async fn build_lazy_s3_parquet(
     d: &DatasetConfig,
     ctx: &SessionContext,
 ) -> Result<(DatasetState, Arc<dyn TableProvider>), AppError> {
     register_s3_object_store(d, ctx)?;
 
-    let url = ListingTableUrl::parse(&d.source.location).map_err(|e| {
-        AppError::Internal(format!(
-            "dataset '{}': bad s3 url '{}': {e}",
-            d.name, d.source.location
-        ))
-    })?;
+    let (provider, file_schema, part_keys) = build_s3_listing_table(d, ctx).await?;
 
-    let opts =
-        ListingOptions::new(Arc::new(ParquetFormat::default())).with_file_extension(".parquet");
+    // Discovery schema = file columns + partition columns (Utf8).
+    let mut fields: Vec<Field> = file_schema
+        .fields()
+        .iter()
+        .map(|f| f.as_ref().clone())
+        .collect();
+    for k in &part_keys {
+        if !fields.iter().any(|f| f.name() == k) {
+            fields.push(Field::new(k, DataType::Utf8, false));
+        }
+    }
+    let arrow_sch = Arc::new(Schema::new(fields));
 
-    let session_state = ctx.state();
-    let resolved_schema = opts.infer_schema(&session_state, &url).await.map_err(|e| {
-        AppError::Internal(format!(
-            "dataset '{}': infer parquet schema on s3: {e}",
-            d.name
-        ))
-    })?;
-
-    let cfg = ListingTableConfig::new(url)
-        .with_listing_options(opts)
-        .with_schema(resolved_schema.clone());
-    let table = ListingTable::try_new(cfg).map_err(|e| {
-        AppError::Internal(format!(
-            "dataset '{}': ListingTable::try_new (s3): {e}",
-            d.name
-        ))
-    })?;
-    let provider: Arc<dyn TableProvider> = Arc::new(table);
-
-    let arrow_sch = resolved_schema;
     let columns: Vec<ColumnInfo> = arrow_sch
         .fields()
         .iter()
@@ -807,10 +793,11 @@ async fn build_lazy_s3_parquet(
     let schema = DatasetSchema::new(&d.name, columns);
 
     log::info!(
-        "dataset '{}' [{}, lazy, s3]: {} cols (no materialise, no index)",
+        "dataset '{}' [{}, lazy, s3]: {} cols ({} partition, no materialise, no index)",
         d.name,
         d.source.kind.as_str(),
-        schema.columns.len()
+        schema.columns.len(),
+        part_keys.len()
     );
 
     Ok((
@@ -823,6 +810,149 @@ async fn build_lazy_s3_parquet(
         },
         provider,
     ))
+}
+
+/// Build a `ListingTable` provider for an S3 parquet source, resolving the
+/// base prefix and hive partition keys via [`s3_listing`]. The registered
+/// S3 object store must already be present on `ctx`. Returns the provider,
+/// the inferred *file* schema (without partition columns), and the ordered
+/// partition keys.
+async fn build_s3_listing_table(
+    d: &DatasetConfig,
+    ctx: &SessionContext,
+) -> Result<(Arc<dyn TableProvider>, Arc<Schema>, Vec<String>), AppError> {
+    let (url, part_keys) = s3_listing(d, ctx).await?;
+
+    let mut opts =
+        ListingOptions::new(Arc::new(ParquetFormat::default())).with_file_extension(".parquet");
+    if !part_keys.is_empty() {
+        opts = opts.with_table_partition_cols(
+            part_keys
+                .iter()
+                .map(|k| (k.clone(), DataType::Utf8))
+                .collect(),
+        );
+    }
+
+    let session_state = ctx.state();
+    let file_schema = opts.infer_schema(&session_state, &url).await.map_err(|e| {
+        AppError::Internal(format!(
+            "dataset '{}': infer parquet schema on s3: {e}",
+            d.name
+        ))
+    })?;
+
+    let cfg = ListingTableConfig::new(url)
+        .with_listing_options(opts)
+        .with_schema(file_schema.clone());
+    let table = ListingTable::try_new(cfg).map_err(|e| {
+        AppError::Internal(format!(
+            "dataset '{}': ListingTable::try_new (s3): {e}",
+            d.name
+        ))
+    })?;
+    Ok((Arc::new(table), file_schema, part_keys))
+}
+
+/// Resolve an S3 parquet source into a `(base ListingTableUrl, partition
+/// keys)` pair. Hive keys come from the location glob when present
+/// (`s3://bucket/events/year=*/...`), otherwise — for a plain prefix — they
+/// are discovered by listing the registered object store. Honours the
+/// dataset's `partitioning` mode (`auto` / `hive` / `none`).
+async fn s3_listing(
+    d: &DatasetConfig,
+    ctx: &SessionContext,
+) -> Result<(ListingTableUrl, Vec<String>), AppError> {
+    let s3 = d.s3.clone().unwrap_or_default();
+    let want_partitions = !matches!(s3.partitioning, Partitioning::None);
+    let loc = &d.source.location;
+
+    if d.source.has_glob() {
+        let (base, keys) = split_glob_base_keys(loc);
+        let base = format!("{}/", base.trim_end_matches('/'));
+        let url = ListingTableUrl::parse(&base).map_err(|e| {
+            AppError::Internal(format!("dataset '{}': bad s3 url '{base}': {e}", d.name))
+        })?;
+        let keys = if want_partitions { keys } else { Vec::new() };
+        return Ok((url, keys));
+    }
+
+    let base = if loc.ends_with('/') {
+        loc.clone()
+    } else {
+        format!("{loc}/")
+    };
+    let url = ListingTableUrl::parse(&base).map_err(|e| {
+        AppError::Internal(format!("dataset '{}': bad s3 url '{base}': {e}", d.name))
+    })?;
+    let keys = if want_partitions {
+        discover_s3_hive_keys(ctx, &url).await
+    } else {
+        Vec::new()
+    };
+    Ok((url, keys))
+}
+
+/// Split a glob location into its non-wildcard base path and the ordered
+/// hive partition keys (`key=…` directory components between the base and
+/// the final file pattern). Works for both local and `s3://` paths.
+fn split_glob_base_keys(loc: &str) -> (String, Vec<String>) {
+    let parts: Vec<&str> = loc.split('/').collect();
+    let first_wild = parts
+        .iter()
+        .position(|c| c.contains('*') || c.contains('?') || c.contains('['))
+        .unwrap_or(parts.len());
+    let base = parts[..first_wild].join("/");
+    let base = if base.is_empty() {
+        "/".to_string()
+    } else {
+        base
+    };
+    let upper = parts.len().saturating_sub(1);
+    let keys: Vec<String> = parts[first_wild.min(upper)..upper]
+        .iter()
+        .filter_map(|c| c.split_once('=').map(|(k, _)| k.to_string()))
+        .filter(|k| !k.is_empty())
+        .collect();
+    (base, keys)
+}
+
+/// Discover ordered hive partition keys for an S3 prefix by walking the
+/// object store one `key=value/` level at a time via delimiter listings.
+/// Best-effort: any listing error stops discovery and returns what was found
+/// so far (empty = treat as a flat folder).
+async fn discover_s3_hive_keys(ctx: &SessionContext, url: &ListingTableUrl) -> Vec<String> {
+    let store = match ctx.runtime_env().object_store(url.object_store()) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let mut keys = Vec::new();
+    let mut prefix = url.prefix().clone();
+    loop {
+        let listing = match store.list_with_delimiter(Some(&prefix)).await {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+        let mut next: Option<object_store::path::Path> = None;
+        for cp in &listing.common_prefixes {
+            if let Some(seg) = cp.parts().last() {
+                let seg = seg.as_ref().to_string();
+                if let Some((k, v)) = seg.split_once('=')
+                    && !k.is_empty()
+                    && !v.is_empty()
+                {
+                    keys.push(k.to_string());
+                    next = Some(cp.clone());
+                    break;
+                }
+            }
+        }
+        match next {
+            Some(p) => prefix = p,
+            None => break,
+        }
+    }
+    keys
 }
 
 /// Original local-parquet code path — sync file I/O. We set a large reader
@@ -991,17 +1121,20 @@ fn append_partition_cols(
         .map_err(|e| AppError::Internal(e.to_string()))
 }
 
-/// Register an `AmazonS3` object store on the SessionContext (so DataFusion's
-/// `read_parquet("s3://…")` can resolve the URL) and stream the whole
-/// dataset back through `DataFrame::collect`.
+/// Register an `AmazonS3` object store on the SessionContext, build a
+/// `ListingTable` (with any hive partition columns) over the dataset prefix,
+/// and stream the whole dataset back through `DataFrame::collect`. Using a
+/// ListingTable here — rather than a bare `read_parquet` — means S3 sources
+/// get the same hive-partition handling as local parquet.
 async fn read_s3_parquet(
     d: &DatasetConfig,
     ctx: &SessionContext,
 ) -> Result<Vec<RecordBatch>, AppError> {
     register_s3_object_store(d, ctx)?;
+    let (provider, _file_schema, _keys) = build_s3_listing_table(d, ctx).await?;
     let df = ctx
-        .read_parquet(d.source.location.clone(), ParquetReadOptions::default())
-        .await?;
+        .read_table(provider)
+        .map_err(|e| AppError::Internal(format!("dataset '{}': s3 read_table: {e}", d.name)))?;
     Ok(df.collect().await?)
 }
 
@@ -1045,11 +1178,12 @@ fn delta_s3_options(d: &DatasetConfig) -> Result<HashMap<String, String>, AppErr
     let creds = d.resolved_creds();
     let region = d.resolved_region();
     let s3 = d.s3.clone().unwrap_or_default();
+    let (bucket, _) = d.source.s3_bucket()?;
 
     let mut opts = HashMap::new();
     opts.insert("AWS_REGION".into(), region);
-    if let Some(ep) = s3.endpoint.as_deref().filter(|s| !s.is_empty()) {
-        opts.insert("AWS_ENDPOINT_URL".into(), ep.to_string());
+    if let Some(ep) = s3.effective_endpoint(bucket) {
+        opts.insert("AWS_ENDPOINT_URL".into(), ep);
     }
     if s3.allow_http {
         opts.insert("AWS_ALLOW_HTTP".into(), "true".into());
@@ -1105,7 +1239,7 @@ fn build_s3(
         .with_region(region)
         .with_allow_http(s3.allow_http)
         .with_virtual_hosted_style_request(s3.addressing_style == AddressingStyle::Virtual);
-    if let Some(ep) = s3.endpoint.as_deref().filter(|s| !s.is_empty()) {
+    if let Some(ep) = s3.effective_endpoint(bucket) {
         b = b.with_endpoint(ep);
     }
     if let Some(k) = creds.access_key_id.as_deref() {

@@ -510,6 +510,13 @@ pub struct S3Config {
     pub access_key_id: Option<String>,
     pub secret_access_key: Option<String>,
     pub session_token: Option<String>,
+    /// Hive partition-column handling for parquet sources. Defaults to
+    /// `auto` (detect from the path). See [`Partitioning`].
+    pub partitioning: Partitioning,
+    /// Whether the bucket is folded into a custom `endpoint` host for
+    /// virtual-hosted-style requests. Defaults to `auto`. See
+    /// [`BucketInHost`].
+    pub endpoint_bucket_in_host: BucketInHost,
 }
 
 impl Default for S3Config {
@@ -522,7 +529,54 @@ impl Default for S3Config {
             access_key_id: None,
             secret_access_key: None,
             session_token: None,
+            partitioning: Partitioning::Auto,
+            endpoint_bucket_in_host: BucketInHost::Auto,
         }
+    }
+}
+
+impl S3Config {
+    /// Resolve the endpoint URL to hand to the object store, optionally
+    /// folding `bucket` into the host for virtual-hosted-style requests so a
+    /// plain `endpoint` works the same way it does on DuckDB.
+    ///
+    /// Returns `None` when no custom endpoint is configured (AWS default).
+    /// The bucket is only prepended when it isn't already the leading host
+    /// label, so re-running this (or a config that already embeds the
+    /// bucket) never produces `bucket.bucket.host`.
+    pub fn effective_endpoint(&self, bucket: &str) -> Option<String> {
+        let ep = self.endpoint.as_deref().filter(|s| !s.is_empty())?;
+
+        let fold = match self.endpoint_bucket_in_host {
+            BucketInHost::False => false,
+            BucketInHost::True => true,
+            BucketInHost::Auto => self.addressing_style == AddressingStyle::Virtual,
+        };
+        if !fold {
+            return Some(ep.to_string());
+        }
+
+        let (scheme, host_and_path) = match ep.split_once("://") {
+            Some((s, rest)) => (Some(s), rest),
+            None => (None, ep),
+        };
+        // Split host from any trailing path so we prefix the host label only.
+        let (host, path) = match host_and_path.split_once('/') {
+            Some((h, p)) => (h, Some(p)),
+            None => (host_and_path, None),
+        };
+        // Guard against double-prefixing.
+        if host == bucket || host.starts_with(&format!("{bucket}.")) {
+            return Some(ep.to_string());
+        }
+        let new_host = format!("{bucket}.{host}");
+        let rebuilt = match (scheme, path) {
+            (Some(s), Some(p)) => format!("{s}://{new_host}/{p}"),
+            (Some(s), None) => format!("{s}://{new_host}"),
+            (None, Some(p)) => format!("{new_host}/{p}"),
+            (None, None) => new_host,
+        };
+        Some(rebuilt)
     }
 }
 
@@ -539,6 +593,61 @@ impl AddressingStyle {
         match self {
             AddressingStyle::Virtual => "virtual",
             AddressingStyle::Path => "path",
+        }
+    }
+}
+
+/// How hive-style partition columns (`key=value/` path segments) are handled
+/// for an S3 parquet source. Local parquet always auto-detects; this option
+/// brings S3 in line and lets you force or disable the behaviour.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Partitioning {
+    /// Detect `key=value` segments from the location glob or by listing the
+    /// prefix. No partition columns are added when none are found.
+    #[default]
+    Auto,
+    /// Force hive partitioning. Partition keys are taken from the location
+    /// glob, or discovered by listing the prefix.
+    Hive,
+    /// Treat the source as a flat set of parquet files — never add partition
+    /// columns even if the path looks hive-partitioned.
+    None,
+}
+
+impl Partitioning {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Partitioning::Auto => "auto",
+            Partitioning::Hive => "hive",
+            Partitioning::None => "none",
+        }
+    }
+}
+
+/// Whether the bucket name is folded into the endpoint hostname for
+/// virtual-hosted-style requests against a custom endpoint. This aligns the
+/// DataFusion object-store path with DuckDB, which builds the virtual host
+/// itself — so the same plain `endpoint` works on both backends.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BucketInHost {
+    /// Fold the bucket into the host when `addressing_style = "virtual"` and
+    /// a custom `endpoint` is set (guarded against double-prefixing).
+    #[default]
+    Auto,
+    /// Always fold the bucket into the endpoint host.
+    True,
+    /// Never rewrite the endpoint — pass it through verbatim.
+    False,
+}
+
+impl BucketInHost {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BucketInHost::Auto => "auto",
+            BucketInHost::True => "true",
+            BucketInHost::False => "false",
         }
     }
 }
@@ -863,6 +972,25 @@ impl AppConfig {
 impl SourceConfig {
     pub fn is_s3(&self) -> bool {
         self.location.starts_with("s3://")
+    }
+
+    /// True when the location already contains a glob metacharacter
+    /// (`*`, `?`, or `[`).
+    pub fn has_glob(&self) -> bool {
+        self.location.contains('*') || self.location.contains('?') || self.location.contains('[')
+    }
+
+    /// Location to hand to a backend that needs an explicit parquet glob
+    /// (DuckDB). When the location is a plain S3 prefix with no glob, append
+    /// a recursive `**/*.parquet` so DuckDB lists the prefix the same way
+    /// DataFusion's object-store listing does. Globbed or non-S3 locations
+    /// are returned unchanged.
+    pub fn s3_recursive_parquet_glob(&self) -> String {
+        if !self.is_s3() || self.has_glob() {
+            return self.location.clone();
+        }
+        let trimmed = self.location.trim_end_matches('/');
+        format!("{trimmed}/**/*.parquet")
     }
 
     /// Returns `(bucket, key_prefix_or_empty)` for an `s3://…` location.
@@ -1266,6 +1394,84 @@ mod tests {
         assert_eq!(s2.s3_bucket().unwrap(), ("only-bucket", ""));
         assert!(mk("s3:///nokey").s3_bucket().is_err());
         assert!(mk("/local/path").s3_bucket().is_err());
+    }
+
+    #[test]
+    fn s3_recursive_parquet_glob_only_expands_plain_prefixes() {
+        let mk = |loc: &str| SourceConfig {
+            kind: SourceKind::Parquet,
+            location: loc.into(),
+        };
+        // Plain prefix -> recursive parquet glob (trailing slash trimmed).
+        assert_eq!(
+            mk("s3://bucket/logs/").s3_recursive_parquet_glob(),
+            "s3://bucket/logs/**/*.parquet"
+        );
+        assert_eq!(
+            mk("s3://bucket/logs").s3_recursive_parquet_glob(),
+            "s3://bucket/logs/**/*.parquet"
+        );
+        // Already globbed -> unchanged.
+        assert_eq!(
+            mk("s3://bucket/logs/*.parquet").s3_recursive_parquet_glob(),
+            "s3://bucket/logs/*.parquet"
+        );
+        // Non-S3 -> unchanged.
+        assert_eq!(
+            mk("/local/logs").s3_recursive_parquet_glob(),
+            "/local/logs"
+        );
+    }
+
+    #[test]
+    fn effective_endpoint_folds_bucket_per_mode() {
+        let virt = S3Config {
+            endpoint: Some("https://s3.example.com".into()),
+            addressing_style: AddressingStyle::Virtual,
+            ..Default::default()
+        };
+        // Auto + virtual -> bucket folded into host.
+        assert_eq!(
+            virt.effective_endpoint("mybucket").as_deref(),
+            Some("https://mybucket.s3.example.com")
+        );
+        // Idempotent: already-prefixed host is left alone.
+        let prefixed = S3Config {
+            endpoint: Some("https://mybucket.s3.example.com".into()),
+            ..virt.clone()
+        };
+        assert_eq!(
+            prefixed.effective_endpoint("mybucket").as_deref(),
+            Some("https://mybucket.s3.example.com")
+        );
+        // Path style (auto) -> host untouched.
+        let path = S3Config {
+            addressing_style: AddressingStyle::Path,
+            ..virt.clone()
+        };
+        assert_eq!(
+            path.effective_endpoint("mybucket").as_deref(),
+            Some("https://s3.example.com")
+        );
+        // Explicit overrides win over addressing style.
+        let forced_off = S3Config {
+            endpoint_bucket_in_host: BucketInHost::False,
+            ..virt.clone()
+        };
+        assert_eq!(
+            forced_off.effective_endpoint("mybucket").as_deref(),
+            Some("https://s3.example.com")
+        );
+        let forced_on = S3Config {
+            endpoint_bucket_in_host: BucketInHost::True,
+            ..path.clone()
+        };
+        assert_eq!(
+            forced_on.effective_endpoint("mybucket").as_deref(),
+            Some("https://mybucket.s3.example.com")
+        );
+        // No endpoint -> None.
+        assert_eq!(S3Config::default().effective_endpoint("mybucket"), None);
     }
 
     #[test]

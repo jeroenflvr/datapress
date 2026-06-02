@@ -324,6 +324,8 @@ name = "events"
 | `endpoint`         | *(unset)*     | Custom S3 endpoint (MinIO, R2, Wasabi, Backblaze, …).                          |
 | `addressing_style` | `virtual`     | `virtual` = `https://bucket.host`, `path` = `https://host/bucket` (MinIO).     |
 | `allow_http`       | `false`       | Must be `true` if `endpoint` is `http://…`.                                    |
+| `partitioning`     | `auto`        | Hive partition discovery: `auto`, `hive` (force on), `none` (force off).        |
+| `endpoint_bucket_in_host` | `auto` | Fold the bucket into the endpoint host: `auto` (follows `addressing_style`), `true`, `false`. |
 | `access_key_id`, `secret_access_key`, `session_token` | *(unset)* | Inline creds. Discouraged for prod — use env vars instead. |
 
 **Credential precedence** (highest → lowest):
