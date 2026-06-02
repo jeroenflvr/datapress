@@ -657,6 +657,19 @@ impl Backend for Registry {
         .map_err(|e| AppError::Internal(format!("join error: {e}")))?
     }
 
+    async fn parquet(&self, name: &str) -> Result<bytes::Bytes, AppError> {
+        let schema = self.get(name)?;
+        let pool = self.pool.clone();
+        let max_page_size = self.max_page_size;
+        let buf = actix_web::web::block(move || -> Result<Vec<u8>, AppError> {
+            let conn = DbPool::get(&pool);
+            DatasetRepository::new(&conn, &schema, max_page_size).parquet_bytes()
+        })
+        .await
+        .map_err(|e| AppError::Internal(format!("join error: {e}")))??;
+        Ok(bytes::Bytes::from(buf))
+    }
+
     async fn reload(&self, name: &str) -> Result<ReloadStats, AppError> {
         Registry::reload(self, name).await
     }

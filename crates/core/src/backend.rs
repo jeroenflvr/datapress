@@ -152,6 +152,24 @@ pub trait Backend: Send + Sync + 'static {
     /// Count rows in `name` matching `req.predicates`.
     async fn count(&self, name: &str, req: &CountRequest) -> Result<i64, AppError>;
 
+    /// Encode the **entire** dataset as a single self-contained Parquet
+    /// file, returned as in-memory bytes.
+    ///
+    /// Powers `GET /datasets/{name}/parquet`, which serves these bytes
+    /// with HTTP range support so external tools (DuckDB `httpfs`, pandas,
+    /// polars, …) can read the dataset straight over HTTP — e.g.
+    /// `SELECT count(*) FROM 'http://host/api/v1/datasets/accidents/parquet'`.
+    ///
+    /// The handler caches the result per dataset (and invalidates on
+    /// reload) so the repeated range requests a Parquet reader makes all
+    /// see identical, stable bytes. Default impl errors with
+    /// `InvalidValue`; every shipped backend overrides it.
+    async fn parquet(&self, _name: &str) -> Result<Bytes, AppError> {
+        Err(AppError::InvalidValue(
+            "Parquet export is not supported by this backend".into(),
+        ))
+    }
+
     /// Rebuild `name` from its configured source and atomically swap it in.
     async fn reload(&self, name: &str) -> Result<ReloadStats, AppError>;
 }

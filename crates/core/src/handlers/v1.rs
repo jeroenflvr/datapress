@@ -20,7 +20,10 @@
 use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 
 use crate::admin;
-use crate::handlers::{ARROW_IPC_MIME, BackendData, QueryLimits, wants_arrow};
+use crate::handlers::{
+    ARROW_IPC_MIME, BackendData, PARQUET_MIME, ParquetCache, QueryLimits, serve_bytes_with_range,
+    wants_arrow,
+};
 use crate::models::{CountRequest, QueryRequest};
 
 // -------------------------------------------------------------- auth guards --
@@ -86,6 +89,13 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             web::post().to(stream_dataset),
         )
         .route("/datasets/{name}/count", web::post().to(count_dataset))
+        .route("/datasets/{name}/parquet", web::get().to(parquet_dataset))
+        .route("/datasets/{name}/parquet", web::head().to(parquet_dataset))
+        // `.parquet`-suffixed alias so a DuckDB client can use the bare
+        // `FROM 'http://host/.../all.parquet'` form — DuckDB sniffs the
+        // file type from the URL extension, so it must end in `.parquet`.
+        .route("/datasets/{name}/all.parquet", web::get().to(parquet_dataset))
+        .route("/datasets/{name}/all.parquet", web::head().to(parquet_dataset))
         .route("/datasets/{name}/reload", web::post().to(reload_dataset));
 }
 
@@ -97,6 +107,8 @@ pub const ROUTES: &[(&str, &str)] = &[
     ("POST", "/datasets/{name}/query"),
     ("POST", "/datasets/{name}/query/stream"),
     ("POST", "/datasets/{name}/count"),
+    ("GET", "/datasets/{name}/parquet"),
+    ("GET", "/datasets/{name}/all.parquet"),
     ("POST", "/datasets/{name}/reload"),
 ];
 
@@ -243,6 +255,7 @@ pub async fn count_dataset(
 pub async fn reload_dataset(
     req: HttpRequest,
     backend: BackendData,
+    cache: Option<web::Data<ParquetCache>>,
     path: web::Path<String>,
 ) -> HttpResponse {
     if let Err(e) = require_reload(&req) {
@@ -250,11 +263,51 @@ pub async fn reload_dataset(
     }
     let name = path.into_inner();
     match backend.reload(&name).await {
-        Ok(stats) => HttpResponse::Ok().json(serde_json::json!({
-            "dataset":    name,
-            "rows":       stats.rows,
-            "elapsed_ms": stats.elapsed_ms,
-        })),
+        Ok(stats) => {
+            // The cached Parquet export is now stale — drop it so the next
+            // `/parquet` request rebuilds from the freshly reloaded data.
+            if let Some(cache) = cache {
+                cache.invalidate(&name);
+            }
+            HttpResponse::Ok().json(serde_json::json!({
+                "dataset":    name,
+                "rows":       stats.rows,
+                "elapsed_ms": stats.elapsed_ms,
+            }))
+        }
         Err(e) => e.error_response(),
     }
+}
+
+/// Serve the whole dataset as a single Parquet file with HTTP range +
+/// `HEAD` support, so external tools can read it over HTTP — e.g.
+/// `SELECT count(*) FROM 'http://host/api/v1/datasets/accidents/parquet'`
+/// from a DuckDB client with `httpfs` loaded.
+///
+/// The encoded file is cached per dataset (see [`ParquetCache`]) and
+/// invalidated on reload, so the multiple range requests a Parquet reader
+/// makes all observe identical bytes.
+pub async fn parquet_dataset(
+    req: HttpRequest,
+    backend: BackendData,
+    cache: Option<web::Data<ParquetCache>>,
+    path: web::Path<String>,
+) -> HttpResponse {
+    if let Err(e) = require_read(&req) {
+        return e.error_response();
+    }
+    let name = path.into_inner();
+
+    let body = match cache.as_ref().and_then(|c| c.get(&name)) {
+        Some(cached) => cached,
+        None => match backend.parquet(&name).await {
+            Ok(bytes) => match cache.as_ref() {
+                Some(c) => c.insert(&name, bytes),
+                None => std::sync::Arc::new(bytes),
+            },
+            Err(e) => return e.error_response(),
+        },
+    };
+
+    serve_bytes_with_range(&req, body, PARQUET_MIME)
 }

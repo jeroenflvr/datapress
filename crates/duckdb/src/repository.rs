@@ -403,6 +403,32 @@ impl<'a> DatasetRepository<'a> {
         Ok(n)
     }
 
+    /// Encode the entire dataset as a single self-contained Parquet file and
+    /// return its bytes.
+    ///
+    /// Uses DuckDB's native `COPY … TO … (FORMAT parquet)` writer (so the
+    /// output carries proper row-group + footer metadata) into a temp file,
+    /// then reads it back. Powers the cached `GET /datasets/{name}/parquet`
+    /// HTTP endpoint, which a DuckDB `httpfs` client can read over HTTP.
+    pub fn parquet_bytes(&self) -> Result<Vec<u8>, AppError> {
+        let table = DatasetSchema::quote_ident(&self.schema.name);
+        let tmp = tempfile::Builder::new()
+            .prefix("datapress-parquet-")
+            .suffix(".parquet")
+            .tempfile()
+            .map_err(|e| AppError::Internal(format!("parquet tempfile: {e}")))?;
+        // Single-quote the path for the SQL string literal.
+        let path_lit = tmp.path().to_string_lossy().replace('\'', "''");
+        let sql = format!(
+            "COPY (SELECT * FROM {table}) TO '{path_lit}' (FORMAT parquet, COMPRESSION snappy)"
+        );
+        self.conn.execute_batch(&sql)?;
+        let bytes = std::fs::read(tmp.path())
+            .map_err(|e| AppError::Internal(format!("read parquet temp: {e}")))?;
+        // `tmp` drops here, removing the temp file.
+        Ok(bytes)
+    }
+
     /// Return a single row at offset 0 (used by `/schema` for a discoverable
     /// sample). Returns `null` when the dataset is empty.
     pub fn sample(&self) -> Result<String, AppError> {

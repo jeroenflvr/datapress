@@ -37,9 +37,7 @@ use crate::backend::Backend;
 pub mod v1;
 
 /// Convenience alias — every handler extracts the backend through this.
-pub type BackendData = web::Data<Arc<dyn Backend>>;
-
-/// Query-related limits copied from `[server]` config into Actix app data.
+pub type BackendData = web::Data<Arc<dyn Backend>>;/// Query-related limits copied from `[server]` config into Actix app data.
 #[derive(Debug, Clone, Copy)]
 pub struct QueryLimits {
     pub max_page_size: u64,
@@ -54,9 +52,7 @@ impl Default for QueryLimits {
 }
 
 /// MIME type used for Arrow IPC stream responses.
-pub const ARROW_IPC_MIME: &str = "application/vnd.apache.arrow.stream";
-
-#[get("/health")]
+pub const ARROW_IPC_MIME: &str = "application/vnd.apache.arrow.stream";#[get("/health")]
 pub async fn health() -> HttpResponse {
     HttpResponse::Ok()
         .content_type("application/json")
@@ -172,4 +168,148 @@ pub(crate) fn wants_arrow(http: &HttpRequest) -> bool {
             })
         })
         .unwrap_or(false)
+}
+
+/// MIME type used for Parquet export responses.
+pub const PARQUET_MIME: &str = "application/vnd.apache.parquet";
+
+/// Process-wide cache of encoded Parquet exports, keyed by dataset name.
+///
+/// The `/datasets/{name}/parquet` endpoint serves a complete Parquet file
+/// with HTTP range support. A single client (e.g. DuckDB `httpfs`) issues
+/// several requests against it — a `HEAD` for the length, then ranged
+/// `GET`s for the footer and any row-group metadata — so every request
+/// must observe the *same* bytes. Caching the encoded file makes those
+/// requests cheap and consistent; [`crate::handlers::v1::reload_dataset`]
+/// drops the entry after a successful reload so a fresh export is built
+/// on next access.
+#[derive(Default)]
+pub struct ParquetCache {
+    inner: std::sync::RwLock<std::collections::HashMap<String, Arc<bytes::Bytes>>>,
+}
+
+impl ParquetCache {
+    /// Return the cached export for `name`, if one has been built.
+    pub fn get(&self, name: &str) -> Option<Arc<bytes::Bytes>> {
+        self.inner.read().ok()?.get(name).cloned()
+    }
+
+    /// Store `bytes` as the export for `name`, returning the stored handle.
+    pub fn insert(&self, name: &str, bytes: bytes::Bytes) -> Arc<bytes::Bytes> {
+        let shared = Arc::new(bytes);
+        if let Ok(mut map) = self.inner.write() {
+            map.insert(name.to_string(), shared.clone());
+        }
+        shared
+    }
+
+    /// Drop the cached export for `name` (no-op if absent).
+    pub fn invalidate(&self, name: &str) {
+        if let Ok(mut map) = self.inner.write() {
+            map.remove(name);
+        }
+    }
+}
+
+/// A single byte range resolved against a body of `total` bytes.
+struct ByteRange {
+    start: u64,
+    /// Inclusive end offset.
+    end: u64,
+}
+
+/// Parse a single-range HTTP `Range: bytes=…` header against a body of
+/// `total` bytes.
+///
+/// Returns:
+/// - `Ok(None)` when there is no (parseable) byte range — the caller
+///   should serve the full body with `200`.
+/// - `Ok(Some(range))` for a satisfiable single range — serve `206`.
+/// - `Err(())` when the range is syntactically a `bytes=` range but
+///   unsatisfiable — the caller should answer `416`.
+///
+/// Only the first range of a multi-range header is honoured; multi-range
+/// `multipart/byteranges` responses are intentionally not implemented, so
+/// such requests fall back to the full body.
+fn parse_byte_range(header: &str, total: u64) -> Result<Option<ByteRange>, ()> {
+    let spec = match header.trim().strip_prefix("bytes=") {
+        Some(s) => s.trim(),
+        None => return Ok(None),
+    };
+    // Take the first range only.
+    let first = spec.split(',').next().unwrap_or("").trim();
+    let (start_s, end_s) = match first.split_once('-') {
+        Some(parts) => parts,
+        None => return Ok(None),
+    };
+
+    if total == 0 {
+        return Err(());
+    }
+
+    let (start, end) = if start_s.is_empty() {
+        // Suffix range: `-N` → last N bytes.
+        let n: u64 = end_s.trim().parse().map_err(|_| ())?;
+        if n == 0 {
+            return Err(());
+        }
+        let n = n.min(total);
+        (total - n, total - 1)
+    } else {
+        let start: u64 = start_s.trim().parse().map_err(|_| ())?;
+        let end: u64 = if end_s.trim().is_empty() {
+            total - 1
+        } else {
+            end_s.trim().parse::<u64>().map_err(|_| ())?.min(total - 1)
+        };
+        (start, end)
+    };
+
+    if start > end || start >= total {
+        return Err(());
+    }
+    Ok(Some(ByteRange { start, end }))
+}
+
+/// Serve `body` as an HTTP response with range + `HEAD` support.
+///
+/// Honours a single `Range: bytes=…` header (`206 Partial Content` with a
+/// `Content-Range`), advertises `Accept-Ranges: bytes`, and lets actix's
+/// dispatcher answer `HEAD` with the same headers (including the computed
+/// `Content-Length`) but no body. This is what lets DuckDB's `httpfs` read
+/// only the Parquet footer for a `count(*)` instead of the whole file.
+pub fn serve_bytes_with_range(
+    http: &HttpRequest,
+    body: Arc<bytes::Bytes>,
+    content_type: &str,
+) -> HttpResponse {
+    use actix_web::http::header;
+
+    let total = body.len() as u64;
+
+    let range = http
+        .headers()
+        .get(header::RANGE)
+        .and_then(|h| h.to_str().ok());
+
+    match range.map(|r| parse_byte_range(r, total)) {
+        // Unsatisfiable byte range → 416 with the total size.
+        Some(Err(())) => HttpResponse::RangeNotSatisfiable()
+            .insert_header((header::CONTENT_RANGE, format!("bytes */{total}")))
+            .insert_header((header::ACCEPT_RANGES, "bytes"))
+            .finish(),
+        // Satisfiable single range → 206 Partial Content. For a HEAD the
+        // dispatcher drops the body bytes but keeps the Content-Length
+        // derived from the slice, so range probes still see the right size.
+        Some(Ok(Some(ByteRange { start, end }))) => HttpResponse::PartialContent()
+            .insert_header((header::CONTENT_TYPE, content_type.to_string()))
+            .insert_header((header::ACCEPT_RANGES, "bytes"))
+            .insert_header((header::CONTENT_RANGE, format!("bytes {start}-{end}/{total}")))
+            .body(body.slice(start as usize..(end as usize + 1))),
+        // No (parseable) range → full body with 200.
+        _ => HttpResponse::Ok()
+            .insert_header((header::CONTENT_TYPE, content_type.to_string()))
+            .insert_header((header::ACCEPT_RANGES, "bytes"))
+            .body(bytes::Bytes::clone(&body)),
+    }
 }

@@ -257,15 +257,65 @@ impl Store {
     ) -> Result<ArrowIpcStream, AppError> {
         let batches = self.query_batches(name, req).await?;
         Ok(stream_arrow_batches(batches))
-    }
-
-    pub async fn query_arrow_stream_all(
+    }    pub async fn query_arrow_stream_all(
         &self,
         name: &str,
         req: &QueryRequest,
     ) -> Result<ArrowIpcStream, AppError> {
         let batches = self.query_batches_all(name, req).await?;
         Ok(stream_arrow_batches(batches))
+    }
+
+    /// Encode the entire dataset as a single self-contained Parquet file.
+    ///
+    /// Collects every row (all columns, no predicates, no paging) and runs
+    /// it through a single [`parquet::arrow::ArrowWriter`], so the result
+    /// carries the row-group + footer metadata a Parquet reader needs to
+    /// answer `count(*)` straight from the footer. Powers the cached
+    /// `GET /datasets/{name}/parquet` HTTP endpoint.
+    pub async fn parquet(&self, name: &str) -> Result<bytes::Bytes, AppError> {
+        // All rows, all columns, no predicates / ordering / limit.
+        let req = QueryRequest {
+            columns: Vec::new(),
+            predicates: Vec::new(),
+            group_by: Vec::new(),
+            aggregations: Vec::new(),
+            distinct: false,
+            order_by: Vec::new(),
+            limit: None,
+            page: 1,
+            page_size: 1,
+        };
+        let st = self.dataset(name)?;
+        let batches = self.query_batches_all(name, &req).await?;
+        // Use the actual batch schema when we have rows so the writer schema
+        // matches exactly (projection/nullability); fall back to the
+        // dataset schema for an empty dataset.
+        let schema = batches
+            .first()
+            .map(|b| b.schema())
+            .unwrap_or_else(|| st.arrow_schema.clone());
+
+        let mut buf: Vec<u8> = Vec::with_capacity(64 * 1024);
+        {
+            let props = parquet::file::properties::WriterProperties::builder()
+                .set_compression(parquet::basic::Compression::SNAPPY)
+                .build();
+            let mut writer =
+                parquet::arrow::ArrowWriter::try_new(&mut buf, schema, Some(props))
+                    .map_err(|e| AppError::Internal(format!("parquet writer init: {e}")))?;
+            for batch in &batches {
+                if batch.num_rows() > 0 {
+                    writer
+                        .write(batch)
+                        .map_err(|e| AppError::Internal(format!("parquet write: {e}")))?;
+                }
+            }
+            writer
+                .close()
+                .map_err(|e| AppError::Internal(format!("parquet finish: {e}")))?;
+        }
+        Ok(bytes::Bytes::from(buf))
     }
 
     /// Compute the result page as a single `RecordBatch`. Shared between
@@ -2392,6 +2442,10 @@ impl Backend for Store {
 
     async fn count(&self, name: &str, req: &CountRequest) -> Result<i64, AppError> {
         Store::count(self, name, req).await
+    }
+
+    async fn parquet(&self, name: &str) -> Result<bytes::Bytes, AppError> {
+        Store::parquet(self, name).await
     }
 
     async fn reload(&self, name: &str) -> Result<ReloadStats, AppError> {

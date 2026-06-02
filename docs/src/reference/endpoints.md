@@ -13,6 +13,8 @@ under `/api/v1/` and `/api/` is shifted by `prefix` when set.
 | POST   | `/api/v1/datasets/{name}/query`                   | [Query body](../query/request-body.md) | Filter / project / sort / paginate.                |
 | POST   | `/api/v1/datasets/{name}/query/stream`            | [Arrow IPC](../query/arrow-ipc.md) | Stream all matching rows as Arrow IPC.             |
 | POST   | `/api/v1/datasets/{name}/count`                   | `{ predicates? }` | Total or filtered row count.                                       |
+| GET    | `/api/v1/datasets/{name}/parquet`                 | —               | Whole dataset as a Parquet file (HTTP range + `HEAD`).               |
+| GET    | `/api/v1/datasets/{name}/all.parquet`             | —               | Alias of `/parquet` whose URL ends in `.parquet` (bare `FROM '…'`).  |
 | POST   | `/api/v1/datasets/{name}/reload`                  | —               | Atomic dataset reload. Requires `X-Admin-Token`.                     |
 | GET    | `{prefix}/health`                                 | —               | Liveness, prefix-aware.                                              |
 
@@ -27,6 +29,8 @@ Same handlers, no `/v1`:
 | POST   | `/api/datasets/{name}/query`               |
 | POST   | `/api/datasets/{name}/query/stream`        |
 | POST   | `/api/datasets/{name}/count`               |
+| GET    | `/api/datasets/{name}/parquet`             |
+| GET    | `/api/datasets/{name}/all.parquet`         |
 | POST   | `/api/datasets/{name}/reload`              |
 
 Prefer `/api/v1/...` in new code; the unversioned routes will
@@ -52,6 +56,51 @@ When built with `--features docs` and `[docs] enabled = true`:
 | GET    | `{docs.path}/{*}`| Static assets / inner pages.                       |
 
 See [Configuration › Documentation site](../configuration/docs-site.md).
+
+## Parquet export
+
+`GET /api/v1/datasets/{name}/parquet` encodes the **entire** dataset as a
+single self-contained Parquet file and serves it with HTTP range and
+`HEAD` support, so external tools can read it straight over HTTP without
+downloading the whole file.
+
+The encoded file is cached per dataset and invalidated on
+[reload](../operations/reload.md), so the multiple range requests a Parquet
+reader issues (a `HEAD` for the size, then ranged `GET`s for the footer and
+row-group metadata) all observe identical, stable bytes.
+
+Read it from a DuckDB client with the `httpfs` extension. Use
+`read_parquet(...)`, which always works regardless of the URL ending:
+
+```sql
+INSTALL httpfs; LOAD httpfs;
+SELECT count(*)
+FROM read_parquet('http://localhost:8080/api/v1/datasets/accidents/parquet');
+-- → 7728394
+```
+
+A `count(*)` only fetches the Parquet footer via range requests — not the
+whole file. The bare `FROM '…/parquet'` form does **not** auto-detect the
+format, because DuckDB sniffs the file type from the URL extension. For the
+bare form, use the `.parquet`-suffixed alias instead, which serves the exact
+same bytes:
+
+```sql
+SELECT count(*)
+FROM 'http://localhost:8080/api/v1/datasets/accidents/all.parquet';
+-- → 7728394
+```
+
+Response headers:
+
+| Header           | Value                                 |
+|------------------|---------------------------------------|
+| `Content-Type`   | `application/vnd.apache.parquet`      |
+| `Accept-Ranges`  | `bytes`                               |
+| `Content-Range`  | `bytes {start}-{end}/{total}` (on `206`) |
+
+A satisfiable `Range` request returns `206 Partial Content`; an
+out-of-range one returns `416 Range Not Satisfiable`.
 
 ## Metrics (optional)
 

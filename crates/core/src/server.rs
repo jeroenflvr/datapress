@@ -231,6 +231,11 @@ async fn run_server(
         },
     ));
 
+    // One Parquet export cache shared across all workers (it wraps an Arc),
+    // so a dataset is encoded at most once and every worker serves the same
+    // bytes for the ranged requests a Parquet reader makes.
+    let parquet_cache = web::Data::new(handlers::ParquetCache::default());
+
     let mut server = HttpServer::new(move || {
         let backend = backend.clone();
         let prefix = prefix.clone();
@@ -252,6 +257,7 @@ async fn run_server(
             .app_data(web::Data::new(backend))
             .app_data(build_info.clone())
             .app_data(web::Data::new(query_limits))
+            .app_data(parquet_cache.clone())
             .app_data(json_cfg)
             .app_data(pay_cfg)
             .wrap(middleware::Condition::new(timeout_ms > 0, timeout))
