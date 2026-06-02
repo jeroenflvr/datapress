@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.3.0] - 2026-06-02
+
+### Documentation
+
+- Update name ([5816d4b](https://github.com/jeroenflvr/fast-api/commit/5816d4b2eda0534e0a30b8c1a44a848a709e7330))
+
+### Features
+
+- *(explorer)* Add a duckdb wasm terminal ([a8de1e6](https://github.com/jeroenflvr/fast-api/commit/a8de1e66148f1ffee6c7e45dc62593308d1cbb67))
+- Add embedded explorer website with tables etc, and duckdb wasm terminal ([9469336](https://github.com/jeroenflvr/fast-api/commit/9469336db8568f9cd4a6b837002538cfd65903bb))
+
 ## [0.2.18] - 2026-06-02
 
 ### Bug Fixes
