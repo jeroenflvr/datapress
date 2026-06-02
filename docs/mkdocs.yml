@@ -96,7 +96,7 @@ markdown_extensions:
 
 extra:
   # Shown as a badge next to the repository link in the header.
-  datapress_version: 0.2.17
+  datapress_version: 0.2.18
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/jeroenflvr/fast-api

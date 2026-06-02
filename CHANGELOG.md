@@ -3,6 +3,21 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.2.18] - 2026-06-02
+
+### Bug Fixes
+
+- *(ci)* Cargo clippy warnings ([b8342c7](https://github.com/jeroenflvr/fast-api/commit/b8342c7b58468a0c1216305588dc43869d1bbedb))
+
+### Documentation
+
+- Add duckdb-wasm instance to mkdocs ([45c1f61](https://github.com/jeroenflvr/fast-api/commit/45c1f61fa3ca2c7d642e64116b2b8fe3f7e438db))
+
+### Features
+
+- Add streaming parquet endpoints for duckdb client ([4d15a64](https://github.com/jeroenflvr/fast-api/commit/4d15a647339a8bfe2405345f7e57011088aabb96))
+- Align s3 config between datafusion and duckdb ([36b915d](https://github.com/jeroenflvr/fast-api/commit/36b915db9e4c185aa6ab3b39b8ca65d994ecc8aa))
+
 ## [0.2.17] - 2026-06-01
 
 ### Features
