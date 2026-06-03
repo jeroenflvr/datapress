@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.3.1] - 2026-06-03
+
+### Bug Fixes
+
+- *(ci)* Include explorer feature in every build ([c5db03f](https://github.com/jeroenflvr/fast-api/commit/c5db03f5d7743f960b9b6111c20b53c9c807ae31))
+
 ## [0.3.0] - 2026-06-02
 
 ### Documentation
