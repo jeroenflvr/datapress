@@ -75,3 +75,49 @@ was eliminated.
 > pre-optimization numbers (the `before` column above), the `serialize` change
 > was reverted (`git restore`), benched with `--save-baseline before`, then the
 > optimized file was restored and run with `--baseline before`.
+
+---
+
+# Benchmark results — `index` (equality-index lookup)
+
+Tracked results for the `store::try_index` hot path — the single-`eq`
+predicate fast path that every materialised-dataset filter request hits.
+
+## How to run
+
+```sh
+EMSDK_QUIET=1 cargo bench -p datapress-datafusion --bench index
+```
+
+## Workload
+
+- One indexed column with a single bucket holding `N` matching row ids.
+- A single `eq` predicate that resolves to that bucket.
+- Bucket sizes: 100 / 10,000 / 1,000,000 row ids (low → high cardinality).
+- Two variants run in-process from the same index:
+  - **borrow** — current `try_index`, returns `Cow::Borrowed(&[u32])`.
+  - **clone** — reference impl of the pre-`Cow` behaviour
+    (`col_map.get(&key).cloned()`), kept in `store::bench` for comparison.
+
+## Before/after — `Cow<[u32]>` borrow vs clone
+
+Apple M1, release, median of 100 samples. One "element" is one matched row id.
+
+| bucket rows | clone (before) | borrow (after) | speedup  |
+|-------------|----------------|----------------|----------|
+| 100         | ~115 ns        | ~73.8 ns       | ~1.6×    |
+| 10,000      | ~956 ns        | ~63.4 ns       | ~15×     |
+| 1,000,000   | ~88.4 µs       | ~63.5 ns       | ~1390×   |
+
+The borrow path is **flat at ~63 ns regardless of bucket size** — it returns a
+slice into the index and never touches the row ids. The clone path's cost grows
+linearly with the match size (it `memcpy`s every `u32`), so the win scales with
+cardinality: negligible for tiny matches, ~1400× for a million-row bucket. Real
+high-selectivity filters (e.g. a common category value) land in the large-bucket
+regime, which is exactly where the allocation+copy was most expensive.
+
+> Note: there is no `git`-reverted baseline here. The `clone` variant *is* the
+> "before" — it reproduces the old `.cloned()` behaviour and runs alongside the
+> `borrow` variant in the same binary, so both are measured under identical
+> conditions.
+

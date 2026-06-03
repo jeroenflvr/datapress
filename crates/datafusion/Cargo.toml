@@ -56,3 +56,7 @@ path = "src/bin/datapress-datafusion.rs"
 [[bench]]
 name = "serialize"
 harness = false
+
+[[bench]]
+name = "index"
+harness = false

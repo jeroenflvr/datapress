@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -1652,9 +1653,23 @@ fn union_sorted(a: &[u32], b: &[u32]) -> Vec<u32> {
     out
 }
 
-fn try_index(index: &EqIndex, predicates: &[Predicate]) -> Option<Vec<u32>> {
+fn try_index<'a>(index: &'a EqIndex, predicates: &[Predicate]) -> Option<Cow<'a, [u32]>> {
     if predicates.is_empty() || index.is_empty() {
         return None;
+    }
+
+    // Fast path: a single `eq` predicate resolves to exactly one index bucket,
+    // so borrow it directly instead of cloning the row-id vector.
+    if let [pred] = predicates
+        && pred.op.as_str() == "eq"
+    {
+        let col_lower = pred.col.to_lowercase();
+        let col_map = index.get(&col_lower)?;
+        let key = json_index_key(pred.val.as_ref()?)?;
+        return Some(match col_map.get(&key) {
+            Some(rows) => Cow::Borrowed(rows.as_slice()),
+            None => Cow::Owned(Vec::new()),
+        });
     }
 
     let mut result: Option<Vec<u32>> = None;
@@ -1685,7 +1700,53 @@ fn try_index(index: &EqIndex, predicates: &[Predicate]) -> Option<Vec<u32>> {
             Some(r) => intersect_sorted(&r, &rows),
         });
     }
-    result
+    result.map(Cow::Owned)
+}
+
+/// Benchmark-only hooks for the equality-index hot path. Hidden from docs and
+/// not part of the stable API — exposed solely so `benches/index.rs` can build
+/// an `EqIndex` and exercise `try_index` directly.
+#[doc(hidden)]
+pub mod bench {
+    use super::{EqIndex, FastMap, json_index_key, try_index};
+    use datapress_core::models::Predicate;
+    use serde_json::Value as JsonValue;
+    use std::borrow::Cow;
+
+    /// Opaque equality index wrapper for benches (the inner alias is private).
+    pub struct BenchIndex(EqIndex);
+
+    /// Build an index with a single `col` whose `val` bucket holds `rows`.
+    /// The bucket key is derived with the same `json_index_key` the query path
+    /// uses, so a matching `eq` predicate is guaranteed to hit.
+    pub fn single_bucket_index(col: &str, val: &JsonValue, rows: Vec<u32>) -> BenchIndex {
+        let key = json_index_key(val).expect("benchable index key");
+        let mut col_map: FastMap<String, Vec<u32>> = FastMap::default();
+        col_map.insert(key, rows);
+        let mut index: EqIndex = EqIndex::default();
+        index.insert(col.to_string(), col_map);
+        BenchIndex(index)
+    }
+
+    /// Resolve `predicates` against the index — the timed operation.
+    pub fn lookup<'a>(idx: &'a BenchIndex, predicates: &[Predicate]) -> Option<Cow<'a, [u32]>> {
+        try_index(&idx.0, predicates)
+    }
+
+    /// Reference implementation of the pre-`Cow` behaviour: always clones the
+    /// matched bucket into an owned `Vec` (what `try_index` did before the
+    /// single-`eq` borrow fast path). Used as the `clone-before` baseline so
+    /// the borrow win is measured against the old allocation cost in-process.
+    pub fn lookup_cloning(idx: &BenchIndex, predicates: &[Predicate]) -> Option<Vec<u32>> {
+        let [pred] = predicates else { return None };
+        if pred.op.as_str() != "eq" {
+            return None;
+        }
+        let col_lower = pred.col.to_lowercase();
+        let col_map = idx.0.get(&col_lower)?;
+        let key = json_index_key(pred.val.as_ref()?)?;
+        Some(col_map.get(&key).cloned().unwrap_or_default())
+    }
 }
 
 /// Return rows `[offset, offset+limit)` from a chunked dataset by slicing
