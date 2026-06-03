@@ -40,7 +40,7 @@ jobs:
         with:
           target:         ${{ matrix.target }}
           manylinux:      auto
-          args:           --release --features docs,swagger,auth,metrics --out dist
+          args:           --release --features docs,swagger,auth,metrics,explorer --out dist
           rust-toolchain: stable
           # The rust-cross manylinux2014 images ship GCC 4.8 (CentOS 7
           # base), which trips DuckDB's `__GNUC__ < 5` ABI guard in
@@ -87,7 +87,7 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           target:         aarch64
-          args:           --release --features docs,swagger,auth,metrics --out dist
+          args:           --release --features docs,swagger,auth,metrics,explorer --out dist
           rust-toolchain: stable
           sccache:        'false'
       - uses: actions/upload-artifact@v7
@@ -114,7 +114,7 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           target:         x64
-          args:           --release --features docs,swagger,auth,metrics --out dist
+          args:           --release --features docs,swagger,auth,metrics,explorer --out dist
           rust-toolchain: stable
           sccache:        'false'
       - uses: actions/upload-artifact@v7
@@ -243,7 +243,7 @@ jobs:
         with:
           shared-key: cli-${{ matrix.target }}
       - name: Build datapress CLI
-        run: cargo build --release -p datapress --bin datapress --features docs,swagger,auth,metrics --target ${{ matrix.target }}
+        run: cargo build --release -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer --target ${{ matrix.target }}
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |

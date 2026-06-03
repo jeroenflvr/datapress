@@ -33,7 +33,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - name: Build MkDocs site
         run: uv tool run --with 'mkdocs>=1.6,<2' --with 'mkdocs-material>=9.6,<10' mkdocs build -f docs/mkdocs.yml -d site --strict
-      - run: cargo clippy --workspace --all-targets --features docs,swagger --locked
+      - run: cargo clippy --workspace --all-targets --features docs,swagger,explorer --locked
 
   test:
     name: cargo test
@@ -64,7 +64,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - name: Build MkDocs site
         run: uv tool run --with 'mkdocs>=1.6,<2' --with 'mkdocs-material>=9.6,<10' mkdocs build -f docs/mkdocs.yml -d site --strict
-      - run: cargo test --workspace --features docs,swagger --locked
+      - run: cargo test --workspace --features docs,swagger,explorer --locked
 
   audit:
     name: cargo audit
