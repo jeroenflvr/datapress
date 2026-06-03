@@ -95,6 +95,33 @@ fn make_registry_at(location: &str) -> Arc<Registry> {
     Arc::new(load_registry(&cfg).expect("load_registry"))
 }
 
+/// Like `make_registry`, but registers the dataset with `lazy = true` so
+/// the DuckDB backend serves it from a streaming view over the parquet
+/// scan instead of materialising an in-memory table.
+fn make_registry_lazy(location: &str) -> Arc<Registry> {
+    let cfg = AppConfig {
+        server: ServerConfig::default(),
+        docs: datapress_core::config::DocsConfig::default(),
+        swagger: datapress_core::config::SwaggerConfig::default(),
+        auth: datapress_core::config::AuthConfig::default(),
+        metrics: datapress_core::config::MetricsConfig::default(),
+        explorer: datapress_core::config::ExplorerConfig::default(),
+        datasets: vec![DatasetConfig {
+            name: "people".into(),
+            source: SourceConfig {
+                kind: SourceKind::Parquet,
+                location: location.to_string(),
+            },
+            s3: None,
+            index: IndexConfig::default(),
+            columns: vec![],
+            dict_encode: true,
+            lazy: true,
+        }],
+    };
+    Arc::new(load_registry(&cfg).expect("load_registry"))
+}
+
 /// Build a hive-partitioned dataset under `dir`:
 ///   dir/city=NYC/part.parquet  -> id, name, score   (3 rows)
 ///   dir/city=LA/part.parquet   -> id, name, score   (2 rows)
@@ -161,6 +188,45 @@ async fn full_scan_returns_all_rows() {
     assert_eq!(rows.len(), 5);
     assert_eq!(rows[0]["id"], Value::from(1));
     assert_eq!(rows[0]["name"], Value::from("Anna"));
+}
+
+#[actix_web::test]
+async fn lazy_dataset_queries_via_streaming_view() {
+    let tmp = TempDir::new().unwrap();
+    let parquet = write_sample_parquet(tmp.path());
+    let reg = make_registry_lazy(&parquet.display().to_string());
+
+    // Full scan returns every row, just like an eager table.
+    let mut req = empty_req();
+    req.order_by = vec![OrderBy {
+        col: "id".into(),
+        dir: Some("asc".into()),
+    }];
+    let rows = parse_rows(&reg.query("people", &req).await.unwrap());
+    assert_eq!(rows.len(), 5);
+    assert_eq!(rows[0]["name"], Value::from("Anna"));
+
+    // Predicates push down through the view into the parquet reader.
+    let mut filtered = empty_req();
+    filtered.predicates = vec![Predicate {
+        col: "city".into(),
+        op: "eq".into(),
+        val: Some("LA".into()),
+    }];
+    let la = parse_rows(&reg.query("people", &filtered).await.unwrap());
+    assert_eq!(la.len(), 2);
+
+    // Count goes through the same view.
+    let n = reg
+        .count(
+            "people",
+            &CountRequest {
+                predicates: filtered.predicates.clone(),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(n, 2);
 }
 
 #[actix_web::test]

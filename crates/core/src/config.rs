@@ -488,8 +488,10 @@ pub struct DatasetConfig {
     /// When `true`, the backend should keep the dataset on disk and stream
     /// it at query time instead of materialising it into RAM at startup.
     /// Trades the in-memory hot paths (raw Arrow slice, equality index)
-    /// for bounded memory use on large / multi-file sources. Currently
-    /// honoured by the DataFusion backend for local parquet.
+    /// for bounded memory use on large / multi-file sources. Honoured by
+    /// the DataFusion backend (local + S3 parquet) and by the DuckDB
+    /// backend, which registers the dataset as a view over the source scan
+    /// (local + S3 parquet, and delta) rather than materialising a table.
     #[serde(default)]
     pub lazy: bool,
 }

@@ -160,7 +160,8 @@ impl Registry {
 }
 
 // ---------------------------------------------------------------------------
-// Startup: register every dataset as an in-memory table
+// Startup: register every dataset (an in-memory table, or a streaming
+// view when the dataset is configured `lazy`).
 // ---------------------------------------------------------------------------
 
 pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
@@ -204,11 +205,19 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
         );
         let schema = register_dataset(&conn, d)?;
         let rows = count_rows(&conn, &d.name)?;
-        log::info!(
-            "  → {} columns ({} rows in-memory)",
-            schema.columns.len(),
-            rows,
-        );
+        if d.lazy {
+            log::info!(
+                "  → {} columns ({} rows, lazy — streamed from source, not held in RAM)",
+                schema.columns.len(),
+                rows,
+            );
+        } else {
+            log::info!(
+                "  → {} columns ({} rows in-memory)",
+                schema.columns.len(),
+                rows,
+            );
+        }
         datasets.insert(d.name.clone(), Arc::new(schema));
         configs.insert(d.name.clone(), d.clone());
         row_counts.insert(d.name.clone(), rows);
@@ -418,18 +427,29 @@ fn duckdb_s3_url_style(style: AddressingStyle) -> &'static str {
 fn replace_table(conn: &Connection, cfg: &DatasetConfig) -> Result<(), AppError> {
     let scan = build_scan_clause(cfg)?;
     let table = DatasetSchema::quote_ident(&cfg.name);
+    // Lazy datasets are views over the source scan, so a reload just
+    // re-points the view; eager datasets re-materialise into a table.
+    let relation = if cfg.lazy { "VIEW" } else { "TABLE" };
     conn.execute_batch(&format!(
-        "CREATE OR REPLACE TABLE {table} AS SELECT * FROM {scan};"
+        "CREATE OR REPLACE {relation} {table} AS SELECT * FROM {scan};"
     ))?;
     Ok(())
 }
 
-/// Materialise the source as an in-memory table named `cfg.name` and
+/// Register the source as a queryable relation named `cfg.name` and
 /// introspect its schema via DuckDB's `DESCRIBE`.
+///
+/// Eager datasets are materialised into an in-memory table
+/// (`CREATE TABLE … AS SELECT …`). Lazy datasets are registered as a
+/// **view** over the source scan (`CREATE VIEW … AS SELECT …`), so DuckDB
+/// streams row groups from disk / S3 at query time — with predicate and
+/// projection pushdown into the parquet reader — instead of holding the
+/// whole dataset in RAM.
 fn register_dataset(conn: &Connection, cfg: &DatasetConfig) -> Result<DatasetSchema, AppError> {
     let scan = build_scan_clause(cfg)?;
     let table = DatasetSchema::quote_ident(&cfg.name);
-    conn.execute_batch(&format!("CREATE TABLE {table} AS SELECT * FROM {scan};"))?;
+    let relation = if cfg.lazy { "VIEW" } else { "TABLE" };
+    conn.execute_batch(&format!("CREATE {relation} {table} AS SELECT * FROM {scan};"))?;
     introspect_schema(conn, &cfg.name)
 }
 
