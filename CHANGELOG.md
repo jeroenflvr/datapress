@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.3.2] - 2026-06-03
+
+### Bug Fixes
+
+- Lazy loading for duckdb backend ([0fa5da5](https://github.com/jeroenflvr/fast-api/commit/0fa5da503d806f55d7c42fb86332f417fc7a3589))
+
 ## [0.3.1] - 2026-06-03
 
 ### Bug Fixes
