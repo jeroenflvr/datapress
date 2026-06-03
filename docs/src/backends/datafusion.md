@@ -22,6 +22,10 @@ and queries it with [Apache DataFusion](https://datafusion.apache.org/).
 - **Lazy parquet mode.** `lazy = true` registers a `ListingTable`
   pointing at parquet files; DataFusion handles projection &
   predicate pushdown for datasets too big to materialise.
+- **Delta tables.** `kind = "delta"` reads the table (local or S3) via
+  the [`deltalake`](https://crates.io/crates/deltalake) crate and
+  materialises it into the same resident Arrow chunks. Eager only —
+  `lazy = true` is rejected for delta sources at startup.
 - **Hot reload.** `POST /api/v1/datasets/{name}/reload` swaps the
   resident chunks atomically using an `ArcSwap` double buffer; queries
   in flight see the old data, queries arriving after the swap see the

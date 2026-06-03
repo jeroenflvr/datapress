@@ -64,7 +64,57 @@ fn write_parquet(path: &std::path::Path, ids: &[i64], names: &[&str], scores: &[
     writer.close().unwrap();
 }
 
-/// Build a hive-partitioned dataset under `dir`:
+/// Write `id|name|score` rows as a Delta table rooted at `dir` (a fresh,
+/// empty directory). Uses the `deltalake` crate's write op so the test
+/// exercises the same on-disk format the DataFusion backend reads.
+#[allow(deprecated)]
+async fn write_delta(dir: &std::path::Path, ids: &[i64], names: &[&str], scores: &[f64]) {
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Int64, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("score", DataType::Float64, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(Int64Array::from(ids.to_vec())),
+            Arc::new(StringArray::from(names.to_vec())),
+            Arc::new(Float64Array::from(scores.to_vec())),
+        ],
+    )
+    .unwrap();
+    let url = deltalake::ensure_table_uri(dir.to_str().unwrap()).expect("ensure_table_uri");
+    let ops = deltalake::DeltaOps::try_from_url(url)
+        .await
+        .expect("DeltaOps::try_from_url");
+    ops.write(vec![batch]).await.expect("delta write");
+}
+
+/// Build a `Store` over a single Delta-table dataset named `people`.
+async fn make_delta_store(location: &str) -> Store {
+    let cfg = AppConfig {
+        server: ServerConfig::default(),
+        docs: datapress_core::config::DocsConfig::default(),
+        swagger: datapress_core::config::SwaggerConfig::default(),
+        auth: datapress_core::config::AuthConfig::default(),
+        metrics: datapress_core::config::MetricsConfig::default(),
+        explorer: datapress_core::config::ExplorerConfig::default(),
+        datasets: vec![DatasetConfig {
+            name: "people".into(),
+            source: SourceConfig {
+                kind: SourceKind::Delta,
+                location: location.to_string(),
+            },
+            s3: None,
+            index: IndexConfig::default(),
+            columns: vec![],
+            dict_encode: true,
+            lazy: false,
+        }],
+    };
+    Store::load(&cfg).await.expect("Store::load")
+}
+
 ///   dir/city=NYC/part.parquet  -> 3 rows
 ///   dir/city=LA/part.parquet   -> 2 rows
 /// The partition key `city` is encoded only in the directory name.
@@ -187,6 +237,36 @@ async fn hive_glob_unions_all_files_eager() {
 
     let rows = parse_rows(&store.query("people", &empty_req()).await.unwrap());
     assert_eq!(rows.len(), 5, "expected union of both partition files");
+}
+
+#[actix_web::test]
+async fn delta_local_reads_and_filters() {
+    let tmp = TempDir::new().unwrap();
+    write_delta(
+        tmp.path(),
+        &[1, 2, 3, 4],
+        &["Anna", "Bob", "Cara", "Dan"],
+        &[10.0, 20.0, 30.0, 40.0],
+    )
+    .await;
+    let store = make_delta_store(tmp.path().to_str().unwrap()).await;
+
+    // Full scan returns every row from the delta table.
+    let rows = parse_rows(&store.query("people", &empty_req()).await.unwrap());
+    assert_eq!(rows.len(), 4);
+
+    // Discovery surfaces the delta table under its dataset name.
+    assert!(store.names().contains(&"people".to_string()));
+
+    // Predicate pushdown filters through the materialised table.
+    let filtered = parse_rows(
+        &store
+            .query("people", &req_with(vec![pred("name", "eq", Value::from("Bob"))]))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0]["id"], Value::from(2));
 }
 
 #[actix_web::test]
