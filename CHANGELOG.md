@@ -3,6 +3,20 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.3.3] - 2026-06-03
+
+### Documentation
+
+- Update we're already doing delta with datafusion backend too ([011ec82](https://github.com/jeroenflvr/fast-api/commit/011ec8225b24a8dde0a2795d187d4b424d1ab15b))
+
+### Refactor
+
+- More perf improvements (cow) ([0a8d083](https://github.com/jeroenflvr/fast-api/commit/0a8d083478b57b53e6b571b471b2f0689fb990d5))
+
+### Bench
+
+- Optimize vectorized operations on json data ([28d9908](https://github.com/jeroenflvr/fast-api/commit/28d990821d1862dfc43c04d5a121359642f274d2))
+
 ## [0.3.2] - 2026-06-03
 
 ### Bug Fixes
