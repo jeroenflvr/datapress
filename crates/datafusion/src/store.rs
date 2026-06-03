@@ -42,8 +42,14 @@ use datapress_core::schema::{ColumnInfo, DatasetSchema, LogicalType};
 // Public types
 // ---------------------------------------------------------------------------
 
+/// Hasher-swapped map alias. The default `std::collections::HashMap` uses
+/// SipHash (DoS-resistant but slow). The equality index keys are our own
+/// column values, not untrusted hash-flood input, so we use `ahash` — a much
+/// faster non-cryptographic hasher — on this per-request hot path.
+type FastMap<K, V> = HashMap<K, V, ahash::RandomState>;
+
 /// Pre-built equality index: lowercase col name → string-encoded value → sorted row ids.
-type EqIndex = HashMap<String, HashMap<String, Vec<u32>>>;
+type EqIndex = FastMap<String, FastMap<String, Vec<u32>>>;
 
 /// Per-dataset state: schema metadata, the resident chunks, and the
 /// equality index built per the dataset's `[dataset.index]` policy.
@@ -696,7 +702,7 @@ async fn build_lazy_local_parquet(
             schema,
             data: Vec::new(),
             arrow_schema: arrow_sch,
-            index: EqIndex::new(),
+            index: EqIndex::default(),
             lazy: true,
         },
         provider,
@@ -855,7 +861,7 @@ async fn build_lazy_s3_parquet(
             schema,
             data: Vec::new(),
             arrow_schema: arrow_sch,
-            index: EqIndex::new(),
+            index: EqIndex::default(),
             lazy: true,
         },
         provider,
@@ -1799,7 +1805,7 @@ fn build_eq_index_with_policy(chunks: &[RecordBatch], cfg: &IndexConfig) -> EqIn
     use rayon::prelude::*;
 
     if cfg.mode == IndexMode::None || chunks.is_empty() {
-        return EqIndex::new();
+        return EqIndex::default();
     }
 
     let allow: Option<HashMap<String, ()>> = if cfg.mode == IndexMode::List {
@@ -1857,7 +1863,7 @@ fn build_eq_index_with_policy(chunks: &[RecordBatch], cfg: &IndexConfig) -> EqIn
                 _ => return None,
             }
 
-            let mut map: HashMap<String, Vec<u32>> = HashMap::new();
+            let mut map: FastMap<String, Vec<u32>> = FastMap::default();
 
             for (bi, batch) in chunks.iter().enumerate() {
                 let base = batch_offsets[bi];
@@ -2133,7 +2139,19 @@ pub fn serialize(batch: &RecordBatch) -> Result<String, AppError> {
         })
         .collect();
 
+    // Resolve every column's concrete Arrow array type exactly ONCE here,
+    // instead of paying a `data_type()` match + `downcast_ref` for every
+    // single cell. The inner row loop then dispatches over a small enum,
+    // which the compiler turns into a cheap jump table.
+    let encoders: Vec<ColEnc> = batch
+        .columns()
+        .iter()
+        .map(|c| ColEnc::new(c.as_ref()))
+        .collect();
+
     let mut buf: Vec<u8> = Vec::with_capacity(n_rows.max(1) * 300);
+    let mut itoa_buf = itoa::Buffer::new();
+    let mut ryu_buf = ryu::Buffer::new();
     buf.push(b'[');
 
     for row in 0..n_rows {
@@ -2141,23 +2159,200 @@ pub fn serialize(batch: &RecordBatch) -> Result<String, AppError> {
             buf.push(b',');
         }
         buf.push(b'{');
-        for (i, key) in keys.iter().enumerate() {
+        for (i, (key, enc)) in keys.iter().zip(encoders.iter()).enumerate() {
             if i > 0 {
                 buf.push(b',');
             }
             buf.extend_from_slice(key);
-            let col = batch.column(i);
-            if col.is_null(row) {
-                buf.extend_from_slice(b"null");
-            } else {
-                write_value(&mut buf, col.as_ref(), row);
-            }
+            enc.write(&mut buf, row, &mut itoa_buf, &mut ryu_buf);
         }
         buf.push(b'}');
     }
 
     buf.push(b']');
     Ok(unsafe { String::from_utf8_unchecked(buf) })
+}
+
+/// Per-column JSON encoder. The concrete Arrow array type is resolved once
+/// (in [`ColEnc::new`]) so the hot row loop dispatches over this small enum
+/// instead of repeating `data_type()` matching + `downcast_ref` for every
+/// cell. Each variant borrows the already-downcast typed array.
+enum ColEnc<'a> {
+    Utf8(&'a StringArray),
+    LargeUtf8(&'a LargeStringArray),
+    Utf8View(&'a StringViewArray),
+    /// Dictionary-encoded UTF-8 (Int32 keys). Holds the keys array and the
+    /// pre-downcast string values so neither is re-resolved per row.
+    DictI32Utf8(
+        &'a arrow::array::DictionaryArray<arrow::datatypes::Int32Type>,
+        &'a StringArray,
+    ),
+    Bool(&'a BooleanArray),
+    I8(&'a Int8Array),
+    I16(&'a Int16Array),
+    I32(&'a Int32Array),
+    I64(&'a Int64Array),
+    U8(&'a UInt8Array),
+    U16(&'a UInt16Array),
+    U32(&'a UInt32Array),
+    U64(&'a UInt64Array),
+    Dec128(&'a Decimal128Array),
+    Dec256(&'a Decimal256Array),
+    F32(&'a Float32Array),
+    F64(&'a Float64Array),
+    /// Anything else: fall back to the generic `write_value` dispatch.
+    Other(&'a dyn Array),
+}
+
+impl<'a> ColEnc<'a> {
+    fn new(col: &'a dyn Array) -> ColEnc<'a> {
+        macro_rules! dc {
+            ($t:ty) => {
+                col.as_any().downcast_ref::<$t>().unwrap()
+            };
+        }
+        match col.data_type() {
+            DataType::Utf8 => ColEnc::Utf8(dc!(StringArray)),
+            DataType::LargeUtf8 => ColEnc::LargeUtf8(dc!(LargeStringArray)),
+            DataType::Utf8View => ColEnc::Utf8View(dc!(StringViewArray)),
+            DataType::Dictionary(key, value)
+                if matches!(key.as_ref(), DataType::Int32)
+                    && matches!(value.as_ref(), DataType::Utf8) =>
+            {
+                let dict = dc!(arrow::array::DictionaryArray<arrow::datatypes::Int32Type>);
+                let values = dict
+                    .values()
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .unwrap();
+                ColEnc::DictI32Utf8(dict, values)
+            }
+            DataType::Boolean => ColEnc::Bool(dc!(BooleanArray)),
+            DataType::Int8 => ColEnc::I8(dc!(Int8Array)),
+            DataType::Int16 => ColEnc::I16(dc!(Int16Array)),
+            DataType::Int32 => ColEnc::I32(dc!(Int32Array)),
+            DataType::Int64 => ColEnc::I64(dc!(Int64Array)),
+            DataType::UInt8 => ColEnc::U8(dc!(UInt8Array)),
+            DataType::UInt16 => ColEnc::U16(dc!(UInt16Array)),
+            DataType::UInt32 => ColEnc::U32(dc!(UInt32Array)),
+            DataType::UInt64 => ColEnc::U64(dc!(UInt64Array)),
+            DataType::Decimal128(_, _) => ColEnc::Dec128(dc!(Decimal128Array)),
+            DataType::Decimal256(_, _) => ColEnc::Dec256(dc!(Decimal256Array)),
+            DataType::Float32 => ColEnc::F32(dc!(Float32Array)),
+            DataType::Float64 => ColEnc::F64(dc!(Float64Array)),
+            _ => ColEnc::Other(col),
+        }
+    }
+
+    #[inline]
+    fn write(
+        &self,
+        buf: &mut Vec<u8>,
+        row: usize,
+        itoa_buf: &mut itoa::Buffer,
+        ryu_buf: &mut ryu::Buffer,
+    ) {
+        macro_rules! int {
+            ($arr:expr) => {{
+                if $arr.is_null(row) {
+                    buf.extend_from_slice(b"null");
+                } else {
+                    buf.extend_from_slice(itoa_buf.format($arr.value(row)).as_bytes());
+                }
+            }};
+        }
+        match self {
+            ColEnc::Utf8(a) => {
+                if a.is_null(row) {
+                    buf.extend_from_slice(b"null");
+                } else {
+                    write_str(buf, a.value(row));
+                }
+            }
+            ColEnc::LargeUtf8(a) => {
+                if a.is_null(row) {
+                    buf.extend_from_slice(b"null");
+                } else {
+                    write_str(buf, a.value(row));
+                }
+            }
+            ColEnc::Utf8View(a) => {
+                if a.is_null(row) {
+                    buf.extend_from_slice(b"null");
+                } else {
+                    write_str(buf, a.value(row));
+                }
+            }
+            ColEnc::DictI32Utf8(keys, values) => {
+                if keys.is_null(row) {
+                    buf.extend_from_slice(b"null");
+                } else {
+                    let k = keys.keys().value(row) as usize;
+                    write_str(buf, values.value(k));
+                }
+            }
+            ColEnc::Bool(a) => {
+                if a.is_null(row) {
+                    buf.extend_from_slice(b"null");
+                } else {
+                    buf.extend_from_slice(if a.value(row) { b"true" } else { b"false" });
+                }
+            }
+            ColEnc::I8(a) => int!(a),
+            ColEnc::I16(a) => int!(a),
+            ColEnc::I32(a) => int!(a),
+            ColEnc::I64(a) => int!(a),
+            ColEnc::U8(a) => int!(a),
+            ColEnc::U16(a) => int!(a),
+            ColEnc::U32(a) => int!(a),
+            ColEnc::U64(a) => int!(a),
+            ColEnc::Dec128(a) => {
+                if a.is_null(row) {
+                    buf.extend_from_slice(b"null");
+                } else {
+                    write_str(buf, &a.value_as_string(row));
+                }
+            }
+            ColEnc::Dec256(a) => {
+                if a.is_null(row) {
+                    buf.extend_from_slice(b"null");
+                } else {
+                    write_str(buf, &a.value_as_string(row));
+                }
+            }
+            ColEnc::F32(a) => {
+                if a.is_null(row) {
+                    buf.extend_from_slice(b"null");
+                } else {
+                    let v = a.value(row);
+                    if v.is_finite() {
+                        buf.extend_from_slice(ryu_buf.format_finite(v).as_bytes());
+                    } else {
+                        buf.extend_from_slice(b"null");
+                    }
+                }
+            }
+            ColEnc::F64(a) => {
+                if a.is_null(row) {
+                    buf.extend_from_slice(b"null");
+                } else {
+                    let v = a.value(row);
+                    if v.is_finite() {
+                        buf.extend_from_slice(ryu_buf.format_finite(v).as_bytes());
+                    } else {
+                        buf.extend_from_slice(b"null");
+                    }
+                }
+            }
+            ColEnc::Other(col) => {
+                if col.is_null(row) {
+                    buf.extend_from_slice(b"null");
+                } else {
+                    write_value(buf, *col, row);
+                }
+            }
+        }
+    }
 }
 
 #[inline]

@@ -46,6 +46,7 @@ duckdb     = { version = "1.10503.0", features = ["bundled"] }
 rayon      = "1.12.0"
 itoa       = "1.0.18"
 ryu        = "1.0.23"
+ahash      = "0.8"
 arc-swap   = "1.9.1"
 object_store = { version = "0.13", features = ["aws"] }
 url          = "2"
