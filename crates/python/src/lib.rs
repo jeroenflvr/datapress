@@ -25,8 +25,8 @@ use datapress_core::config::{
     AddressingStyle, AppConfig, AuthConfig as CoreAuthConfig, Backend, BucketInHost,
     DatasetConfig as CoreDatasetConfig, ExplorerConfig as CoreExplorerConfig, IndexConfig,
     IndexMode, MetricsConfig as CoreMetricsConfig, Partitioning, S3Config as CoreS3Config,
-    ServerConfig, SourceConfig, SourceKind, SwaggerConfig as CoreSwaggerConfig,
-    SwaggerOAuth2Config as CoreSwaggerOAuth2Config,
+    ServerConfig, SourceConfig, SourceKind, SqlConfig as CoreSqlConfig,
+    SwaggerConfig as CoreSwaggerConfig, SwaggerOAuth2Config as CoreSwaggerOAuth2Config,
 };
 
 // ---------------------------------------------------------------------------
@@ -627,6 +627,12 @@ pub struct PyDataPressConfig {
     /// with ``/``. Default ``"/explore"``.
     #[pyo3(get, set)]
     pub explorer_path: String,
+    /// Enable the raw-SQL endpoint ``POST /api/v1/sql``. Default ``False``.
+    #[pyo3(get, set)]
+    pub sql_enabled: bool,
+    /// Hard cap on rows returned by one raw-SQL query. Default ``100_000``.
+    #[pyo3(get, set)]
+    pub sql_max_rows: u64,
 }
 
 #[pymethods]
@@ -671,6 +677,10 @@ impl PyDataPressConfig {
     ///     explorer_path (str): Path the explorer UI is served on. Must
     ///         start with ``/`` and not end with ``/``. Default
     ///         ``"/explore"``.
+    ///     sql_enabled (bool): Enable the raw-SQL endpoint
+    ///         ``POST /api/v1/sql``. Default ``False``.
+    ///     sql_max_rows (int): Hard cap on rows returned by one raw-SQL
+    ///         query. Default ``100_000``.
     #[new]
     #[pyo3(signature = (
         backend            = "duckdb".to_string(),
@@ -698,6 +708,8 @@ impl PyDataPressConfig {
         swagger_oauth2_pkce      = true,
         explorer_enabled   = true,
         explorer_path      = "/explore".to_string(),
+        sql_enabled        = false,
+        sql_max_rows       = 100_000,
     ))]
     #[allow(clippy::too_many_arguments)] // user-facing kwargs surface
     fn new(
@@ -726,6 +738,8 @@ impl PyDataPressConfig {
         swagger_oauth2_pkce: bool,
         explorer_enabled: bool,
         explorer_path: String,
+        sql_enabled: bool,
+        sql_max_rows: u64,
     ) -> Self {
         Self {
             backend,
@@ -753,6 +767,8 @@ impl PyDataPressConfig {
             swagger_oauth2_pkce,
             explorer_enabled,
             explorer_path,
+            sql_enabled,
+            sql_max_rows,
         }
     }
 }
@@ -898,6 +914,14 @@ impl PyDataPressConfig {
             enabled: self.explorer_enabled,
             path: self.explorer_path.clone(),
         })
+    }
+
+    /// Build the core `SqlConfig` from the Python-facing fields.
+    fn sql_into_core(&self) -> CoreSqlConfig {
+        CoreSqlConfig {
+            enabled: self.sql_enabled,
+            max_rows: self.sql_max_rows,
+        }
     }
 }
 
@@ -1136,6 +1160,7 @@ impl PyDataPress {
         let metrics = config.metrics_into_core()?;
         let swagger = config.swagger_into_core()?;
         let explorer = config.explorer_into_core()?;
+        let sql = config.sql_into_core();
         let server = config.into_core()?;
         let datasets = datasets
             .into_iter()
@@ -1153,6 +1178,7 @@ impl PyDataPress {
                 metrics,
                 explorer,
                 auth,
+                sql,
                 datasets,
             },
         })
@@ -1245,6 +1271,7 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
         metrics: cfg.metrics.clone(),
         explorer: cfg.explorer.clone(),
         auth: cfg.auth.clone(),
+        sql: cfg.sql.clone(),
         datasets: cfg.datasets.clone(),
     }
 }

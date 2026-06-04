@@ -51,6 +51,24 @@ impl Default for QueryLimits {
     }
 }
 
+/// Raw-SQL endpoint settings copied from `[sql]` config into Actix app
+/// data. When `enabled` is false the `POST /api/v1/sql` handler returns
+/// `404` and never touches the engine.
+#[derive(Debug, Clone, Copy)]
+pub struct SqlSettings {
+    pub enabled: bool,
+    pub max_rows: u64,
+}
+
+impl Default for SqlSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            max_rows: 100_000,
+        }
+    }
+}
+
 /// MIME type used for Arrow IPC stream responses.
 pub const ARROW_IPC_MIME: &str = "application/vnd.apache.arrow.stream";#[get("/health")]
 pub async fn health() -> HttpResponse {

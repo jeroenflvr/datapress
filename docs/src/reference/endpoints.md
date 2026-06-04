@@ -11,6 +11,7 @@ under `/api/v1/` and `/api/` is shifted by `prefix` when set.
 | GET    | `/api/v1/datasets`                                | —               | List configured datasets and metadata.                               |
 | GET    | `/api/v1/datasets/{name}/schema`                  | —               | Inferred schema + one sample row.                                    |
 | POST   | `/api/v1/datasets/{name}/query`                   | [Query body](../query/request-body.md) | Filter / project / sort / paginate.                |
+| POST   | `/api/v1/sql`                                     | [SQL body](../query/sql.md) | Raw read-only SQL over one dataset. Off unless `[sql].enabled`. |
 | POST   | `/api/v1/datasets/{name}/query/stream`            | [Arrow IPC](../query/arrow-ipc.md) | Stream all matching rows as Arrow IPC.             |
 | POST   | `/api/v1/datasets/{name}/count`                   | `{ predicates? }` | Total or filtered row count.                                       |
 | GET    | `/api/v1/datasets/{name}/parquet`                 | —               | Whole dataset as a Parquet file (HTTP range + `HEAD`).               |
@@ -27,6 +28,7 @@ Same handlers, no `/v1`:
 | GET    | `/api/datasets`                            |
 | GET    | `/api/datasets/{name}/schema`              |
 | POST   | `/api/datasets/{name}/query`               |
+| POST   | `/api/sql`                                 |
 | POST   | `/api/datasets/{name}/query/stream`        |
 | POST   | `/api/datasets/{name}/count`               |
 | GET    | `/api/datasets/{name}/parquet`             |

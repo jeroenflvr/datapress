@@ -34,3 +34,10 @@ name = "..."
   styles, per-dataset env overrides.
 - [Indexing](indexing.md) — DataFusion equality-index policy.
 - [Documentation site](docs-site.md) — enabling the embedded MkDocs site.
+
+## Optional feature blocks
+
+A few features are opt-in and configured in their own block:
+
+- `[sql]` — the [raw SQL endpoint](../query/sql.md) (`POST /api/v1/sql`).
+  Disabled by default; set `enabled = true` to expose it.

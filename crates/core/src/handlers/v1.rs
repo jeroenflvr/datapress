@@ -21,10 +21,10 @@ use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 
 use crate::admin;
 use crate::handlers::{
-    ARROW_IPC_MIME, BackendData, PARQUET_MIME, ParquetCache, QueryLimits, serve_bytes_with_range,
-    wants_arrow,
+    ARROW_IPC_MIME, BackendData, PARQUET_MIME, ParquetCache, QueryLimits, SqlSettings,
+    serve_bytes_with_range, wants_arrow,
 };
-use crate::models::{CountRequest, QueryRequest};
+use crate::models::{CountRequest, QueryRequest, SqlRequest};
 
 // -------------------------------------------------------------- auth guards --
 
@@ -84,6 +84,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/datasets", web::get().to(list_datasets))
         .route("/datasets/{name}/schema", web::get().to(get_schema))
         .route("/datasets/{name}/query", web::post().to(query_dataset))
+        .route("/sql", web::post().to(sql_query))
         .route(
             "/datasets/{name}/query/stream",
             web::post().to(stream_dataset),
@@ -105,6 +106,7 @@ pub const ROUTES: &[(&str, &str)] = &[
     ("GET", "/datasets"),
     ("GET", "/datasets/{name}/schema"),
     ("POST", "/datasets/{name}/query"),
+    ("POST", "/sql"),
     ("POST", "/datasets/{name}/query/stream"),
     ("POST", "/datasets/{name}/count"),
     ("GET", "/datasets/{name}/parquet"),
@@ -202,6 +204,64 @@ pub async fn query_dataset(
     match backend.query(&name, &req).await {
         Ok(arr) => {
             let body = format!(r#"{{"data":{arr},"page":{page},"page_size":{page_size}}}"#);
+            HttpResponse::Ok()
+                .content_type("application/json")
+                .body(body)
+        }
+        Err(e) => e.error_response(),
+    }
+}
+
+/// Raw-SQL endpoint: `POST /api/v1/sql`.
+///
+/// Accepts an arbitrary read-only `SELECT` in the request body and runs
+/// it against the engine. Disabled unless `[sql].enabled = true`; when
+/// off, returns `404` so the endpoint is invisible.
+///
+/// Phase 1 is scoped to a single dataset per query: the statement is
+/// parsed and validated by [`crate::sql::validate`], which rejects
+/// anything that is not a single read-only query, references an unknown
+/// table / file function, or touches more than one registered dataset.
+/// The result is hard-capped at `[sql].max_rows` rows.
+pub async fn sql_query(
+    http: HttpRequest,
+    backend: BackendData,
+    settings: Option<web::Data<SqlSettings>>,
+    body: web::Json<SqlRequest>,
+) -> HttpResponse {
+    let settings = settings
+        .as_ref()
+        .map(|s| *s.get_ref())
+        .unwrap_or_default();
+    // When the endpoint is disabled, behave as if the route does not
+    // exist — don't leak its presence or run the auth challenge.
+    if !settings.enabled {
+        return crate::errors::AppError::NotFound("sql endpoint".into()).error_response();
+    }
+    if let Err(e) = require_read(&http) {
+        return e.error_response();
+    }
+
+    // Build the case-insensitive allowlist of registered datasets. Phase 1
+    // permits at most one distinct dataset per statement.
+    let allowed: std::collections::HashSet<String> =
+        backend.names().into_iter().map(|n| n.to_lowercase()).collect();
+
+    let validated = match crate::sql::validate(&body.sql, &allowed, 1) {
+        Ok(v) => v,
+        Err(e) => return e.error_response(),
+    };
+
+    // The effective row cap is the server limit, optionally lowered (never
+    // raised) by the request's `max_rows`.
+    let max_rows = match body.max_rows {
+        Some(req_cap) => req_cap.clamp(1, settings.max_rows),
+        None => settings.max_rows,
+    };
+
+    match backend.query_sql(&validated.sql, max_rows).await {
+        Ok(arr) => {
+            let body = format!(r#"{{"data":{arr},"max_rows":{max_rows}}}"#);
             HttpResponse::Ok()
                 .content_type("application/json")
                 .body(body)

@@ -35,6 +35,33 @@ payload = c.query_json("accidents", { "page_size": 50 })
 # -> { "data": [...], "page": 1, "page_size": 50 }
 ```
 
+## Raw SQL
+
+`sql()` posts a single read-only `SELECT` to `POST /api/v1/sql` and
+returns the result as a list of row dicts. The endpoint must be enabled
+server-side (`[sql].enabled = true`, or `sql_enabled=True` on
+[`DataPressConfig`](config.md)); otherwise the server responds `404` and
+the call raises `DataPressHTTPError`.
+
+```python
+rows = c.sql(
+    "SELECT State, COUNT(*) AS n FROM accidents GROUP BY State ORDER BY n DESC",
+    max_rows=10,
+)
+# -> [{"State": "CA", "n": 1234}, {"State": "TX", "n": 987}, ...]
+```
+
+Phase 1 allows **one** registered dataset per statement (no cross-dataset
+joins yet). `max_rows` is clamped server-side into `[1, [sql].max_rows]`;
+it can never raise the server cap. Omit it to use the configured cap.
+
+Load the rows straight into a DataFrame:
+
+```python
+import pandas as pd
+df = pd.DataFrame(c.sql("SELECT * FROM accidents WHERE Severity >= 3"))
+```
+
 ## Filtered counts
 
 ```python

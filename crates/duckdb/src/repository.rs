@@ -147,6 +147,19 @@ fn stream_as_json_array(
     Ok(buf)
 }
 
+/// Execute a pre-validated raw `SELECT` and return the JSON `data` array.
+///
+/// The statement has already passed [`datapress_core::sql::validate`]
+/// (single read-only query, registered datasets only). Here it is wrapped
+/// so each result row is emitted as a JSON object via DuckDB's `to_json`,
+/// and an outer `LIMIT` caps the total at `max_rows` regardless of the
+/// user's own clauses.
+pub fn query_sql(conn: &Connection, sql: &str, max_rows: u64) -> Result<String, AppError> {
+    let cap = max_rows.max(1);
+    let wrapped = format!("SELECT to_json(_dp) FROM ({sql}) AS _dp LIMIT {cap}");
+    stream_as_json_array(conn, &wrapped, &[])
+}
+
 fn build_where<S: AsRef<str>>(conditions: &[S]) -> String {
     if conditions.is_empty() {
         String::new()

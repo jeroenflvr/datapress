@@ -18,6 +18,7 @@ pub mod handlers;
 pub mod models;
 pub mod schema;
 pub mod server;
+pub mod sql;
 #[cfg(feature = "swagger")]
 pub mod swagger;
 pub mod timeout;

@@ -677,6 +677,17 @@ impl Backend for Registry {
         .map_err(|e| AppError::Internal(format!("join error: {e}")))?
     }
 
+    async fn query_sql(&self, sql: &str, max_rows: u64) -> Result<String, AppError> {
+        let pool = self.pool.clone();
+        let sql = sql.to_string();
+        actix_web::web::block(move || -> Result<String, AppError> {
+            let conn = DbPool::get(&pool);
+            crate::repository::query_sql(&conn, &sql, max_rows)
+        })
+        .await
+        .map_err(|e| AppError::Internal(format!("join error: {e}")))?
+    }
+
     async fn parquet(&self, name: &str) -> Result<bytes::Bytes, AppError> {
         let schema = self.get(name)?;
         let pool = self.pool.clone();

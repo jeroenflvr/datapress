@@ -99,6 +99,7 @@ async fn make_delta_store(location: &str) -> Store {
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        sql: datapress_core::config::SqlConfig::default(),
         datasets: vec![DatasetConfig {
             name: "people".into(),
             source: SourceConfig {
@@ -152,6 +153,7 @@ async fn make_store_with_max_page_size(location: &str, lazy: bool, max_page_size
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        sql: datapress_core::config::SqlConfig::default(),
         datasets: vec![DatasetConfig {
             name: "people".into(),
             source: SourceConfig {

@@ -240,6 +240,35 @@ impl Store {
         serialize(&batch)
     }
 
+    /// Execute a pre-validated raw `SELECT` and return the JSON `data`
+    /// array. The statement has already passed
+    /// [`datapress_core::sql::validate`]; here it is wrapped in an outer
+    /// `LIMIT max_rows` so the result is bounded regardless of the user's
+    /// own clauses, executed through the shared `SessionContext`, and run
+    /// through the same fast JSON encoder as [`Self::query`].
+    pub async fn query_sql(&self, sql: &str, max_rows: u64) -> Result<String, AppError> {
+        let cap = max_rows.max(1);
+        let wrapped = format!("SELECT * FROM ({sql}) AS _datapress_sql LIMIT {cap}");
+        let df = self.ctx.sql(&wrapped).await?;
+        let batches = df.collect().await?;
+        if batches.is_empty() || batches.iter().all(|b| b.num_rows() == 0) {
+            return Ok("[]".to_string());
+        }
+        let batch = if batches.len() == 1 {
+            batches.into_iter().next().expect("checked len")
+        } else {
+            compute::concat_batches(&batches[0].schema(), batches.iter())?
+        };
+        // Defence in depth: the outer LIMIT already bounds the row count,
+        // but slice anyway so a planning quirk can never blow the cap.
+        let batch = if batch.num_rows() as u64 > cap {
+            batch.slice(0, cap as usize)
+        } else {
+            batch
+        };
+        serialize(&batch)
+    }
+
     /// Same plan as [`Self::query`], but encode the result page as an
     /// Arrow IPC stream (one schema message + one batch + EOS). Empty
     /// results still produce a valid, self-describing zero-batch stream.
@@ -2698,6 +2727,10 @@ impl Backend for Store {
 
     async fn count(&self, name: &str, req: &CountRequest) -> Result<i64, AppError> {
         Store::count(self, name, req).await
+    }
+
+    async fn query_sql(&self, sql: &str, max_rows: u64) -> Result<String, AppError> {
+        Store::query_sql(self, sql, max_rows).await
     }
 
     async fn parquet(&self, name: &str) -> Result<bytes::Bytes, AppError> {

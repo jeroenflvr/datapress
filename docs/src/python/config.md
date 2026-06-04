@@ -24,6 +24,24 @@ cfg = DataPressConfig(
 Every kwarg mirrors the TOML `[server]` block. See
 [Configuration › Server](../configuration/server.md) for full semantics.
 
+### Raw SQL endpoint
+
+`sql_enabled` mirrors the TOML `[sql]` block and exposes
+`POST /api/v1/sql` for read-only SQL over a single dataset. It is
+**disabled by default**.
+
+```python
+cfg = DataPressConfig(
+    backend="datafusion",
+    port=8000,
+    sql_enabled=True,        # exposes POST /api/v1/sql (default False)
+    sql_max_rows=100_000,    # hard cap on rows per query (default 100_000)
+)
+```
+
+See [Querying › Raw SQL](../query/sql.md) for the request/response shape
+and the validation rules.
+
 ### Swagger UI OAuth2 / OIDC
 
 `AuthConfig` protects the API. The `swagger_oauth2_*` fields only make
