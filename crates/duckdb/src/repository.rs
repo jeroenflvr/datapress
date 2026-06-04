@@ -160,6 +160,35 @@ pub fn query_sql(conn: &Connection, sql: &str, max_rows: u64) -> Result<String, 
     stream_as_json_array(conn, &wrapped, &[])
 }
 
+/// Execute a pre-validated raw `SELECT` and write the result as an Arrow
+/// IPC stream (schema message + batches + EOS) to `writer`.
+///
+/// Unlike [`query_sql`], the projection is emitted as **raw typed
+/// columns** (no `to_json`), so the client receives proper Arrow arrays.
+/// An outer `LIMIT` caps the total at `max_rows`. Backs the Arrow
+/// content-negotiated branch of `POST /api/v1/sql`.
+pub fn query_sql_arrow_write<W: Write>(
+    conn: &Connection,
+    sql: &str,
+    max_rows: u64,
+    writer: &mut W,
+) -> Result<(), AppError> {
+    let cap = max_rows.max(1);
+    let wrapped = format!("SELECT * FROM ({sql}) AS _dp LIMIT {cap}");
+    let mut stmt = conn.prepare(&wrapped)?;
+    let arrow_iter = stmt.query_arrow([])?;
+    let schema: Schema = (*arrow_iter.get_schema()).clone();
+    let mut w = StreamWriter::try_new(writer, &schema)
+        .map_err(|e| AppError::Internal(format!("arrow ipc init: {e}")))?;
+    for b in arrow_iter {
+        w.write(&b)
+            .map_err(|e| AppError::Internal(format!("arrow ipc write: {e}")))?;
+    }
+    w.finish()
+        .map_err(|e| AppError::Internal(format!("arrow ipc finish: {e}")))?;
+    Ok(())
+}
+
 fn build_where<S: AsRef<str>>(conditions: &[S]) -> String {
     if conditions.is_empty() {
         String::new()

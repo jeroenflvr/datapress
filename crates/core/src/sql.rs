@@ -19,10 +19,13 @@
 //! dataset allowlist check, so `WITH t AS (SELECT … FROM events) SELECT …`
 //! is accepted (it still only touches `events`).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::ControlFlow;
 
-use sqlparser::ast::{Expr, ObjectName, Query, Statement, Visit, Visitor};
+use sqlparser::ast::{
+    Expr, Ident, ObjectName, ObjectNamePart, Query, Statement, Visit, VisitMut, Visitor,
+    VisitorMut,
+};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
@@ -116,6 +119,87 @@ pub fn validate(
         sql: trimmed.to_string(),
         datasets,
     })
+}
+
+/// Rewrite references to registered tables and their columns so they
+/// match **case-insensitively**, the way DuckDB does.
+///
+/// DataFusion lowercases unquoted identifiers by default, so a query like
+/// `SELECT State FROM accidents` is looked up as `state` and fails against
+/// a case-sensitive Parquet column literally named `State`. Rather than
+/// disable normalization globally (which would also make *aliases* and
+/// *CTE names* case-sensitive), we rewrite only the identifiers that name
+/// a known dataset or column into their **canonical casing, quoted**.
+/// Quoted identifiers bypass the engine's lowercasing and match the stored
+/// name exactly, while every other identifier (aliases, CTE names, …) is
+/// left untouched so the engine's normal case-insensitive handling still
+/// applies.
+///
+/// `tables` and `columns` map a **lowercased** name to its canonical
+/// spelling. On any parse failure the input is returned unchanged so the
+/// backend can surface a meaningful error.
+pub fn canonicalize_identifiers(
+    sql: &str,
+    tables: &HashMap<String, String>,
+    columns: &HashMap<String, String>,
+) -> String {
+    let mut statements = match Parser::parse_sql(&GenericDialect {}, sql) {
+        Ok(s) if s.len() == 1 => s,
+        _ => return sql.to_string(),
+    };
+    let mut canon = Canonicalizer { tables, columns };
+    let _ = VisitMut::visit(&mut statements[0], &mut canon);
+    statements[0].to_string()
+}
+
+struct Canonicalizer<'a> {
+    tables: &'a HashMap<String, String>,
+    columns: &'a HashMap<String, String>,
+}
+
+impl Canonicalizer<'_> {
+    /// If `ident` (case-folded) names something in `map`, replace it with
+    /// the canonical spelling and force double-quoting so the engine keeps
+    /// the exact case.
+    fn rewrite(ident: &mut Ident, map: &HashMap<String, String>) {
+        if let Some(canonical) = map.get(&ident.value.to_lowercase()) {
+            ident.value = canonical.clone();
+            ident.quote_style = Some('"');
+        }
+    }
+}
+
+impl VisitorMut for Canonicalizer<'_> {
+    type Break = ();
+
+    fn pre_visit_relation(&mut self, relation: &mut ObjectName) -> ControlFlow<Self::Break> {
+        for part in relation.0.iter_mut() {
+            if let ObjectNamePart::Identifier(ident) = part {
+                Self::rewrite(ident, self.tables);
+            }
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn pre_visit_expr(&mut self, expr: &mut Expr) -> ControlFlow<Self::Break> {
+        match expr {
+            // Bare column reference: `State`.
+            Expr::Identifier(ident) => Self::rewrite(ident, self.columns),
+            // Qualified reference: `accidents.State` / `a.State`. The last
+            // part is the column; earlier parts qualify it with a table or
+            // alias (only real table names are rewritten).
+            Expr::CompoundIdentifier(idents) => {
+                if let Some((column, qualifiers)) = idents.split_last_mut() {
+                    Self::rewrite(column, self.columns);
+                    for qualifier in qualifiers {
+                        Self::rewrite(qualifier, self.tables);
+                    }
+                }
+            }
+            _ => {}
+        }
+        ControlFlow::Continue(())
+    }
 }
 
 struct ScopeCheck<'a> {
@@ -283,5 +367,64 @@ mod tests {
     fn rejects_empty_sql() {
         let err = validate("   ", &allowed(&["events"]), 1).unwrap_err();
         assert!(matches!(err, AppError::InvalidValue(_)));
+    }
+
+    fn maps(
+        tables: &[(&str, &str)],
+        columns: &[(&str, &str)],
+    ) -> (HashMap<String, String>, HashMap<String, String>) {
+        let t = tables
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let c = columns
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        (t, c)
+    }
+
+    #[test]
+    fn canonicalizes_mixed_case_column_and_table() {
+        let (t, c) = maps(
+            &[("accidents", "accidents")],
+            &[("state", "State"), ("id", "ID")],
+        );
+        let out = canonicalize_identifiers(
+            "SELECT state, COUNT(*) AS n FROM Accidents GROUP BY STATE ORDER BY n DESC",
+            &t,
+            &c,
+        );
+        // Column refs become quoted canonical names; the table name is
+        // quoted canonical; the alias `n` is left untouched.
+        assert!(out.contains("\"State\""), "got: {out}");
+        assert!(out.contains("FROM \"accidents\""), "got: {out}");
+        assert!(out.contains("AS n"), "got: {out}");
+        assert!(!out.contains("\"n\""), "alias must not be quoted: {out}");
+    }
+
+    #[test]
+    fn canonicalizes_qualified_column() {
+        let (t, c) = maps(&[("accidents", "accidents")], &[("state", "State")]);
+        let out = canonicalize_identifiers("SELECT a.state FROM accidents AS a", &t, &c);
+        // The column part is canonicalized; the table alias `a` is not a
+        // registered table, so it is left alone.
+        assert!(out.contains("a.\"State\""), "got: {out}");
+    }
+
+    #[test]
+    fn leaves_unknown_identifiers_untouched() {
+        let (t, c) = maps(&[("events", "events")], &[("id", "id")]);
+        let out = canonicalize_identifiers("SELECT foo, bar FROM events", &t, &c);
+        assert!(out.contains("foo"), "got: {out}");
+        assert!(out.contains("bar"), "got: {out}");
+        assert!(!out.contains("\"foo\""), "got: {out}");
+    }
+
+    #[test]
+    fn returns_input_unchanged_on_parse_error() {
+        let (t, c) = maps(&[], &[]);
+        let garbage = "SELECT FROM WHERE";
+        assert_eq!(canonicalize_identifiers(garbage, &t, &c), garbage);
     }
 }

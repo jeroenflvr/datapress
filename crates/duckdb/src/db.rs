@@ -688,6 +688,29 @@ impl Backend for Registry {
         .map_err(|e| AppError::Internal(format!("join error: {e}")))?
     }
 
+    async fn query_sql_arrow_stream(
+        &self,
+        sql: &str,
+        max_rows: u64,
+    ) -> Result<ArrowIpcStream, AppError> {
+        let pool = self.pool.clone();
+        let sql = sql.to_string();
+        let (mut writer, stream) = arrow_ipc_stream_channel(8);
+
+        tokio::task::spawn_blocking(move || {
+            let result = {
+                let conn = DbPool::get(&pool);
+                crate::repository::query_sql_arrow_write(&conn, &sql, max_rows, &mut writer)
+            };
+            if let Err(err) = result {
+                log::error!("duckdb sql arrow stream failed: {err}");
+                writer.send_error(err);
+            }
+        });
+
+        Ok(stream)
+    }
+
     async fn parquet(&self, name: &str) -> Result<bytes::Bytes, AppError> {
         let schema = self.get(name)?;
         let pool = self.pool.clone();

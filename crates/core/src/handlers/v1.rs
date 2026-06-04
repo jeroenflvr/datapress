@@ -223,6 +223,11 @@ pub async fn query_dataset(
 /// anything that is not a single read-only query, references an unknown
 /// table / file function, or touches more than one registered dataset.
 /// The result is hard-capped at `[sql].max_rows` rows.
+///
+/// Like the dataset query endpoint, the response is content-negotiated:
+/// clients that send `Accept: application/vnd.apache.arrow.stream` (or
+/// `?format=arrow`) get an Arrow IPC stream; everything else gets the
+/// JSON `{"data": …, "max_rows": …}` envelope.
 pub async fn sql_query(
     http: HttpRequest,
     backend: BackendData,
@@ -258,6 +263,20 @@ pub async fn sql_query(
         Some(req_cap) => req_cap.clamp(1, settings.max_rows),
         None => settings.max_rows,
     };
+
+    // Content negotiation: clients opt into Arrow IPC via the `Accept`
+    // header or `?format=arrow`. Anything else (including no header) gets
+    // the historical JSON envelope. The Arrow body is itself streamed
+    // (schema message + batches + EOS), capped at `max_rows`.
+    if wants_arrow(&http) {
+        return match backend.query_sql_arrow_stream(&validated.sql, max_rows).await {
+            Ok(stream) => HttpResponse::Ok()
+                .content_type(ARROW_IPC_MIME)
+                .insert_header(("X-Max-Rows", max_rows.to_string()))
+                .streaming(stream),
+            Err(e) => e.error_response(),
+        };
+    }
 
     match backend.query_sql(&validated.sql, max_rows).await {
         Ok(arr) => {

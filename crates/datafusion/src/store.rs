@@ -111,6 +111,11 @@ impl Store {
             deltalake::aws::register_handlers(None);
         }
 
+        // NOTE: identifier handling for the raw-SQL endpoint is done by
+        // rewriting schema column/table references to quoted canonical
+        // names before execution (see `query_sql`). DataFusion's default
+        // identifier normalization is left ON so unquoted *aliases* and
+        // CTE names stay case-insensitive, matching DuckDB.
         let ctx = SessionContext::new();
         let mut datasets = HashMap::with_capacity(cfg.datasets.len());
         let mut configs = HashMap::with_capacity(cfg.datasets.len());
@@ -240,6 +245,26 @@ impl Store {
         serialize(&batch)
     }
 
+    /// Rewrite registered table / column references in a raw-SQL string to
+    /// their canonical, quoted spelling so matching is case-insensitive
+    /// (like DuckDB). Builds the lookup from every currently loaded
+    /// dataset; unknown identifiers (aliases, CTE names) are left for the
+    /// engine's default normalization to handle.
+    fn canonicalize_sql(&self, sql: &str) -> String {
+        let snap = self.datasets.load();
+        let mut tables: HashMap<String, String> = HashMap::with_capacity(snap.len());
+        let mut columns: HashMap<String, String> = HashMap::new();
+        for (name, state) in snap.iter() {
+            tables.insert(name.to_lowercase(), name.clone());
+            for col in &state.schema.columns {
+                columns
+                    .entry(col.name.to_lowercase())
+                    .or_insert_with(|| col.name.clone());
+            }
+        }
+        datapress_core::sql::canonicalize_identifiers(sql, &tables, &columns)
+    }
+
     /// Execute a pre-validated raw `SELECT` and return the JSON `data`
     /// array. The statement has already passed
     /// [`datapress_core::sql::validate`]; here it is wrapped in an outer
@@ -248,6 +273,7 @@ impl Store {
     /// through the same fast JSON encoder as [`Self::query`].
     pub async fn query_sql(&self, sql: &str, max_rows: u64) -> Result<String, AppError> {
         let cap = max_rows.max(1);
+        let sql = self.canonicalize_sql(sql);
         let wrapped = format!("SELECT * FROM ({sql}) AS _datapress_sql LIMIT {cap}");
         let df = self.ctx.sql(&wrapped).await?;
         let batches = df.collect().await?;
@@ -267,6 +293,22 @@ impl Store {
             batch
         };
         serialize(&batch)
+    }
+
+    /// Same plan as [`Self::query_sql`], but encode the bounded result as
+    /// an Arrow IPC stream instead of JSON. Backs the Arrow
+    /// content-negotiated branch of `POST /api/v1/sql`.
+    pub async fn query_sql_arrow_stream(
+        &self,
+        sql: &str,
+        max_rows: u64,
+    ) -> Result<ArrowIpcStream, AppError> {
+        let cap = max_rows.max(1);
+        let sql = self.canonicalize_sql(sql);
+        let wrapped = format!("SELECT * FROM ({sql}) AS _datapress_sql LIMIT {cap}");
+        let df = self.ctx.sql(&wrapped).await?;
+        let batches = df.collect().await?;
+        Ok(stream_arrow_batches(batches))
     }
 
     /// Same plan as [`Self::query`], but encode the result page as an
@@ -2731,6 +2773,14 @@ impl Backend for Store {
 
     async fn query_sql(&self, sql: &str, max_rows: u64) -> Result<String, AppError> {
         Store::query_sql(self, sql, max_rows).await
+    }
+
+    async fn query_sql_arrow_stream(
+        &self,
+        sql: &str,
+        max_rows: u64,
+    ) -> Result<ArrowIpcStream, AppError> {
+        Store::query_sql_arrow_stream(self, sql, max_rows).await
     }
 
     async fn parquet(&self, name: &str) -> Result<bytes::Bytes, AppError> {

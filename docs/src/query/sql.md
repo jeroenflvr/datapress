@@ -95,6 +95,55 @@ Matching is case-insensitive.
 the effective row cap that was applied. Column types follow the engine's
 inferred output schema.
 
+### Arrow IPC
+
+Like the structured [`/query`](request-body.md) endpoint, the response is
+**content-negotiated**. Ask for Arrow and you get an [Arrow IPC
+stream](../backends/comparison.md) instead of the JSON envelope — proper
+typed columns, no JSON stringification, and the body is streamed as it is
+encoded. The same `[sql].max_rows` cap still applies.
+
+Opt in with either the `Accept` header or a `?format=arrow` query param:
+
+```
+POST /api/v1/sql?format=arrow
+Accept: application/vnd.apache.arrow.stream
+```
+
+The response carries `Content-Type: application/vnd.apache.arrow.stream`
+and an `X-Max-Rows` header echoing the applied cap.
+
+=== "curl"
+
+    ```bash
+    curl -s http://localhost:8080/api/v1/sql \
+      -H 'Content-Type: application/json' \
+      -H 'Accept: application/vnd.apache.arrow.stream' \
+      -d '{"sql": "SELECT state, COUNT(*) AS n FROM accidents GROUP BY state"}' \
+      -o result.arrows
+    ```
+
+=== "Python (pandas)"
+
+    ```python
+    import io
+    import requests
+    import pyarrow.ipc as ipc
+
+    resp = requests.post(
+        "http://localhost:8080/api/v1/sql",
+        headers={"Accept": "application/vnd.apache.arrow.stream"},
+        json={"sql": "SELECT state, COUNT(*) AS n FROM accidents GROUP BY state"},
+    )
+    resp.raise_for_status()
+    table = ipc.open_stream(io.BytesIO(resp.content)).read_all()
+    df = table.to_pandas()
+    ```
+
+There is no separate paging for raw SQL: a statement returns a single
+result bounded by `max_rows`, so the Arrow stream already delivers the
+whole (capped) result in one response.
+
 ## Examples
 
 === "curl"
