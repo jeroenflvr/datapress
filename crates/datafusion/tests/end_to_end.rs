@@ -99,6 +99,7 @@ async fn make_delta_store(location: &str) -> Store {
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        sql: datapress_core::config::SqlConfig::default(),
         datasets: vec![DatasetConfig {
             name: "people".into(),
             source: SourceConfig {
@@ -152,6 +153,7 @@ async fn make_store_with_max_page_size(location: &str, lazy: bool, max_page_size
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        sql: datapress_core::config::SqlConfig::default(),
         datasets: vec![DatasetConfig {
             name: "people".into(),
             source: SourceConfig {
@@ -355,6 +357,65 @@ async fn arrow_sql_path_clamps_to_configured_max_page_size() {
         rows, 750,
         "DataFusion SQL path must clamp to server.max_page_size"
     );
+}
+
+#[actix_web::test]
+async fn raw_sql_preserves_identifier_case() {
+    // Parquet column names are case-sensitive. The raw-SQL endpoint must
+    // match dataset & column names case-insensitively (like DuckDB) by
+    // rewriting them to quoted canonical names, so `SELECT state` resolves
+    // against a column literally named `State`.
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("people.parquet");
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("State", DataType::Utf8, false),
+        Field::new("id", DataType::Int64, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(StringArray::from(vec!["CA", "CA", "NY"])),
+            Arc::new(Int64Array::from(vec![1_i64, 2, 3])),
+        ],
+    )
+    .unwrap();
+    let f = std::fs::File::create(&file).unwrap();
+    let mut writer = ArrowWriter::try_new(f, schema, None).unwrap();
+    writer.write(&batch).unwrap();
+    writer.close().unwrap();
+
+    let store = make_store(&file.display().to_string(), true).await;
+
+    // Lowercase `state` must match the case-sensitive Parquet column
+    // `State` (the exact failure the user reported), and so must the
+    // mixed-case spellings.
+    for ident in ["state", "State", "STATE"] {
+        let out = store
+            .query_sql(
+                &format!(
+                    "SELECT {ident}, COUNT(*) AS n FROM people GROUP BY {ident} ORDER BY n DESC"
+                ),
+                100,
+            )
+            .await
+            .unwrap_or_else(|e| panic!("`{ident}` should resolve case-insensitively: {e:?}"));
+        let rows = parse_rows(&out);
+        assert_eq!(rows.len(), 2, "expected one row per distinct State");
+        let ca = rows
+            .iter()
+            .find(|r| r["State"].as_str() == Some("CA"))
+            .expect("CA group present");
+        assert_eq!(ca["n"], Value::from(2));
+    }
+
+    // A mixed-case table name must also resolve.
+    let out = store
+        .query_sql("SELECT COUNT(*) AS n FROM PEOPLE", 100)
+        .await
+        .expect("case-insensitive table name should resolve");
+    let rows = parse_rows(&out);
+    assert_eq!(rows[0]["n"], Value::from(3));
 }
 
 #[actix_web::test]

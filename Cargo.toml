@@ -48,6 +48,9 @@ itoa       = "1.0.18"
 ryu        = "1.0.23"
 ahash      = "0.8"
 arc-swap   = "1.9.1"
+# SQL parser for the raw-SQL endpoint's shared safety gate. Pinned to the
+# version DataFusion 53 resolves to so the AST types stay in lock-step.
+sqlparser  = { version = "0.61", features = ["visitor"] }
 object_store = { version = "0.13", features = ["aws"] }
 url          = "2"
 deltalake    = { version = "0.32", features = ["datafusion", "s3"] }

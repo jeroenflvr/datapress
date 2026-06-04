@@ -391,6 +391,46 @@ fn openapi(oauth2: Option<&ResolvedOAuth2>) -> OpenApi {
                         "404": { "description": "Unknown dataset" }
                     }
                 }
+            },
+            "/api/v1/sql": {
+                "post": {
+                    "tags":    ["datasets"],
+                    "summary": "Run a raw read-only SQL query",
+                    "description": "Execute a single read-only `SELECT` (or `WITH … SELECT`) referencing exactly one registered dataset. Disabled unless `[sql].enabled = true`; returns 404 when off. The statement is parsed and validated before execution, and the result is capped at `[sql].max_rows` rows. Send `Accept: application/vnd.apache.arrow.stream` (or `?format=arrow`) to receive an Arrow IPC stream instead of JSON.",
+                    "requestBody": {
+                        "required": true,
+                        "content": {
+                            "application/json": {
+                                "schema":  { "$ref": "#/components/schemas/SqlRequest" },
+                                "example": {
+                                    "sql": "SELECT state, COUNT(*) AS n FROM accidents GROUP BY state ORDER BY n DESC",
+                                    "max_rows": 100
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Query result (JSON envelope, or an Arrow IPC stream when negotiated)",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type":       "object",
+                                        "properties": {
+                                            "data":     { "type": "array", "items": { "type": "object" } },
+                                            "max_rows": { "type": "integer", "format": "int64" }
+                                        }
+                                    }
+                                },
+                                "application/vnd.apache.arrow.stream": {
+                                    "schema": { "type": "string", "format": "binary" }
+                                }
+                            }
+                        },
+                        "400": { "description": "Statement rejected by the validation gate (not read-only, multiple statements, unknown/file-function table, or more than one dataset)" },
+                        "404": { "description": "Endpoint disabled (`[sql].enabled = false`)" }
+                    }
+                }
             }
         },
         "components": {
@@ -465,6 +505,15 @@ fn openapi(oauth2: Option<&ResolvedOAuth2>) -> OpenApi {
                     "type": "object",
                     "properties": {
                         "predicates": { "type": "array", "items": { "$ref": "#/components/schemas/Predicate" } }
+                    }
+                },
+                "SqlRequest": {
+                    "type": "object",
+                    "required": ["sql"],
+                    "description": "Raw-SQL request. `sql` must be a single read-only SELECT referencing one registered dataset.",
+                    "properties": {
+                        "sql":      { "type": "string", "description": "The SQL statement to execute." },
+                        "max_rows": { "type": "integer", "format": "int64", "description": "Optional client row cap. Clamped to [1, sql.max_rows]; never raises the server cap." }
                     }
                 }
             }

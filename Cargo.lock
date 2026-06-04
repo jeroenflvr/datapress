@@ -2637,6 +2637,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sqlparser",
  "tokio",
  "toml",
  "utoipa",

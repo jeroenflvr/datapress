@@ -142,6 +142,7 @@ nav:
       - Distinct: query/distinct.md
       - Arrow IPC vs JSON: query/arrow-ipc.md
       - Counting: query/count.md
+      - Raw SQL: query/sql.md
       - Recipes: query/recipes.md
   - Backends:
       - backends/index.md

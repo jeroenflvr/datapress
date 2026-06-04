@@ -168,6 +168,8 @@ class DataPressConfig:
     swagger_oauth2_pkce: bool
     explorer_enabled: bool
     explorer_path: str
+    sql_enabled: bool
+    sql_max_rows: int
 
     def __init__(
         self,
@@ -196,6 +198,8 @@ class DataPressConfig:
         swagger_oauth2_pkce: bool = True,
         explorer_enabled: bool = True,
         explorer_path: str = "/explore",
+        sql_enabled: bool = False,
+        sql_max_rows: int = 100_000,
     ) -> None:
         """Build a :class:`DataPressConfig`.
 
@@ -255,6 +259,10 @@ class DataPressConfig:
                 wheel built with the ``explorer`` feature. Default ``True``.
             explorer_path: Path the explorer UI is served on. Must start with
                 ``/`` and not end with ``/``. Default ``"/explore"``.
+            sql_enabled: Enable the raw-SQL endpoint ``POST /api/v1/sql``.
+                Disabled by default. Default ``False``.
+            sql_max_rows: Hard cap on rows returned by one raw-SQL query.
+                Default ``100_000``.
         """
         ...
 

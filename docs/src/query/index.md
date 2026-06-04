@@ -1,7 +1,8 @@
 ---
 description: >-
   Query DataPress over HTTP: projection, pagination, predicates, sorting,
-  grouping and aggregation, distinct, counting, and Arrow IPC vs JSON output.
+  grouping and aggregation, distinct, counting, raw SQL, and Arrow IPC vs
+  JSON output.
 ---
 
 # Querying
@@ -24,6 +25,15 @@ The legacy un-versioned alias `POST /api/datasets/{name}/query` is also
 mounted and behaves identically. The stream endpoint is also available
 under `POST /api/datasets/{name}/query/stream`.
 
+For full SQL — window functions, `CASE`, sub-selects, string and math
+functions — over a single dataset, use the opt-in [raw SQL
+endpoint](sql.md):
+
+```
+POST /api/v1/sql
+Content-Type: application/json
+```
+
 ## Pages
 
 - [Request body](request-body.md) — every field, in one table.
@@ -35,4 +45,5 @@ under `POST /api/datasets/{name}/query/stream`.
 - [Distinct](distinct.md) — `distinct: true`.
 - [Arrow IPC vs JSON](arrow-ipc.md) — paged Arrow responses and full-result streams.
 - [Counting](count.md) — `POST /count` shape.
+- [Raw SQL](sql.md) — opt-in `POST /api/v1/sql` for full SQL over one dataset.
 - [Recipes](recipes.md) — end-to-end queries combining every feature.

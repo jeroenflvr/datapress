@@ -38,6 +38,61 @@ async def main():
 asyncio.run(main())
 ```
 
+## Raw SQL over one dataset
+
+Enable the SQL endpoint with `sql_enabled=True`, then run a `SELECT` with
+`DataPressClient.sql()`. It returns a list of row dicts.
+
+```python
+import asyncio
+from datap_rs import DataPressClient
+from datap_rs.datapress import DataPress, DataPressConfig, DatasetConfig
+
+CFG = DataPressConfig(
+    backend="datafusion",
+    listen="127.0.0.1",
+    port=8000,
+    sql_enabled=True,        # exposes POST /api/v1/sql
+    sql_max_rows=50_000,     # server-side hard cap
+)
+DS = DatasetConfig(
+    name="accidents",
+    source="data/us_accidents/march_2023.parquet",
+    format="parquet",
+)
+
+async def main():
+    server = asyncio.create_task(DataPress(CFG, [DS]).run())
+    await asyncio.sleep(2)
+
+    c = DataPressClient("http://127.0.0.1:8000")
+    rows = c.sql(
+        "SELECT State, COUNT(*) AS n "
+        "FROM accidents GROUP BY State ORDER BY n DESC",
+        max_rows=10,
+    )
+    for r in rows:
+        print(r["State"], r["n"])
+
+    server.cancel()
+
+asyncio.run(main())
+```
+
+A rejected statement (DML, multiple statements, an unknown table, more
+than one dataset, or a file-reading function) raises
+`DataPressHTTPError` with `status == 400`; when the endpoint is disabled
+the status is `404`:
+
+```python
+from datap_rs import DataPressHTTPError
+
+try:
+    c.sql("DELETE FROM accidents")          # not read-only
+except DataPressHTTPError as e:
+    print(e.status, e.payload)              # 400 {'error': 'only read-only ...'}
+```
+
 ## S3-backed dataset
 
 ```python

@@ -53,6 +53,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub explorer: ExplorerConfig,
     #[serde(default)]
+    pub sql: SqlConfig,
+    #[serde(default)]
     pub auth: AuthConfig,
     #[serde(rename = "dataset", default)]
     pub datasets: Vec<DatasetConfig>,
@@ -361,6 +363,43 @@ impl Default for ExplorerConfig {
         Self {
             enabled: true,
             path: "/explore".into(),
+        }
+    }
+}
+
+/// Raw-SQL query endpoint (`[sql]` block).
+///
+/// Exposes `POST /api/v1/sql`, which accepts an arbitrary read-only
+/// `SELECT` in the request body and runs it against the engine. **Off by
+/// default** — raw SQL is a larger attack surface than the structured
+/// `/query` endpoint, so it must be opted into explicitly.
+///
+/// Phase 1 is scoped to a *single* dataset per query: the statement may
+/// reference at most one registered dataset (and no others / no files),
+/// enforced by a parse-time table allowlist. Cross-dataset joins are a
+/// future extension.
+///
+/// Safety rails applied to every accepted statement:
+/// - exactly one statement, and it must be a read-only `SELECT` / `WITH`,
+/// - every referenced table must be a registered dataset (no file
+///   functions, no `ATTACH`/`COPY`/`PRAGMA`/DDL/DML),
+/// - the result is hard-capped at [`SqlConfig::max_rows`] rows.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SqlConfig {
+    /// Enable the `POST /api/v1/sql` endpoint. Default `false`.
+    pub enabled: bool,
+    /// Hard cap on the number of rows a single SQL query may return.
+    /// The query result is wrapped in an outer `LIMIT` so this bound is
+    /// enforced regardless of the user's own `LIMIT`. Default `100_000`.
+    pub max_rows: u64,
+}
+
+impl Default for SqlConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            max_rows: 100_000,
         }
     }
 }
@@ -1292,6 +1331,7 @@ mod tests {
                 swagger: SwaggerConfig::default(),
                 metrics: MetricsConfig::default(),
                 explorer: ExplorerConfig::default(),
+                sql: SqlConfig::default(),
                 auth: AuthConfig::default(),
                 datasets: vec![],
             };
@@ -1307,6 +1347,7 @@ mod tests {
             swagger: SwaggerConfig::default(),
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
+            sql: SqlConfig::default(),
             auth: AuthConfig {
                 read_scopes: vec!["Datasets:Read".into(), "API.READ".into()],
                 reload_scopes: vec!["Datasets:Reload".into()],
@@ -1327,6 +1368,7 @@ mod tests {
             swagger: SwaggerConfig::default(),
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
+            sql: SqlConfig::default(),
             auth: AuthConfig::default(),
             datasets: vec![],
         };
@@ -1354,6 +1396,7 @@ mod tests {
             swagger: SwaggerConfig::default(),
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
+            sql: SqlConfig::default(),
             auth: AuthConfig {
                 enabled: true,
                 issuer: "https://tenant.example.com/".into(),
@@ -1393,6 +1436,7 @@ mod tests {
             swagger: SwaggerConfig::default(),
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
+            sql: SqlConfig::default(),
             auth: AuthConfig::default(),
             datasets: vec![DatasetConfig {
                 name: "x".into(),

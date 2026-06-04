@@ -71,6 +71,23 @@ pub struct QueryRequest {
     pub page_size: u64,
 }
 
+/// Request body for the raw-SQL endpoint (`POST /api/v1/sql`).
+///
+/// `sql` is an arbitrary read-only `SELECT`; it is parsed and validated
+/// by [`crate::sql::validate`] before any engine sees it. `max_rows`
+/// lets a caller request *fewer* rows than the server-side cap
+/// (`[sql].max_rows`); it can never raise the cap.
+#[derive(Clone, Deserialize)]
+pub struct SqlRequest {
+    /// The SQL statement to execute. Must be a single read-only query
+    /// referencing a single registered dataset.
+    pub sql: String,
+    /// Optional client-side row cap. Clamped to the server-configured
+    /// `[sql].max_rows`; `None` uses the server cap.
+    #[serde(default)]
+    pub max_rows: Option<u64>,
+}
+
 /// One resolved aggregation, ready for SQL emission.
 #[derive(Clone)]
 pub struct AggSpec {

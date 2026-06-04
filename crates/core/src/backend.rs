@@ -152,6 +152,44 @@ pub trait Backend: Send + Sync + 'static {
     /// Count rows in `name` matching `req.predicates`.
     async fn count(&self, name: &str, req: &CountRequest) -> Result<i64, AppError>;
 
+    /// Execute a pre-validated raw `SELECT` and return the JSON-encoded
+    /// `data` array (same shape as [`Backend::query`] — the handler adds
+    /// the `{"data": …}` envelope).
+    ///
+    /// `sql` has already passed [`crate::sql::validate`]: it is a single
+    /// read-only query that references only registered datasets. The
+    /// backend wraps it in an outer `LIMIT max_rows` before executing so
+    /// the result size is bounded regardless of the user's own `LIMIT`.
+    ///
+    /// Default impl errors with `InvalidValue`; backends that support raw
+    /// SQL (DuckDB, DataFusion) override it.
+    async fn query_sql(&self, _sql: &str, _max_rows: u64) -> Result<String, AppError> {
+        Err(AppError::InvalidValue(
+            "raw SQL is not supported by this backend".into(),
+        ))
+    }
+
+    /// Execute a pre-validated raw `SELECT` and stream the result as Arrow
+    /// IPC bytes (one schema message + zero or more `RecordBatch` messages
+    /// + EOS), the same wire format as [`Backend::query_arrow_stream`].
+    ///
+    /// `sql` has already passed [`crate::sql::validate`]; the backend wraps
+    /// it in an outer `LIMIT max_rows` so the result is bounded regardless
+    /// of the caller's own clauses. Powers the Arrow content-negotiated
+    /// branch of `POST /api/v1/sql`.
+    ///
+    /// Default impl errors with `InvalidValue`; backends that support raw
+    /// SQL (DuckDB, DataFusion) override it.
+    async fn query_sql_arrow_stream(
+        &self,
+        _sql: &str,
+        _max_rows: u64,
+    ) -> Result<ArrowIpcStream, AppError> {
+        Err(AppError::InvalidValue(
+            "raw SQL is not supported by this backend".into(),
+        ))
+    }
+
     /// Encode the **entire** dataset as a single self-contained Parquet
     /// file, returned as in-memory bytes.
     ///

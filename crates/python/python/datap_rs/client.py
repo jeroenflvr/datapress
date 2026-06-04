@@ -201,6 +201,39 @@ class DataPressClient:
         envelope = json.loads(body.decode("utf-8"))
         return pa.Table.from_pylist(envelope.get("rows", []))
 
+    def sql(
+        self,
+        sql:      str,
+        max_rows: Optional[int] = None,
+    ) -> list[dict]:
+        """Run a raw read-only SQL statement via ``POST /api/v1/sql``.
+
+        The endpoint must be enabled server-side (``[sql].enabled = true``);
+        otherwise the server responds ``404`` and this raises
+        :class:`DataPressHTTPError`. The statement must be a single
+        read-only ``SELECT`` referencing a single registered dataset.
+
+        Args:
+            sql:      The SQL statement to execute.
+            max_rows: Optional client row cap. Clamped server-side into
+                ``[1, [sql].max_rows]``; it can never raise the server cap.
+                ``None`` uses the configured server cap.
+
+        Returns:
+            The result set as a list of row dicts (the ``data`` array of
+            the response envelope).
+
+        Raises:
+            DataPressHTTPError: On a non-2xx response — e.g. ``404`` when
+                the endpoint is disabled, or ``400`` when the statement is
+                rejected by the validation gate.
+        """
+        body: dict[str, Any] = {"sql": sql}
+        if max_rows is not None:
+            body["max_rows"] = max_rows
+        out = self._request_json("POST", self._url("/api/sql"), json_body=body)
+        return out["data"]
+
     def reload(self, dataset: str) -> dict:
         """Trigger an in-place reload of ``dataset``.
 

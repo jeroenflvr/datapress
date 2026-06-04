@@ -71,6 +71,10 @@ async fn run_server(
     let max_page_size = cfg.server.max_page_size;
     let timeout_ms = cfg.server.request_timeout_ms;
     let shutdown_secs = cfg.server.shutdown_timeout_secs;
+    let sql_settings = handlers::SqlSettings {
+        enabled: cfg.sql.enabled,
+        max_rows: cfg.sql.max_rows.max(1),
+    };
     let docs_cfg = cfg.docs.clone();
     let swagger_cfg = cfg.swagger.clone();
     let metrics_cfg = cfg.metrics.clone();
@@ -289,6 +293,7 @@ async fn run_server(
             .app_data(web::Data::new(backend))
             .app_data(build_info.clone())
             .app_data(web::Data::new(query_limits))
+            .app_data(web::Data::new(sql_settings))
             .app_data(parquet_cache.clone())
             .app_data(json_cfg)
             .app_data(pay_cfg)
