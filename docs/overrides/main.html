@@ -1,0 +1,94 @@
+{#-
+  Extends the Material base template to inject SEO metadata into <head>:
+  Open Graph + Twitter Card tags (rich link previews), keyword and robots
+  meta, and JSON-LD structured data (WebSite + SoftwareApplication). Values
+  come from mkdocs.yml (`site_*`, `extra.*`) and per-page front matter
+  (`description`, `keywords`), so individual pages can override the defaults.
+-#}
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {#- Resolve effective title / description / canonical / image. -#}
+  {% if page and page.meta and page.meta.title %}
+    {% set seo_title = page.meta.title %}
+  {% elif page and page.title and not page.is_homepage %}
+    {% set seo_title = page.title ~ " - " ~ config.site_name %}
+  {% else %}
+    {% set seo_title = config.site_name ~ " - columnar HTTP query server for Parquet and Delta" %}
+  {% endif %}
+
+  {% if page and page.meta and page.meta.description %}
+    {% set seo_description = page.meta.description %}
+  {% else %}
+    {% set seo_description = config.site_description %}
+  {% endif %}
+
+  {% set seo_url = page.canonical_url if page else config.site_url %}
+  {% set seo_image = config.site_url ~ (config.extra.og_image or "assets/images/datapress-logo.svg") %}
+
+  {#- Keywords: page front matter overrides the global list. -#}
+  {% if page and page.meta and page.meta.keywords %}
+    <meta name="keywords" content="{{ page.meta.keywords | join(', ') }}">
+  {% elif config.extra.keywords %}
+    <meta name="keywords" content="{{ config.extra.keywords | join(', ') }}">
+  {% endif %}
+  <meta name="robots" content="index, follow, max-image-preview:large">
+
+  {#- Open Graph (Facebook / Slack / LinkedIn / generic). -#}
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{ config.site_name }}">
+  <meta property="og:title" content="{{ seo_title }}">
+  <meta property="og:description" content="{{ seo_description }}">
+  <meta property="og:url" content="{{ seo_url }}">
+  <meta property="og:image" content="{{ seo_image }}">
+  <meta property="og:image:alt" content="{{ config.site_name }}">
+  <meta property="og:locale" content="en">
+
+  {#- Twitter / X large-image card. -#}
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ seo_title }}">
+  <meta name="twitter:description" content="{{ seo_description }}">
+  <meta name="twitter:image" content="{{ seo_image }}">
+  <meta name="twitter:image:alt" content="{{ config.site_name }}">
+
+  {#- JSON-LD: describe the documented software + the docs site itself. -#}
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "{{ config.site_url }}#website",
+        "url": "{{ config.site_url }}",
+        "name": "{{ config.site_name }}",
+        "description": "{{ config.site_description }}",
+        "inLanguage": "en",
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": "{{ config.site_url }}?q={search_term_string}",
+          "query-input": "required name=search_term_string"
+        }
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "{{ config.site_url }}#software",
+        "name": "{{ config.site_name }}",
+        "description": "{{ config.site_description }}",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Linux, macOS, Windows",
+        "url": "{{ config.site_url }}",
+        "softwareVersion": "{{ config.extra.datapress_version }}",
+        "programmingLanguage": ["Rust", "Python"],
+        "downloadUrl": "https://pypi.org/project/datap-rs/",
+        "codeRepository": "{{ config.repo_url }}",
+        "license": "https://github.com/jeroenflvr/fast-api/blob/main/LICENSE",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      }
+    ]
+  }
+  </script>
+{% endblock %}

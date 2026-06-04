@@ -1,3 +1,9 @@
+---
+description: >-
+  DataPress ships two interchangeable engines behind one HTTP API — DuckDB and
+  Apache Arrow + DataFusion — so you can compare them under the same workload.
+---
+
 # Backends
 
 DataPress ships **two complete implementations** of the same HTTP API:

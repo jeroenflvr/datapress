@@ -1,3 +1,8 @@
+---
+description: >-
+  DataPress reference: HTTP endpoints, error responses, and the changelog.
+---
+
 # Reference
 
 Lookup tables and machine-readable specs.

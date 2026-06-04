@@ -1,3 +1,9 @@
+---
+description: >-
+  Install DataPress, point it at a Parquet or Delta dataset, and run your first
+  typed HTTP query server in three steps.
+---
+
 # Getting started
 
 Three steps to a running server:

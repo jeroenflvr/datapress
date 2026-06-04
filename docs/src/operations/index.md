@@ -1,3 +1,9 @@
+---
+description: >-
+  Operate DataPress in production: health and readiness probes, version metadata,
+  graceful shutdown, structured logging, Prometheus metrics, hot reloads, and OIDC/OAuth2.
+---
+
 # Operations
 
 Day-2 concerns for running DataPress in production.

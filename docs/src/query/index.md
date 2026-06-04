@@ -1,3 +1,9 @@
+---
+description: >-
+  Query DataPress over HTTP: projection, pagination, predicates, sorting,
+  grouping and aggregation, distinct, counting, and Arrow IPC vs JSON output.
+---
+
 # Querying
 
 The query endpoint is:

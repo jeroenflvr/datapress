@@ -1,3 +1,10 @@
+---
+description: >-
+  DataPress turns Parquet and Delta datasets in object storage into fast, typed
+  HTTP APIs — JSON and Arrow IPC — backed by DuckDB or Apache Arrow + DataFusion,
+  with no warehouse and no service layer to build.
+---
+
 # DataPress
 
 <img class="datapress-ascii-logo" src="assets/images/datapress-logo.svg" alt="DataPress ASCII wordmark">

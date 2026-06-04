@@ -1,3 +1,9 @@
+---
+description: >-
+  Configure DataPress from a single TOML file: server settings, datasets,
+  S3 / object storage, and equality indexing for low-latency filters.
+---
+
 # Configuration
 
 Every DataPress instance reads a single TOML file at startup. By

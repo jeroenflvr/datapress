@@ -1,7 +1,8 @@
 site_name: DataPress
-site_description: |
-  Configuration-driven, columnar HTTP query server over Parquet / Delta —
-  one config, two backends (DuckDB and Arrow + DataFusion).
+site_description: >-
+  Configuration-driven, columnar HTTP query server over Parquet and Delta —
+  one config, two backends (DuckDB and Apache Arrow + DataFusion). Serve
+  object-storage datasets as typed JSON and Arrow IPC APIs.
 site_author: DataPress contributors
 site_url: https://docs.datap-rs.org/
 repo_url: https://github.com/jeroenflvr/fast-api
@@ -97,6 +98,20 @@ markdown_extensions:
 extra:
   # Shown as a badge next to the repository link in the header.
   datapress_version: 0.3.3
+  # Used by the `extrahead` override (overrides/main.html) for Open Graph,
+  # Twitter cards, and JSON-LD structured data.
+  og_image: assets/images/datapress-card.png
+  keywords:
+    - DataPress
+    - Parquet HTTP API
+    - Delta Lake server
+    - DuckDB
+    - Apache Arrow
+    - DataFusion
+    - Rust data server
+    - Arrow IPC
+    - columnar query server
+    - S3 Parquet query
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/jeroenflvr/fast-api

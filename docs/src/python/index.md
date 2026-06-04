@@ -1,3 +1,9 @@
+---
+description: >-
+  Use DataPress from Python (datap-rs): configure datasets, run an embedded
+  server, and query it from notebooks, jobs, and pipelines.
+---
+
 # Python
 
 `datap-rs` is the Python wheel: a maturin-built PyO3 binding that
