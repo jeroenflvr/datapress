@@ -276,7 +276,7 @@ Validation rules (raised as `ValueError`):
 - `tenant_claim` must be a JSON Pointer starting with `/`.
 
 To spin up a local OIDC provider for testing, see
-[`examples/keycloak/`](https://github.com/jeroenflvr/fast-api/tree/main/examples/keycloak)
+[`examples/keycloak/`](https://github.com/jeroenflvr/datapress/tree/main/examples/keycloak)
 — one `docker compose up` and you have a pre-provisioned realm with
 client `datapress-api` and the right scopes.
 

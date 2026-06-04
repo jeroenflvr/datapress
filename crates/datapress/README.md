@@ -59,5 +59,5 @@ backends are enabled, e.g.:
 cargo install datapress --features swagger,auth,metrics
 ```
 
-See the [workspace README](https://github.com/jeroenflvr/fast-api) for full
+See the [workspace README](https://github.com/jeroenflvr/datapress) for full
 configuration details.

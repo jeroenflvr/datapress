@@ -1,7 +1,7 @@
 # datapress-datafusion
 
 Apache Arrow + DataFusion-backed implementation of
-[datapress](https://github.com/jeroenflvr/fast-api) — a JSON HTTP API over
+[datapress](https://github.com/jeroenflvr/datapress) — a JSON HTTP API over
 Parquet / Delta datasets.
 
 It pairs [`datapress-core`](https://crates.io/crates/datapress-core) with a

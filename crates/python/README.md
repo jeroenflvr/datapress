@@ -15,7 +15,7 @@
 ![DuckDB](https://img.shields.io/badge/backend-DuckDB-yellow?logo=duckdb)
 ![DataFusion](https://img.shields.io/badge/backend-DataFusion-blue?logo=apache)
 
-[Documentation](https://docs.datap-rs.org) · [Source](https://github.com/jeroenflvr/fast-api) · [PyPI](https://pypi.org/project/datap-rs/)
+[Documentation](https://docs.datap-rs.org) · [Source](https://github.com/jeroenflvr/datapress) · [PyPI](https://pypi.org/project/datap-rs/)
 
 
 
@@ -523,7 +523,7 @@ or access domain and use scopes such as `datasets:accidents:read` /
 ### Try it locally
 
 The repo ships a one-command Keycloak stack at
-[`examples/keycloak/`](https://github.com/jeroenflvr/fast-api/tree/main/examples/keycloak)
+[`examples/keycloak/`](https://github.com/jeroenflvr/datapress/tree/main/examples/keycloak)
 with a pre-provisioned realm, service-account client, scopes and a test
 user. `docker compose up -d` and point `issuer` at
 `http://localhost:8080/realms/datapress`.
@@ -561,4 +561,4 @@ RUST_LOG=debug python example.py
 
 MIT. See [LICENSE](LICENSE) in the source repo.
 
-Source, issue tracker and Rust crates: <https://github.com/jeroenflvr/fast-api>
+Source, issue tracker and Rust crates: <https://github.com/jeroenflvr/datapress>

@@ -5,8 +5,8 @@ site_description: >-
   object-storage datasets as typed JSON and Arrow IPC APIs.
 site_author: DataPress contributors
 site_url: https://docs.datap-rs.org/
-repo_url: https://github.com/jeroenflvr/fast-api
-repo_name: jeroenflvr/fast-api
+repo_url: https://github.com/jeroenflvr/datapress
+repo_name: jeroenflvr/datapress
 edit_uri: edit/main/docs/
 
 docs_dir: src
@@ -114,7 +114,7 @@ extra:
     - S3 Parquet query
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/jeroenflvr/fast-api
+      link: https://github.com/jeroenflvr/datapress
   generator: false
 
 nav:

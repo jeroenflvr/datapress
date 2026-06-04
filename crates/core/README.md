@@ -1,6 +1,6 @@
 # datapress-core
 
-Backend-agnostic core for [datapress](https://github.com/jeroenflvr/fast-api) —
+Backend-agnostic core for [datapress](https://github.com/jeroenflvr/datapress) —
 a Rust workspace that exposes Parquet / Delta datasets over a JSON HTTP API.
 
 This crate holds the pieces shared by every backend:

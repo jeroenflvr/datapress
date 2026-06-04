@@ -1,6 +1,6 @@
 # datapress-duckdb
 
-DuckDB-backed implementation of [datapress](https://github.com/jeroenflvr/fast-api)
+DuckDB-backed implementation of [datapress](https://github.com/jeroenflvr/datapress)
 — a JSON HTTP API over Parquet / Delta datasets.
 
 It pairs [`datapress-core`](https://crates.io/crates/datapress-core) with an
@@ -19,7 +19,7 @@ curl http://localhost:8080/api/datasets
 ```
 
 Datasets are configured in `datasets.toml`; see the
-[documentation](https://github.com/jeroenflvr/fast-api) for the full schema.
+[documentation](https://github.com/jeroenflvr/datapress) for the full schema.
 
 ## Features
 

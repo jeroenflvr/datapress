@@ -20,7 +20,7 @@ body = """
 {% for commit in commits %}
 - {% if commit.scope %}*({{ commit.scope }})* {% endif %}{{ commit.message | upper_first }}\
 {% if commit.breaking %} **[BREAKING]**{% endif %} \
-([{{ commit.id | truncate(length=7, end="") }}](https://github.com/jeroenflvr/fast-api/commit/{{ commit.id }}))
+([{{ commit.id | truncate(length=7, end="") }}](https://github.com/jeroenflvr/datapress/commit/{{ commit.id }}))
 {%- endfor %}
 {% endfor %}\n
 """

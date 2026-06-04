@@ -44,8 +44,8 @@ Two binaries live in the workspace, one per backend. Both build from a
 checkout of the repo:
 
 ```bash
-git clone https://github.com/jeroenflvr/fast-api.git
-cd fast-api
+git clone https://github.com/jeroenflvr/datapress.git
+cd datapress
 
 cargo build --release -p datapress-duckdb
 cargo build --release -p datapress-datafusion

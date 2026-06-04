@@ -13,7 +13,7 @@ pull requests, or discussions.**
 
 Instead, use GitHub's private vulnerability reporting:
 
-1. Go to the [Security tab](https://github.com/jeroenflvr/fast-api/security) of
+1. Go to the [Security tab](https://github.com/jeroenflvr/datapress/security) of
    the repository.
 2. Click **"Report a vulnerability"** to open a private advisory.
 

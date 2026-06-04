@@ -2,7 +2,7 @@
 
 The canonical changelog lives in the repo root:
 
-[`CHANGELOG.md`](https://github.com/jeroenflvr/fast-api/blob/main/CHANGELOG.md)
+[`CHANGELOG.md`](https://github.com/jeroenflvr/datapress/blob/main/CHANGELOG.md)
 
 It tracks both binary and Python-wheel releases.
 

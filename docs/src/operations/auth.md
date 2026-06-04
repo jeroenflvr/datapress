@@ -143,7 +143,7 @@ RS256/ES256 will work.
 !!! tip "Turnkey stack"
 
     The repo ships a ready-to-go compose file at
-    [`examples/keycloak/`](https://github.com/jeroenflvr/fast-api/tree/main/examples/keycloak)
+    [`examples/keycloak/`](https://github.com/jeroenflvr/datapress/tree/main/examples/keycloak)
     with a pre-provisioned realm, service-account client, scopes, and a
     test user — `docker compose up -d` and you're done. The manual
     instructions below mirror what that file automates.

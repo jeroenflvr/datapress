@@ -1,7 +1,7 @@
 # Test queries
 
 A catalogue of `curl` smoke tests and `oha` benchmarks against either backend
-(`fast-api-duckdb` or `fast-api-datafusion`) listening on `:8080`.
+(`datapress-duckdb` or `datapress-datafusion`) listening on `:8080`.
 
 The dataset is the US Accidents corpus (~7.7M rows, ~45 columns), registered
 in `datasets.toml` as `accidents`.
