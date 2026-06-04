@@ -3,6 +3,20 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.0] - 2026-06-04
+
+### Bug Fixes
+
+- Update swagger, make sql case insensitive for datafusion (similar to duckdb) ([a444a0a](https://github.com/jeroenflvr/fast-api/commit/a444a0a63728f7483f7f267ebb71b41878033814))
+
+### Documentation
+
+- Update for seo ([03ac000](https://github.com/jeroenflvr/fast-api/commit/03ac00038cdc825c58ddba6ad895cb3ed407a395))
+
+### Features
+
+- Add sql endpoint ([e5546d8](https://github.com/jeroenflvr/fast-api/commit/e5546d851fbdbac267ca0fc4cc6e48af06076cbb))
+
 ## [0.3.3] - 2026-06-03
 
 ### Documentation
