@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.2] - 2026-06-05
+
+### Bug Fixes
+
+- *(ci)* Free some diskspace before the full build ([c185884](https://github.com/jeroenflvr/datapress/commit/c185884926e67a51fa693455f77b200258a8b14a))
+
 ## [0.4.1] - 2026-06-04
 
 ### Miscellaneous
