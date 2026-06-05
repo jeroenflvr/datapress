@@ -103,7 +103,7 @@ Seven public classes, no module-level state:
 
 | Class             | Purpose                                                              |
 |-------------------|----------------------------------------------------------------------|
-| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `max_page_size`, `request_timeout_ms`, `shutdown_timeout_secs`, `metrics_enabled`, `metrics_path`. |
+| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `max_page_size`, `request_timeout_ms`, `shutdown_timeout_secs`, `metrics_enabled`, `metrics_path`, `sql_enabled`, `sql_max_rows`, `admin_token`. |
 | `DatasetConfig`   | One dataset: `name`, `source`, `format`, `mode`, optional S3 + index.|
 | `S3Config`        | S3 / S3-compatible credentials and endpoint config.                  |
 | `HMACKeyPair`     | Access/secret key pair returned by an `S3Config` credentials provider. |
@@ -264,7 +264,7 @@ DuckDB ignores this block.
 
 ## HTTP API
 
-Same five routes for both backends.
+Same core routes for both backends.
 
 | Method | Path                                  | Purpose                                    |
 |--------|---------------------------------------|--------------------------------------------|
@@ -274,6 +274,7 @@ Same five routes for both backends.
 | POST   | `/api/v1/datasets/{name}/query`       | Filter + paginate.                         |
 | POST   | `/api/v1/datasets/{name}/count`       | Total or filtered row count.               |
 | POST   | `/api/v1/datasets/{name}/reload`      | Atomic dataset reload (requires admin token). |
+| POST   | `/api/v1/sql`                         | Raw read-only SQL over one dataset (opt-in). |
 
 ### Query body
 
@@ -429,16 +430,87 @@ curl -X POST http://localhost:8000/api/v1/datasets/accidents/count \
 # → { "count": 7728394 }
 ```
 
+### Raw SQL
+
+`POST /api/v1/sql` runs a single read-only `SELECT` (or `WITH … SELECT`)
+referencing **exactly one** registered dataset. It is **disabled by
+default** — a larger attack surface than the structured query API, so you
+opt in explicitly and the server parses and validates every statement
+before any engine sees it. While disabled the route returns `404`, so its
+presence isn't even revealed.
+
+Enable it on `DataPressConfig` (mirrors the TOML `[sql]` block):
+
+```python
+cfg = DataPressConfig(
+    backend="datafusion",
+    port=8000,
+    sql_enabled=True,        # exposes POST /api/v1/sql (default False)
+    sql_max_rows=100_000,    # server-side hard cap on rows per query
+)
+```
+
+| Field         | Default    | Notes                                                                           |
+|---------------|------------|----------------------------------------------------------------------------------|
+| `sql_enabled` | `False`    | When `False`, the route responds `404`.                                          |
+| `sql_max_rows`| `100_000`  | Hard cap; the result is wrapped in an outer `LIMIT` so it always applies.        |
+
+Request body:
+
+```json
+{
+  "sql": "SELECT State, COUNT(*) AS n FROM accidents GROUP BY State ORDER BY n DESC",
+  "max_rows": 500
+}
+```
+
+`max_rows` is **clamped** into `[1, sql_max_rows]` — it can never raise the
+server cap. Omit it to use the configured cap. The dataset is named
+directly in the `FROM` clause using its configured `name`
+(case-insensitive). A CTE name is local to the query and is not treated as
+a dataset.
+
+From the bundled client:
+
+```python
+from datap_rs import DataPressClient
+
+c = DataPressClient("http://127.0.0.1:8000")
+rows = c.sql(
+    "SELECT State, COUNT(*) AS n "
+    "FROM accidents GROUP BY State ORDER BY n DESC",
+    max_rows=10,
+)
+# -> [{"State": "CA", "n": 1234}, {"State": "TX", "n": 987}, ...]
+```
+
+Like `/query`, the response is content-negotiated: send
+`Accept: application/vnd.apache.arrow.stream` (or `?format=arrow`) to
+receive an Arrow IPC stream instead of the JSON envelope.
+
+```bash
+curl -s http://localhost:8000/api/v1/sql \
+  -H 'Content-Type: application/json' \
+  -d '{"sql": "SELECT Severity, COUNT(*) AS n FROM accidents GROUP BY Severity", "max_rows": 100}'
+# → { "data": [ { "Severity": 1, "n": 123 }, ... ], "max_rows": 100 }
+```
+
 ### Admin reload
 
 `POST /api/v1/datasets/{name}/reload` rebuilds a dataset from its source and
 atomically swaps it in. Requires the `X-Admin-Token` header to match the
-`ADMIN_TOKEN` env var. **Endpoint is disabled when `ADMIN_TOKEN` is unset**
+configured admin token. **Endpoint is disabled when no token is set**
 (secure default).
 
+Set the token either with the `ADMIN_TOKEN` env var or the `admin_token`
+kwarg on `DataPressConfig` (the kwarg wins when both are set):
+
 ```python
-import os
-os.environ["ADMIN_TOKEN"] = "supersecret"     # before constructing DataPress
+cfg = DataPressConfig(
+    backend="datafusion",
+    port=8000,
+    admin_token="supersecret",     # or set the ADMIN_TOKEN env var instead
+)
 ```
 
 ```bash
@@ -446,6 +518,9 @@ curl -X POST -H "X-Admin-Token: supersecret" \
   http://localhost:8000/api/v1/datasets/accidents/reload
 # → { "dataset": "accidents", "rows": 7728394, "elapsed_ms": 1842 }
 ```
+
+In the Swagger UI, enter the token via the **Authorize** button (🔒) in the
+`AdminToken` field rather than typing the header by hand.
 
 Reload publication is backend-specific. DataFusion uses a service-level
 double buffer: it builds a new `DatasetState` off to the side, then
