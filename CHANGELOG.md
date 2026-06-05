@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.4] - 2026-06-05
+
+### Documentation
+
+- Update python README with sql endpoint and admin_token override ([2c67c43](https://github.com/jeroenflvr/datapress/commit/2c67c436dafb166229df601910b561785849a276))
+
 ## [0.4.3] - 2026-06-05
 
 ### Features
