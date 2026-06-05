@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.3] - 2026-06-05
+
+### Features
+
+- Allow admin_token to be set from python, not exclusively via env var ([f08922e](https://github.com/jeroenflvr/datapress/commit/f08922e1fbfa7a63c52216c35d6419d3da2bb3ca))
+
 ## [0.4.2] - 2026-06-05
 
 ### Bug Fixes
