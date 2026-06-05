@@ -168,6 +168,7 @@ class DataPressConfig:
     swagger_oauth2_pkce: bool
     explorer_enabled: bool
     explorer_path: str
+    admin_token: Optional[str]
     sql_enabled: bool
     sql_max_rows: int
 
@@ -198,6 +199,7 @@ class DataPressConfig:
         swagger_oauth2_pkce: bool = True,
         explorer_enabled: bool = True,
         explorer_path: str = "/explore",
+        admin_token: Optional[str] = None,
         sql_enabled: bool = False,
         sql_max_rows: int = 100_000,
     ) -> None:
@@ -259,6 +261,12 @@ class DataPressConfig:
                 wheel built with the ``explorer`` feature. Default ``True``.
             explorer_path: Path the explorer UI is served on. Must start with
                 ``/`` and not end with ``/``. Default ``"/explore"``.
+            admin_token: Admin token accepted by ``POST …/reload`` via the
+                ``X-Admin-Token`` header. Equivalent to setting the
+                ``ADMIN_TOKEN`` environment variable — use whichever is more
+                convenient. When both are provided, the value passed here wins
+                (it is applied before the env var is read). ``None`` (default)
+                keeps admin endpoints disabled unless ``ADMIN_TOKEN`` is set.
             sql_enabled: Enable the raw-SQL endpoint ``POST /api/v1/sql``.
                 Disabled by default. Default ``False``.
             sql_max_rows: Hard cap on rows returned by one raw-SQL query.

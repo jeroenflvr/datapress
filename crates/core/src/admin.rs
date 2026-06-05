@@ -1,9 +1,9 @@
 //! Admin endpoint authentication.
 //!
 //! Reads the expected token from the `ADMIN_TOKEN` environment variable at
-//! startup. If the variable is unset or empty, all admin endpoints refuse
-//! every request — they are effectively disabled. This is the secure default:
-//! you must explicitly opt in by setting `ADMIN_TOKEN` to a non-empty value.
+//! startup, **or** from a value supplied directly via [`init`]. If neither is
+//! set, all admin endpoints refuse every request — they are effectively
+//! disabled. This is the secure default: you must explicitly opt in.
 //!
 //! Clients authenticate by sending `X-Admin-Token: <value>`. The comparison
 //! is constant-time to avoid leaking the token via timing side channels.
@@ -20,6 +20,18 @@ fn expected() -> Option<&'static str> {
     EXPECTED
         .get_or_init(|| std::env::var("ADMIN_TOKEN").ok().filter(|s| !s.is_empty()))
         .as_deref()
+}
+
+/// Seed the admin token before the server starts.
+///
+/// Must be called **before the first HTTP request** (i.e. before
+/// [`crate::server::serve`] returns a bound socket). If the `OnceLock` has
+/// already been initialised (because another call or the `ADMIN_TOKEN` env var
+/// was read first), this is a no-op and the original value wins.
+///
+/// Passing `None` or an empty string leaves admin endpoints disabled.
+pub fn init(token: Option<&str>) {
+    let _ = EXPECTED.set(token.filter(|s| !s.is_empty()).map(str::to_owned));
 }
 
 /// Verify the request carries a valid admin token.

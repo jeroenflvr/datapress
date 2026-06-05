@@ -627,6 +627,9 @@ pub struct PyDataPressConfig {
     /// with ``/``. Default ``"/explore"``.
     #[pyo3(get, set)]
     pub explorer_path: String,
+    /// Admin token for ``POST …/reload``. Equivalent to ``ADMIN_TOKEN`` env var.
+    #[pyo3(get, set)]
+    pub admin_token: Option<String>,
     /// Enable the raw-SQL endpoint ``POST /api/v1/sql``. Default ``False``.
     #[pyo3(get, set)]
     pub sql_enabled: bool,
@@ -708,6 +711,7 @@ impl PyDataPressConfig {
         swagger_oauth2_pkce      = true,
         explorer_enabled   = true,
         explorer_path      = "/explore".to_string(),
+        admin_token        = None,
         sql_enabled        = false,
         sql_max_rows       = 100_000,
     ))]
@@ -738,6 +742,7 @@ impl PyDataPressConfig {
         swagger_oauth2_pkce: bool,
         explorer_enabled: bool,
         explorer_path: String,
+        admin_token: Option<String>,
         sql_enabled: bool,
         sql_max_rows: u64,
     ) -> Self {
@@ -767,6 +772,7 @@ impl PyDataPressConfig {
             swagger_oauth2_pkce,
             explorer_enabled,
             explorer_path,
+            admin_token,
             sql_enabled,
             sql_max_rows,
         }
@@ -1161,6 +1167,10 @@ impl PyDataPress {
         let swagger = config.swagger_into_core()?;
         let explorer = config.explorer_into_core()?;
         let sql = config.sql_into_core();
+        // Seed the admin token before the server starts. This must happen
+        // before the first HTTP request; the OnceLock is a no-op if the env
+        // var was already read, but we call it first so the explicit value wins.
+        datapress_core::admin::init(config.admin_token.as_deref());
         let server = config.into_core()?;
         let datasets = datasets
             .into_iter()

@@ -382,7 +382,7 @@ fn openapi(oauth2: Option<&ResolvedOAuth2>) -> OpenApi {
                 "post": {
                     "tags":    ["admin"],
                     "summary": "Rebuild a dataset from its source",
-                    "description": "Requires the configured reload/admin permission. Without OIDC, pass the configured `X-Admin-Token` header.",
+                    "description": "Requires the configured reload/admin permission. Without OIDC, click the **Authorize** button (🔒) at the top of this page and enter your token in the **AdminToken** field — DataPress will send it as the `X-Admin-Token` header on every request.",
                     "parameters": [ dataset_name_param ],
                     "security": [ { "AdminToken": [] } ],
                     "responses": {
