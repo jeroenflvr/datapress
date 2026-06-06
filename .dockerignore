@@ -1,0 +1,15 @@
+# The Docker image downloads the prebuilt release binary, so the build
+# context only needs the Dockerfile. Exclude everything heavy/irrelevant to
+# keep the context small and builds fast.
+target/
+data/
+docs/site/
+docs/docs/site/
+.git/
+.github/
+**/*.parquet
+**/*.csv
+wheels/
+dist/
+.venv/
+**/__pycache__/

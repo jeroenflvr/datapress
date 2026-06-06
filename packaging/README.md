@@ -11,6 +11,7 @@ bundled) — none of them compile the heavy bundled DuckDB C++ from source.
 | Install script | `irm https://datap-rs.org/install.ps1 \| iex` (Windows)   | [`install.ps1`](../install.ps1)         |
 | Homebrew       | `brew install jeroenflvr/tap/datapress`                   | [`homebrew/datapress.rb`](homebrew/datapress.rb) |
 | winget         | `winget install datap-rs.DataPress`                       | [`winget/`](winget/)                    |
+| Docker         | `docker run jeroenflvr/datapress`                         | [`docker/Dockerfile`](docker/Dockerfile) |
 
 The release workflow ([`.github/workflows/publish.yml`](../.github/workflows/publish.yml))
 already builds the CLI for `x86_64`/`aarch64` Linux, `aarch64` macOS, and
@@ -129,6 +130,41 @@ wingetcreate update datap-rs.DataPress `
   --urls https://github.com/jeroenflvr/datapress/releases/download/v0.4.4/datapress-v0.4.4-x86_64-pc-windows-msvc.zip `
   --submit
 ```
+
+## Docker
+
+The image at [`docker/Dockerfile`](docker/Dockerfile) installs the prebuilt
+Linux release binary onto a `distroless/cc` base — no source build — so it
+stays small and depends only on the GitHub release assets. It is multi-arch
+(`linux/amd64` + `linux/arm64`); the binary links rustls + aws-lc-rs, so no
+OpenSSL is needed at runtime.
+
+```bash
+# Pull and run (mount a config that sets listen = "0.0.0.0").
+docker run --rm -p 8080:8080 \
+  -v "$PWD/datasets.toml:/etc/datapress/datasets.toml:ro" \
+  jeroenflvr/datapress:latest
+```
+
+The image reads its config from `DATAPRESS_CONFIG_FILE`
+(`/etc/datapress/datasets.toml` by default). A container-ready example —
+already set to `listen = "0.0.0.0"` — is in
+[`docker/datasets.example.toml`](docker/datasets.example.toml).
+
+Build locally:
+
+```bash
+docker buildx build --build-arg VERSION=0.4.5 \
+  -f packaging/docker/Dockerfile -t datapress:0.4.5 --load .
+```
+
+### Automating the publish
+
+Add two secrets, `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (a Docker Hub
+access token with **Read & Write**). Once they are set, the `docker` job runs
+on **every** `v*` release: it builds the multi-arch image from the release
+binary and pushes `<username>/datapress` tagged `:<version>`, `:<major.minor>`,
+and `:latest`. If the token is absent the job logs a warning and skips.
 
 ## Checksums
 

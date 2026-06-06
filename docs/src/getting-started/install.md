@@ -44,6 +44,21 @@ bottles. On Intel Macs, use the crates.io install below.
 winget install datap-rs.DataPress
 ```
 
+## Docker
+
+The image installs the prebuilt Linux binary onto a minimal `distroless/cc`
+base and is multi-arch (`linux/amd64` + `linux/arm64`). Mount a `datasets.toml`
+at `/etc/datapress/datasets.toml` — it **must** set `listen = "0.0.0.0"` for the
+published port to be reachable:
+
+```bash
+docker run --rm -p 8080:8080 \
+  -v "$PWD/datasets.toml:/etc/datapress/datasets.toml:ro" \
+  jeroenflvr/datapress:latest
+```
+
+Tags: `:<version>`, `:<major.minor>`, and `:latest`.
+
 ## Prebuilt binary (crates.io)
 
 The quickest way to get a server without cloning the repo. The unified

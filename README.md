@@ -60,6 +60,11 @@ brew install jeroenflvr/tap/datapress
 
 # winget (Windows)
 winget install datap-rs.DataPress
+
+# Docker (mount a config that sets listen = "0.0.0.0")
+docker run --rm -p 8080:8080 \
+  -v "$PWD/datasets.toml:/etc/datapress/datasets.toml:ro" \
+  jeroenflvr/datapress:latest
 ```
 
 The install scripts drop the binary in a per-user directory (`~/.local/bin` on

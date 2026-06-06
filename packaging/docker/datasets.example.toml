@@ -1,0 +1,29 @@
+# Example datasets.toml for running datapress in a container.
+#
+# Mount this at the path the image looks up (DATAPRESS_CONFIG_FILE, which
+# defaults to /etc/datapress/datasets.toml):
+#
+#   docker run --rm -p 8080:8080 \
+#     -v "$PWD/datasets.example.toml:/etc/datapress/datasets.toml:ro" \
+#     jeroenflvr/datapress:latest
+#
+# The key difference from a local config is `listen = "0.0.0.0"`, without
+# which the published port is unreachable from outside the container.
+
+[server]
+backend = "duckdb"
+listen  = "0.0.0.0"
+port    = 8080
+
+# Register one [[dataset]] per table you want to serve. Example pointing at a
+# Parquet source (replace with your own local mount or object-storage URL):
+#
+# [[dataset]]
+# name = "example"
+#
+#   [dataset.source]
+#   kind     = "parquet"
+#   location = "s3://your-bucket/path/to/data.parquet"
+#
+#   [dataset.s3]
+#   region = "eu-west-3"
