@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.5] - 2026-06-06
+
+### CI
+
+- Update installation methods ([5fb7e51](https://github.com/jeroenflvr/datapress/commit/5fb7e51133d12f7c65631fcda2d99436ad8befe9))
+
+### Documentation
+
+- Update presentation link ([3aac9aa](https://github.com/jeroenflvr/datapress/commit/3aac9aad468c149ac41531e645defcb75cb8bd63))
+
 ## [0.4.4] - 2026-06-05
 
 ### Documentation
