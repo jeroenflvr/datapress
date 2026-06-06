@@ -26,6 +26,11 @@ port    = 8080
 # enabled = true
 # path    = "/docs"
 
+# Optional raw SQL endpoint
+# [sql]
+# enabled  = true      # default false — endpoint returns 404 when off
+# max_rows = 100000    # hard cap on rows returned by one query
+
 # Prometheus metrics (requires the `metrics` feature).
 # [metrics]
 # enabled = true
