@@ -51,7 +51,6 @@ theme:
     - content.code.copy
     - content.code.annotate
     - content.tabs.link
-    - content.action.edit
   icon:
     repo: fontawesome/brands/github
   font:
