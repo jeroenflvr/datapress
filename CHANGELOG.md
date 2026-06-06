@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.7] - 2026-06-06
+
+### Features
+
+- Allow to bypass compression from browser with json ([61e7123](https://github.com/jeroenflvr/datapress/commit/61e7123f932654e30e82505d66224a40246a1a62))
+
+### Performance
+
+- Improve arrow transfer speed by dropping redundant compression (huge win) ([1f32f7b](https://github.com/jeroenflvr/datapress/commit/1f32f7bb895a03431dc59a756bd35622de0d26c6))
+
 ## [0.4.6] - 2026-06-06
 
 ### Bug Fixes
