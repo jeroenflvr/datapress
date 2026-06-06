@@ -21,34 +21,71 @@ use crate::schema::DatasetSchema;
 /// Stream of Arrow IPC response chunks emitted by a backend.
 pub type ArrowIpcStream = BoxStream<'static, Result<Bytes, AppError>>;
 
+/// Target size for a single Arrow IPC response chunk. Arrow's
+/// `StreamWriter` issues many tiny `write()` calls (length prefixes,
+/// per-buffer padding, one call per column buffer); forwarding each as
+/// its own HTTP chunk produces hundreds of micro-frames that ping-pong
+/// across the `spawn_blocking` ↔ async boundary and dominate the wire
+/// time. Coalescing them into ~64 KiB chunks keeps the channel and the
+/// chunked transfer encoding efficient.
+const ARROW_CHUNK_TARGET: usize = 64 * 1024;
+
 /// Writer used by backend encoders to push Arrow IPC bytes into an HTTP
-/// response stream without accumulating one full response buffer.
+/// response stream without accumulating one full response buffer. Small
+/// writes are buffered and flushed in ~[`ARROW_CHUNK_TARGET`]-byte chunks.
 pub struct ArrowIpcChunkWriter {
     tx: mpsc::Sender<Result<Bytes, AppError>>,
+    buf: Vec<u8>,
 }
 
 impl ArrowIpcChunkWriter {
-    pub fn send_error(&self, err: AppError) {
+    pub fn send_error(&mut self, err: AppError) {
+        // Drop any partial chunk so it can't trail the error on the wire.
+        self.buf.clear();
         let _ = self.tx.blocking_send(Err(err));
+    }
+
+    /// Ship whatever is currently buffered as one chunk. No-op when empty.
+    fn send_buffered(&mut self) -> io::Result<()> {
+        if self.buf.is_empty() {
+            return Ok(());
+        }
+        let chunk = Bytes::from(std::mem::take(&mut self.buf));
+        self.tx
+            .blocking_send(Ok(chunk))
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "response stream closed"))
     }
 }
 
 impl Write for ArrowIpcChunkWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.tx
-            .blocking_send(Ok(Bytes::copy_from_slice(buf)))
-            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "response stream closed"))?;
+        self.buf.extend_from_slice(buf);
+        if self.buf.len() >= ARROW_CHUNK_TARGET {
+            self.send_buffered()?;
+        }
         Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        Ok(())
+        self.send_buffered()
+    }
+}
+
+impl Drop for ArrowIpcChunkWriter {
+    fn drop(&mut self) {
+        // Flush the tail the encoder didn't explicitly flush (e.g. after
+        // `StreamWriter::finish`). Any send error here is unobservable —
+        // the receiver has already gone away.
+        let _ = self.send_buffered();
     }
 }
 
 pub fn arrow_ipc_stream_channel(capacity: usize) -> (ArrowIpcChunkWriter, ArrowIpcStream) {
     let (tx, rx) = mpsc::channel(capacity);
-    let writer = ArrowIpcChunkWriter { tx };
+    let writer = ArrowIpcChunkWriter {
+        tx,
+        buf: Vec::with_capacity(ARROW_CHUNK_TARGET),
+    };
     let stream = stream::unfold(rx, |mut rx| async move {
         rx.recv().await.map(|item| (item, rx))
     })

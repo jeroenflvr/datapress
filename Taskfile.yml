@@ -139,6 +139,22 @@ tasks:
         DUCKDB_BUNDLE_NM="$BUILD/node_modules" \
           node "$REPO/docs/scripts/bundle-duckdb.mjs"
 
+  docs:vendor-arrow:
+    desc: >-
+      Download the self-contained Apache Arrow UMD bundle (17.0.0, matching the
+      version DuckDB-WASM inlines) into docs/src/assets/vendor/arrow. The
+      explorer's API Query tab uses it to decode Arrow IPC responses in the
+      browser with no CDN.
+    cmds:
+      - |
+        set -e
+        OUT="$PWD/docs/src/assets/vendor/arrow"
+        mkdir -p "$OUT"
+        curl -fsSL \
+          "https://cdn.jsdelivr.net/npm/apache-arrow@17.0.0/Arrow.es2015.min.js" \
+          -o "$OUT/arrow.es2015.min.js"
+        echo "vendored apache-arrow 17.0.0 -> $OUT/arrow.es2015.min.js"
+
   # ---------------------------------------------------------------------
   # Changelog (git-cliff)
   # ---------------------------------------------------------------------

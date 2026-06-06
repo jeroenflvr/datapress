@@ -188,6 +188,32 @@ pub(crate) fn wants_arrow(http: &HttpRequest) -> bool {
         .unwrap_or(false)
 }
 
+/// True if the caller wants to skip server-side HTTP compression for this
+/// response: either `?compress=false` (also `0`/`no`/`off`) in the query
+/// string, or an `X-No-Compress` request header. Browsers can't override
+/// `Accept-Encoding` from `fetch`, so this gives a page-settable escape
+/// hatch — handlers translate it into a `Content-Encoding: identity`
+/// response header, which actix's `Compress` middleware treats as a
+/// signal to leave the body untouched.
+pub(crate) fn wants_no_compression(http: &HttpRequest) -> bool {
+    let qs = http.query_string();
+    if !qs.is_empty()
+        && qs.split('&').any(|kv| {
+            matches!(
+                kv.split_once('='),
+                Some(("compress", v))
+                    if v.eq_ignore_ascii_case("false")
+                        || v == "0"
+                        || v.eq_ignore_ascii_case("no")
+                        || v.eq_ignore_ascii_case("off")
+            )
+        })
+    {
+        return true;
+    }
+    http.headers().contains_key("x-no-compress")
+}
+
 /// MIME type used for Parquet export responses.
 pub const PARQUET_MIME: &str = "application/vnd.apache.parquet";
 

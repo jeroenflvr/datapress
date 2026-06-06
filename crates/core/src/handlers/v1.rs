@@ -22,7 +22,7 @@ use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 use crate::admin;
 use crate::handlers::{
     ARROW_IPC_MIME, BackendData, PARQUET_MIME, ParquetCache, QueryLimits, SqlSettings,
-    serve_bytes_with_range, wants_arrow,
+    serve_bytes_with_range, wants_arrow, wants_no_compression,
 };
 use crate::models::{CountRequest, QueryRequest, SqlRequest};
 
@@ -194,6 +194,10 @@ pub async fn query_dataset(
         return match backend.query_arrow_stream(&name, &req).await {
             Ok(stream) => HttpResponse::Ok()
                 .content_type(ARROW_IPC_MIME)
+                // Arrow IPC is compact binary; HTTP compression (esp. brotli
+                // while streaming) costs far more CPU than it saves and shows
+                // up as slow "content download". Opt out so Compress skips it.
+                .insert_header((actix_web::http::header::CONTENT_ENCODING, "identity"))
                 .insert_header(("X-Page", page.to_string()))
                 .insert_header(("X-Page-Size", page_size.to_string()))
                 .streaming(stream),
@@ -204,9 +208,12 @@ pub async fn query_dataset(
     match backend.query(&name, &req).await {
         Ok(arr) => {
             let body = format!(r#"{{"data":{arr},"page":{page},"page_size":{page_size}}}"#);
-            HttpResponse::Ok()
-                .content_type("application/json")
-                .body(body)
+            let mut resp = HttpResponse::Ok();
+            resp.content_type("application/json");
+            if wants_no_compression(&http) {
+                resp.insert_header((actix_web::http::header::CONTENT_ENCODING, "identity"));
+            }
+            resp.body(body)
         }
         Err(e) => e.error_response(),
     }
@@ -272,6 +279,7 @@ pub async fn sql_query(
         return match backend.query_sql_arrow_stream(&validated.sql, max_rows).await {
             Ok(stream) => HttpResponse::Ok()
                 .content_type(ARROW_IPC_MIME)
+                .insert_header((actix_web::http::header::CONTENT_ENCODING, "identity"))
                 .insert_header(("X-Max-Rows", max_rows.to_string()))
                 .streaming(stream),
             Err(e) => e.error_response(),
@@ -281,9 +289,12 @@ pub async fn sql_query(
     match backend.query_sql(&validated.sql, max_rows).await {
         Ok(arr) => {
             let body = format!(r#"{{"data":{arr},"max_rows":{max_rows}}}"#);
-            HttpResponse::Ok()
-                .content_type("application/json")
-                .body(body)
+            let mut resp = HttpResponse::Ok();
+            resp.content_type("application/json");
+            if wants_no_compression(&http) {
+                resp.insert_header((actix_web::http::header::CONTENT_ENCODING, "identity"));
+            }
+            resp.body(body)
         }
         Err(e) => e.error_response(),
     }
@@ -304,6 +315,7 @@ pub async fn stream_dataset(
     match backend.query_arrow_stream_all(&name, &req).await {
         Ok(stream) => HttpResponse::Ok()
             .content_type(ARROW_IPC_MIME)
+            .insert_header((actix_web::http::header::CONTENT_ENCODING, "identity"))
             .insert_header(("X-Query-Mode", "stream"))
             .streaming(stream),
         Err(e) => e.error_response(),

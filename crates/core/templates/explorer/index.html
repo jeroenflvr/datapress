@@ -64,9 +64,39 @@
           <input type="radio" class="btn-check" name="api-mode" id="api-mode-sql" autocomplete="off">
           <label class="btn btn-outline-secondary" for="api-mode-sql"><i class="bi bi-code-square"></i> Raw SQL</label>
         </div>
+        <div class="btn-group btn-group-sm" role="group" aria-label="Response format">
+          <input type="radio" class="btn-check" name="api-format" id="api-format-json" autocomplete="off" checked>
+          <label class="btn btn-outline-secondary" for="api-format-json" title="JSON response (human-readable)">JSON</label>
+          <input type="radio" class="btn-check" name="api-format" id="api-format-arrow" autocomplete="off">
+          <label class="btn btn-outline-secondary" for="api-format-arrow"
+                 title="Arrow IPC response — binary columnar, skips server-side JSON encoding">
+            <i class="bi bi-lightning-charge"></i> Arrow
+          </label>
+        </div>
+        <button id="api-headers-toggle" class="btn btn-sm btn-outline-secondary" type="button"
+                data-bs-toggle="collapse" data-bs-target="#api-headers-wrap"
+                aria-expanded="false" aria-controls="api-headers-wrap"
+                title="Add custom request headers">
+          <i class="bi bi-list-ul"></i> Headers
+        </button>
         <span id="api-status" class="badge text-bg-secondary ms-auto">idle</span>
       </div>
       <div class="card-body">
+        <!-- Custom request headers (shared across both modes) -->
+        <div id="api-headers-wrap" class="collapse mb-2">
+          <label for="api-headers" class="form-label small mb-1">Request headers — one <code>Name: value</code> per line</label>
+          <textarea id="api-headers" class="form-control form-control-sm mono" rows="3" spellcheck="false"
+                    placeholder="Authorization: Bearer &lt;token&gt;&#10;X-Api-Key: value&#10;X-Custom-Header: value"></textarea>
+          <div class="form-text">
+            Sent with every request. Note: browsers reserve some headers and silently
+            ignore attempts to set them from a page — including
+            <code>Accept-Encoding</code> (compression is always
+            <code>gzip, deflate, br, zstd</code>), <code>Host</code>,
+            <code>Connection</code> and <code>Content-Length</code>. Use <code>curl</code>
+            to control those. The <code>Accept</code> header is set automatically from the
+            response-format toggle.
+          </div>
+        </div>
         <!-- Structured JSON mode -->
         <div id="api-json-mode">
           <div class="row g-2 mb-2">
@@ -123,6 +153,7 @@
 
         <div id="api-check" class="alert mt-3 d-none mono" role="status"></div>
         <div id="api-error" class="alert alert-danger mt-3 d-none mono" role="alert"></div>
+        <div id="api-timing" class="d-flex align-items-center gap-3 mt-3 small text-secondary d-none flex-wrap" role="status"></div>
         <div id="api-export" class="d-flex align-items-center gap-2 mt-3 d-none flex-wrap">
           <span class="text-secondary small">Export results:</span>
           <button id="api-export-csv" class="btn btn-sm btn-outline-secondary" type="button">

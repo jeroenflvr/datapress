@@ -121,6 +121,12 @@ impl Store {
         let mut configs = HashMap::with_capacity(cfg.datasets.len());
 
         for d in &cfg.datasets {
+            log::info!(
+                "Loading dataset '{}' ({} @ {})",
+                d.name,
+                d.source.kind.as_str(),
+                d.source.location
+            );
             let (state, provider) = build_dataset(d, &ctx).await?;
             ctx.register_table(d.name.as_str(), provider)?;
             datasets.insert(d.name.clone(), Arc::new(state));

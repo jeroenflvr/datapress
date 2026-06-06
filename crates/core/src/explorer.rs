@@ -35,6 +35,12 @@ use crate::schema::LogicalType;
 static DUCKDB_VENDOR: Dir<'_> =
     include_dir!("$CARGO_MANIFEST_DIR/../../docs/src/assets/vendor/duckdb");
 
+/// Self-hosted Apache Arrow (UMD) bundle, embedded at compile time. Used by
+/// the API Query tab to decode Arrow IPC responses in the browser without a
+/// CDN. Refreshed by `task docs:vendor-arrow`.
+static ARROW_VENDOR: Dir<'_> =
+    include_dir!("$CARGO_MANIFEST_DIR/../../docs/src/assets/vendor/arrow");
+
 /// Shared state handed to the explorer handlers.
 pub struct ExplorerState {
     pub backend: Arc<dyn Backend>,
@@ -155,6 +161,10 @@ pub fn configure(state: web::Data<ExplorerState>, cfg: &mut web::ServiceConfig) 
                     "/assets/vendor/duckdb/{path:.*}",
                     web::get().to(asset_duckdb_vendor),
                 )
+                .route(
+                    "/assets/vendor/arrow/{path:.*}",
+                    web::get().to(asset_arrow_vendor),
+                )
                 .route("/datasets/{name}", web::get().to(dataset_detail)),
         );
 }
@@ -260,6 +270,25 @@ async fn asset_terminal_js() -> HttpResponse {
 async fn asset_duckdb_vendor(req: HttpRequest) -> HttpResponse {
     let path: String = req.match_info().query("path").into();
     match DUCKDB_VENDOR.get_file(&path) {
+        Some(f) => HttpResponse::Ok()
+            .content_type(
+                mime_guess::from_path(&path)
+                    .first_or_octet_stream()
+                    .as_ref(),
+            )
+            .insert_header((header::CACHE_CONTROL, "public, max-age=86400"))
+            .body(f.contents()),
+        None => HttpResponse::NotFound()
+            .content_type("text/plain; charset=utf-8")
+            .body("Not Found"),
+    }
+}
+
+/// Serve the vendored Apache Arrow UMD bundle from the binary-embedded
+/// directory. Immutable per release, so it carries a long-lived cache header.
+async fn asset_arrow_vendor(req: HttpRequest) -> HttpResponse {
+    let path: String = req.match_info().query("path").into();
+    match ARROW_VENDOR.get_file(&path) {
         Some(f) => HttpResponse::Ok()
             .content_type(
                 mime_guess::from_path(&path)

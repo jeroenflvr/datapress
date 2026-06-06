@@ -27,8 +27,11 @@ const sqlMaxRowsEl = el("api-sql-maxrows");
 const sqlDisabledEl = el("api-sql-disabled");
 const checkEl = el("api-check");
 const errEl = el("api-error");
+const timingEl = el("api-timing");
 const exportEl = el("api-export");
 const resEl = el("api-results");
+const headersEl = el("api-headers");
+const formatArrowEl = el("api-format-arrow");
 
 let lastRows = [];
 let lastCols = [];
@@ -50,6 +53,39 @@ function clearMessages() {
   errEl.classList.add("d-none");
 }
 
+// ── timing / size readout ────────────────────────────────────────────────────
+function formatMs(ms) {
+  if (ms < 1) return `${ms.toFixed(2)} ms`;
+  if (ms < 1000) return `${ms.toFixed(1)} ms`;
+  return `${(ms / 1000).toFixed(2)} s`;
+}
+
+function formatBytes(n) {
+  if (n == null) return "—";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MiB`;
+}
+
+function showTiming({ ttfb, total, bytes, rows, format }) {
+  const item = (icon, label, value) =>
+    `<span title="${label}"><i class="bi ${icon}"></i> ${value}</span>`;
+  const parts = [
+    item("bi-hourglass-split", "Time to first byte", `TTFB ${formatMs(ttfb)}`),
+    item("bi-stopwatch", "Total round-trip time", `total ${formatMs(total)}`),
+    item("bi-download", "Response body size", formatBytes(bytes)),
+  ];
+  if (rows != null) parts.push(item("bi-table", "Rows returned", `${rows} row(s)`));
+  if (format) parts.push(item("bi-file-earmark-binary", "Response wire format", format));
+  timingEl.innerHTML = parts.join("");
+  timingEl.classList.remove("d-none");
+}
+
+function clearTiming() {
+  timingEl.classList.add("d-none");
+  timingEl.innerHTML = "";
+}
+
 function showError(message) {
   errEl.textContent = message;
   errEl.classList.remove("d-none");
@@ -63,6 +99,50 @@ function escapeHtml(s) {
 
 function selectedDataset() {
   return datasetEl.value || (datasets[0] && datasets[0].name) || "";
+}
+
+// ── request headers (custom + format-derived Accept) ─────────────────────────
+const ARROW_ACCEPT = "application/vnd.apache.arrow.stream";
+
+function parseHeaderLines() {
+  const out = [];
+  for (const line of (headersEl.value || "").split("\n")) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    const idx = t.indexOf(":");
+    if (idx < 1) continue;
+    const name = t.slice(0, idx).trim();
+    const value = t.slice(idx + 1).trim();
+    if (name) out.push([name, value]);
+  }
+  return out;
+}
+
+function buildHeaders(wantArrow) {
+  const h = new Headers();
+  h.set("Content-Type", "application/json");
+  h.set("Accept", wantArrow ? ARROW_ACCEPT : "application/json");
+  for (const [k, v] of parseHeaderLines()) {
+    // Browsers reject forbidden header names (Host, Content-Length, …) — skip
+    // those rather than aborting the whole request.
+    try { h.set(k, v); } catch { /* ignore forbidden header */ }
+  }
+  return h;
+}
+
+// Locally-vendored Apache Arrow (UMD), loaded lazily to decode Arrow IPC.
+let arrowReady = null;
+function ensureArrow() {
+  if (arrowReady) return arrowReady;
+  arrowReady = new Promise((resolve, reject) => {
+    if (window.Arrow) { resolve(window.Arrow); return; }
+    const s = document.createElement("script");
+    s.src = `${explorerBase}/assets/vendor/arrow/arrow.es2015.min.js`;
+    s.onload = () => (window.Arrow ? resolve(window.Arrow) : reject(new Error("Arrow bundle loaded but global missing")));
+    s.onerror = () => reject(new Error("Failed to load the Arrow bundle"));
+    document.head.appendChild(s);
+  });
+  return arrowReady;
 }
 
 function sampleJsonBody() {
@@ -274,25 +354,54 @@ async function runSql() {
 async function runRequest(url, body) {
   resEl.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Running…';
   setStatus("running…", "warning");
+  clearTiming();
+  const wantArrow = formatArrowEl.checked;
+  const reqUrl = wantArrow ? `${url}${url.includes("?") ? "&" : "?"}format=arrow` : url;
+  const t0 = performance.now();
   try {
-    const resp = await fetch(url, {
+    const resp = await fetch(reqUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: buildHeaders(wantArrow),
       credentials: "same-origin",
       body: JSON.stringify(body),
     });
-    const text = await resp.text();
+    const ttfb = performance.now() - t0;
+    const clen = parseInt(resp.headers.get("content-length") || "", 10);
+
     if (!resp.ok) {
+      const text = await resp.text();
+      const total = performance.now() - t0;
+      const bytes = Number.isFinite(clen) ? clen : new Blob([text]).size;
       resEl.innerHTML = "";
       let msg = text;
       try { msg = JSON.stringify(JSON.parse(text), null, 2); } catch { /* keep raw */ }
       showError(`HTTP ${resp.status} ${resp.statusText}\n${msg}`);
+      showTiming({ ttfb, total, bytes, rows: null });
       setStatus("error", "danger");
       return;
     }
-    const json = text ? JSON.parse(text) : {};
-    const rows = Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
+
+    const ctype = (resp.headers.get("content-type") || "").toLowerCase();
+    const isArrow = ctype.includes("arrow");
+    let rows;
+    let bytes;
+    let total;
+    if (isArrow) {
+      const buf = await resp.arrayBuffer();
+      total = performance.now() - t0;
+      bytes = Number.isFinite(clen) ? clen : buf.byteLength;
+      const Arrow = await ensureArrow();
+      const table = Arrow.tableFromIPC(new Uint8Array(buf));
+      rows = table.toArray().map((r) => r.toJSON());
+    } else {
+      const text = await resp.text();
+      total = performance.now() - t0;
+      bytes = Number.isFinite(clen) ? clen : new Blob([text]).size;
+      const json = text ? JSON.parse(text) : {};
+      rows = Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
+    }
     renderTable(rows);
+    showTiming({ ttfb, total, bytes, rows: rows.length, format: isArrow ? "Arrow IPC" : "JSON" });
     setStatus(`${rows.length} row(s)`, "success");
   } catch (e) {
     resEl.innerHTML = "";
