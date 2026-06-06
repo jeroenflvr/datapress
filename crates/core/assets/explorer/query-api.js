@@ -32,6 +32,7 @@ const exportEl = el("api-export");
 const resEl = el("api-results");
 const headersEl = el("api-headers");
 const formatArrowEl = el("api-format-arrow");
+const compressOffEl = el("api-compress-off");
 
 let lastRows = [];
 let lastCols = [];
@@ -356,7 +357,15 @@ async function runRequest(url, body) {
   setStatus("running…", "warning");
   clearTiming();
   const wantArrow = formatArrowEl.checked;
-  const reqUrl = wantArrow ? `${url}${url.includes("?") ? "&" : "?"}format=arrow` : url;
+  // Browsers can't set Accept-Encoding from a page, so request the
+  // server-side compression bypass via a query param instead.
+  const noCompress = compressOffEl && compressOffEl.checked;
+  const params = [];
+  if (wantArrow) params.push("format=arrow");
+  if (noCompress) params.push("compress=false");
+  const reqUrl = params.length
+    ? `${url}${url.includes("?") ? "&" : "?"}${params.join("&")}`
+    : url;
   const t0 = performance.now();
   try {
     const resp = await fetch(reqUrl, {

@@ -79,6 +79,11 @@
                 title="Add custom request headers">
           <i class="bi bi-list-ul"></i> Headers
         </button>
+        <input type="checkbox" class="btn-check" id="api-compress-off" autocomplete="off">
+        <label class="btn btn-sm btn-outline-secondary" for="api-compress-off"
+               title="Skip server-side HTTP compression (gzip/brotli) for JSON responses. Browsers can't set Accept-Encoding from a page, so this sends ?compress=false instead. Arrow already bypasses compression.">
+          <i class="bi bi-file-zip"></i> No compression
+        </label>
         <span id="api-status" class="badge text-bg-secondary ms-auto">idle</span>
       </div>
       <div class="card-body">
