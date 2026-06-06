@@ -15,10 +15,15 @@ const ASCII_ART: &str = r#"
 ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝           ╚═╝  ╚═╝╚══════╝
 "#;
 
+/// Brand yellow (`--dp-yellow` #f7a41d) as a 24-bit ANSI color escape.
+const DP_YELLOW: &str = "\x1b[38;2;247;164;29m";
+const RESET: &str = "\x1b[0m";
+
 /// Write the banner + version straight to stdout. Bypasses `log` so it
 /// always shows regardless of `RUST_LOG`.
 pub fn print() {
-    println!("{ASCII_ART}");
-    println!("                          datap-rs v{VERSION}");
+    println!("{DP_YELLOW}{ASCII_ART}{RESET}");
+    println!("{DP_YELLOW}  datap-rs v{VERSION}{RESET}");
+    println!("{DP_YELLOW}  doc: https://docs.datap.rs{RESET}");
     println!();
 }

@@ -1,14 +1,95 @@
 /* DataPress explorer UI styles. Served at {explorer_base}/assets/explorer.css
    and embedded in the binary via include_str!. */
+:root {
+  --dp-orange: #f5a623;
+  --dp-yellow: #f7a41d;
+}
+/* Remap Bootstrap's "primary" (blue) onto the DataPress orange so buttons,
+   tabs, badges, links and selected list items pick up the brand color. */
+[data-bs-theme="dark"], :root {
+  --bs-primary: #f5a623;
+  --bs-primary-rgb: 245, 166, 35;
+  --bs-primary-text-emphasis: #f7a41d;
+  --bs-primary-border-subtle: #7a5311;
+  --bs-link-color: #f5a623;
+  --bs-link-color-rgb: 245, 166, 35;
+  --bs-link-hover-color: #f7a41d;
+  --bs-link-hover-color-rgb: 247, 164, 29;
+}
 body { min-height: 100vh; }
-.navbar-brand i { color: #6ea8fe; }
+
+/* Brand */
+.navbar-brand { color: var(--dp-orange); font-weight: 600; }
+.navbar-brand i { color: var(--dp-yellow); }
+
+/* Accent colors */
+a { color: var(--dp-orange); }
+a:hover { color: var(--dp-yellow); }
+.nav-tabs .nav-link.active,
+.nav-pills .nav-link.active { color: var(--dp-orange) !important; font-weight: bold; }
+.nav-tabs .nav-link.active { border-bottom-color: var(--dp-orange); }
+h1, h2, h3, h4, h5, h6 { color: var(--dp-orange); }
+.text-dp-orange { color: var(--dp-orange) !important; }
+.text-dp-yellow { color: var(--dp-yellow) !important; }
+
+/* Outline/solid primary buttons and primary badges -> brand orange */
+.btn-primary {
+  --bs-btn-bg: var(--dp-orange);
+  --bs-btn-border-color: var(--dp-orange);
+  --bs-btn-hover-bg: var(--dp-yellow);
+  --bs-btn-hover-border-color: var(--dp-yellow);
+  --bs-btn-active-bg: var(--dp-yellow);
+  --bs-btn-active-border-color: var(--dp-yellow);
+  --bs-btn-disabled-bg: var(--dp-orange);
+  --bs-btn-disabled-border-color: var(--dp-orange);
+  --bs-btn-color: #1a1100;
+  --bs-btn-hover-color: #1a1100;
+  --bs-btn-active-color: #1a1100;
+}
+.btn-outline-primary {
+  --bs-btn-color: var(--dp-orange);
+  --bs-btn-border-color: var(--dp-orange);
+  --bs-btn-hover-bg: var(--dp-orange);
+  --bs-btn-hover-border-color: var(--dp-orange);
+  --bs-btn-hover-color: #1a1100;
+  --bs-btn-active-bg: var(--dp-orange);
+  --bs-btn-active-border-color: var(--dp-orange);
+  --bs-btn-active-color: #1a1100;
+}
+.text-bg-primary, .bg-primary { color: #1a1100 !important; }
+.badge.text-bg-primary { background-color: var(--dp-orange) !important; }
+
+/* Selected dataset / active list-group item -> brand orange */
+.list-group-item.active {
+  background-color: var(--dp-orange);
+  border-color: var(--dp-orange);
+  color: #1a1100;
+}
+.form-control:focus, .form-select:focus, .btn-check:focus + .btn {
+  border-color: var(--dp-orange);
+  box-shadow: 0 0 0 .25rem rgba(245, 166, 35, .25);
+}
+
+/* Mode toggle "pills" (Structured JSON / Raw SQL, etc.) -> brand orange when active */
+.btn-check:checked + .btn-outline-secondary,
+.btn-check:active + .btn-outline-secondary {
+  background-color: var(--dp-orange);
+  border-color: var(--dp-orange);
+  color: #1a1100;
+}
+
+/* Inline code text -> brand yellow to match the docs site */
+code { color: var(--dp-yellow); }
+.form-text code, .card-header code, #api-json-url { color: var(--dp-yellow); }
+
 .dataset-list .list-group-item { cursor: pointer; }
 .stat-card .display-6 { font-size: 1.9rem; }
 .schema-table td, .schema-table th { white-space: nowrap; }
 .mono { font-family: var(--bs-font-monospace); font-size: .85rem; }
+#api-json-body, #api-sql-body { color: var(--dp-yellow); }
 pre.sample { max-height: 260px; overflow: auto; background: var(--bs-tertiary-bg); padding: .75rem; border-radius: .375rem; }
 #terminal-wrap { background: #0b0e14; border-radius: .375rem; }
 .result-table { font-size: .85rem; }
 .htmx-indicator { opacity: 0; transition: opacity .2s; }
 .htmx-request .htmx-indicator { opacity: 1; }
-.terminal-frame { width: 100%; height: 540px; border: 0; display: block; background: #2b2b2b; }
+.terminal-frame { width: 100%; height: calc(100vh - 230px); min-height: 360px; border: 0; display: block; background: #2b2b2b; }
