@@ -7,22 +7,22 @@ var __export = (target, all) => {
 // node_modules/tslib/tslib.es6.mjs
 function __rest(s, e) {
   var t = {};
-  for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
-    t[p] = s[p];
+  for (var p2 in s) if (Object.prototype.hasOwnProperty.call(s, p2) && e.indexOf(p2) < 0)
+    t[p2] = s[p2];
   if (s != null && typeof Object.getOwnPropertySymbols === "function")
-    for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
-      if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
-        t[p[i]] = s[p[i]];
+    for (var i = 0, p2 = Object.getOwnPropertySymbols(s); i < p2.length; i++) {
+      if (e.indexOf(p2[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p2[i]))
+        t[p2[i]] = s[p2[i]];
     }
   return t;
 }
-function __awaiter(thisArg, _arguments, P, generator) {
+function __awaiter(thisArg, _arguments, P2, generator) {
   function adopt(value) {
-    return value instanceof P ? value : new P(function(resolve) {
+    return value instanceof P2 ? value : new P2(function(resolve) {
       resolve(value);
     });
   }
-  return new (P || (P = Promise))(function(resolve, reject) {
+  return new (P2 || (P2 = Promise))(function(resolve, reject) {
     function fulfilled(value) {
       try {
         step(generator.next(value));
@@ -44,8 +44,8 @@ function __awaiter(thisArg, _arguments, P, generator) {
   });
 }
 function __values(o) {
-  var s = typeof Symbol === "function" && Symbol.iterator, m = s && o[s], i = 0;
-  if (m) return m.call(o);
+  var s = typeof Symbol === "function" && Symbol.iterator, m2 = s && o[s], i = 0;
+  if (m2) return m2.call(o);
   if (o && typeof o.length === "number") return {
     next: function() {
       if (o && i >= o.length) o = void 0;
@@ -54,39 +54,39 @@ function __values(o) {
   };
   throw new TypeError(s ? "Object is not iterable." : "Symbol.iterator is not defined.");
 }
-function __await(v) {
-  return this instanceof __await ? (this.v = v, this) : new __await(v);
+function __await(v2) {
+  return this instanceof __await ? (this.v = v2, this) : new __await(v2);
 }
 function __asyncGenerator(thisArg, _arguments, generator) {
   if (!Symbol.asyncIterator) throw new TypeError("Symbol.asyncIterator is not defined.");
-  var g = generator.apply(thisArg, _arguments || []), i, q = [];
+  var g2 = generator.apply(thisArg, _arguments || []), i, q2 = [];
   return i = Object.create((typeof AsyncIterator === "function" ? AsyncIterator : Object).prototype), verb("next"), verb("throw"), verb("return", awaitReturn), i[Symbol.asyncIterator] = function() {
     return this;
   }, i;
-  function awaitReturn(f) {
-    return function(v) {
-      return Promise.resolve(v).then(f, reject);
+  function awaitReturn(f2) {
+    return function(v2) {
+      return Promise.resolve(v2).then(f2, reject);
     };
   }
-  function verb(n, f) {
-    if (g[n]) {
-      i[n] = function(v) {
-        return new Promise(function(a, b) {
-          q.push([n, v, a, b]) > 1 || resume(n, v);
+  function verb(n, f2) {
+    if (g2[n]) {
+      i[n] = function(v2) {
+        return new Promise(function(a2, b2) {
+          q2.push([n, v2, a2, b2]) > 1 || resume(n, v2);
         });
       };
-      if (f) i[n] = f(i[n]);
+      if (f2) i[n] = f2(i[n]);
     }
   }
-  function resume(n, v) {
+  function resume(n, v2) {
     try {
-      step(g[n](v));
+      step(g2[n](v2));
     } catch (e) {
-      settle(q[0][3], e);
+      settle(q2[0][3], e);
     }
   }
   function step(r) {
-    r.value instanceof __await ? Promise.resolve(r.value.v).then(fulfill, reject) : settle(q[0][2], r);
+    r.value instanceof __await ? Promise.resolve(r.value.v).then(fulfill, reject) : settle(q2[0][2], r);
   }
   function fulfill(value) {
     resume("next", value);
@@ -94,39 +94,39 @@ function __asyncGenerator(thisArg, _arguments, generator) {
   function reject(value) {
     resume("throw", value);
   }
-  function settle(f, v) {
-    if (f(v), q.shift(), q.length) resume(q[0][0], q[0][1]);
+  function settle(f2, v2) {
+    if (f2(v2), q2.shift(), q2.length) resume(q2[0][0], q2[0][1]);
   }
 }
 function __asyncDelegator(o) {
-  var i, p;
+  var i, p2;
   return i = {}, verb("next"), verb("throw", function(e) {
     throw e;
   }), verb("return"), i[Symbol.iterator] = function() {
     return this;
   }, i;
-  function verb(n, f) {
-    i[n] = o[n] ? function(v) {
-      return (p = !p) ? { value: __await(o[n](v)), done: false } : f ? f(v) : v;
-    } : f;
+  function verb(n, f2) {
+    i[n] = o[n] ? function(v2) {
+      return (p2 = !p2) ? { value: __await(o[n](v2)), done: false } : f2 ? f2(v2) : v2;
+    } : f2;
   }
 }
 function __asyncValues(o) {
   if (!Symbol.asyncIterator) throw new TypeError("Symbol.asyncIterator is not defined.");
-  var m = o[Symbol.asyncIterator], i;
-  return m ? m.call(o) : (o = typeof __values === "function" ? __values(o) : o[Symbol.iterator](), i = {}, verb("next"), verb("throw"), verb("return"), i[Symbol.asyncIterator] = function() {
+  var m2 = o[Symbol.asyncIterator], i;
+  return m2 ? m2.call(o) : (o = typeof __values === "function" ? __values(o) : o[Symbol.iterator](), i = {}, verb("next"), verb("throw"), verb("return"), i[Symbol.asyncIterator] = function() {
     return this;
   }, i);
   function verb(n) {
-    i[n] = o[n] && function(v) {
+    i[n] = o[n] && function(v2) {
       return new Promise(function(resolve, reject) {
-        v = o[n](v), settle(resolve, reject, v.done, v.value);
+        v2 = o[n](v2), settle(resolve, reject, v2.done, v2.value);
       });
     };
   }
-  function settle(resolve, reject, d, v) {
-    Promise.resolve(v).then(function(v2) {
-      resolve({ value: v2, done: d });
+  function settle(resolve, reject, d, v2) {
+    Promise.resolve(v2).then(function(v3) {
+      resolve({ value: v3, done: d });
     }, reject);
   }
 }
@@ -179,46 +179,46 @@ var encoder = new TextEncoder();
 var encodeUtf8 = (value) => encoder.encode(value);
 
 // node_modules/apache-arrow/util/compat.mjs
-var isNumber = (x) => typeof x === "number";
-var isBoolean = (x) => typeof x === "boolean";
-var isFunction = (x) => typeof x === "function";
-var isObject = (x) => x != null && Object(x) === x;
-var isPromise = (x) => {
-  return isObject(x) && isFunction(x.then);
+var isNumber = (x2) => typeof x2 === "number";
+var isBoolean = (x2) => typeof x2 === "boolean";
+var isFunction = (x2) => typeof x2 === "function";
+var isObject = (x2) => x2 != null && Object(x2) === x2;
+var isPromise = (x2) => {
+  return isObject(x2) && isFunction(x2.then);
 };
-var isIterable = (x) => {
-  return isObject(x) && isFunction(x[Symbol.iterator]);
+var isIterable = (x2) => {
+  return isObject(x2) && isFunction(x2[Symbol.iterator]);
 };
-var isAsyncIterable = (x) => {
-  return isObject(x) && isFunction(x[Symbol.asyncIterator]);
+var isAsyncIterable = (x2) => {
+  return isObject(x2) && isFunction(x2[Symbol.asyncIterator]);
 };
-var isArrowJSON = (x) => {
-  return isObject(x) && isObject(x["schema"]);
+var isArrowJSON = (x2) => {
+  return isObject(x2) && isObject(x2["schema"]);
 };
-var isIteratorResult = (x) => {
-  return isObject(x) && "done" in x && "value" in x;
+var isIteratorResult = (x2) => {
+  return isObject(x2) && "done" in x2 && "value" in x2;
 };
-var isFileHandle = (x) => {
-  return isObject(x) && isFunction(x["stat"]) && isNumber(x["fd"]);
+var isFileHandle = (x2) => {
+  return isObject(x2) && isFunction(x2["stat"]) && isNumber(x2["fd"]);
 };
-var isFetchResponse = (x) => {
-  return isObject(x) && isReadableDOMStream(x["body"]);
+var isFetchResponse = (x2) => {
+  return isObject(x2) && isReadableDOMStream(x2["body"]);
 };
-var isReadableInterop = (x) => "_getDOMStream" in x && "_getNodeStream" in x;
-var isWritableDOMStream = (x) => {
-  return isObject(x) && isFunction(x["abort"]) && isFunction(x["getWriter"]) && !isReadableInterop(x);
+var isReadableInterop = (x2) => "_getDOMStream" in x2 && "_getNodeStream" in x2;
+var isWritableDOMStream = (x2) => {
+  return isObject(x2) && isFunction(x2["abort"]) && isFunction(x2["getWriter"]) && !isReadableInterop(x2);
 };
-var isReadableDOMStream = (x) => {
-  return isObject(x) && isFunction(x["cancel"]) && isFunction(x["getReader"]) && !isReadableInterop(x);
+var isReadableDOMStream = (x2) => {
+  return isObject(x2) && isFunction(x2["cancel"]) && isFunction(x2["getReader"]) && !isReadableInterop(x2);
 };
-var isWritableNodeStream = (x) => {
-  return isObject(x) && isFunction(x["end"]) && isFunction(x["write"]) && isBoolean(x["writable"]) && !isReadableInterop(x);
+var isWritableNodeStream = (x2) => {
+  return isObject(x2) && isFunction(x2["end"]) && isFunction(x2["write"]) && isBoolean(x2["writable"]) && !isReadableInterop(x2);
 };
-var isReadableNodeStream = (x) => {
-  return isObject(x) && isFunction(x["read"]) && isFunction(x["pipe"]) && isBoolean(x["readable"]) && !isReadableInterop(x);
+var isReadableNodeStream = (x2) => {
+  return isObject(x2) && isFunction(x2["read"]) && isFunction(x2["pipe"]) && isBoolean(x2["readable"]) && !isReadableInterop(x2);
 };
-var isFlatbuffersByteBuffer = (x) => {
-  return isObject(x) && isFunction(x["clear"]) && isFunction(x["bytes"]) && isFunction(x["position"]) && isFunction(x["setPosition"]) && isFunction(x["capacity"]) && isFunction(x["getBufferIdentifier"]) && isFunction(x["createLong"]);
+var isFlatbuffersByteBuffer = (x2) => {
+  return isObject(x2) && isFunction(x2["clear"]) && isFunction(x2["bytes"]) && isFunction(x2["position"]) && isFunction(x2["setPosition"]) && isFunction(x2["capacity"]) && isFunction(x2["getBufferIdentifier"]) && isFunction(x2["createLong"]);
 };
 
 // node_modules/apache-arrow/util/buffer.mjs
@@ -226,20 +226,20 @@ var SharedArrayBuf = typeof SharedArrayBuffer !== "undefined" ? SharedArrayBuffe
 function collapseContiguousByteRanges(chunks) {
   const result = chunks[0] ? [chunks[0]] : [];
   let xOffset, yOffset, xLen, yLen;
-  for (let x, y, i = 0, j = 0, n = chunks.length; ++i < n; ) {
-    x = result[j];
-    y = chunks[i];
-    if (!x || !y || x.buffer !== y.buffer || y.byteOffset < x.byteOffset) {
-      y && (result[++j] = y);
+  for (let x2, y2, i = 0, j2 = 0, n = chunks.length; ++i < n; ) {
+    x2 = result[j2];
+    y2 = chunks[i];
+    if (!x2 || !y2 || x2.buffer !== y2.buffer || y2.byteOffset < x2.byteOffset) {
+      y2 && (result[++j2] = y2);
       continue;
     }
-    ({ byteOffset: xOffset, byteLength: xLen } = x);
-    ({ byteOffset: yOffset, byteLength: yLen } = y);
+    ({ byteOffset: xOffset, byteLength: xLen } = x2);
+    ({ byteOffset: yOffset, byteLength: yLen } = y2);
     if (xOffset + xLen < yOffset || yOffset + yLen < xOffset) {
-      y && (result[++j] = y);
+      y2 && (result[++j2] = y2);
       continue;
     }
-    result[j] = new Uint8Array(x.buffer, xOffset, yOffset - xOffset + yLen);
+    result[j2] = new Uint8Array(x2.buffer, xOffset, yOffset - xOffset + yLen);
   }
   return result;
 }
@@ -252,7 +252,7 @@ function memcpy(target, source, targetByteOffset = 0, sourceByteLength = source.
 }
 function joinUint8Arrays(chunks, size) {
   const result = collapseContiguousByteRanges(chunks);
-  const byteLength = result.reduce((x, b) => x + b.byteLength, 0);
+  const byteLength = result.reduce((x2, b2) => x2 + b2.byteLength, 0);
   let source, sliced, buffer;
   let offset = 0, index = -1;
   const length = Math.min(size || Number.POSITIVE_INFINITY, byteLength);
@@ -314,8 +314,8 @@ var pump = (iterator) => {
   return iterator;
 };
 function* toArrayBufferViewIterator(ArrayCtor, source) {
-  const wrap = function* (x) {
-    yield x;
+  const wrap = function* (x2) {
+    yield x2;
   };
   const buffers = typeof source === "string" ? wrap(source) : ArrayBuffer.isView(source) ? wrap(source) : source instanceof ArrayBuffer ? wrap(source) : source instanceof SharedArrayBuf ? wrap(source) : !isIterable(source) ? wrap(source) : source;
   yield* pump((function* (it) {
@@ -340,9 +340,9 @@ function toArrayBufferViewAsyncIterator(ArrayCtor, source) {
     if (isPromise(source)) {
       return yield __await(yield __await(yield* __asyncDelegator(__asyncValues(toArrayBufferViewAsyncIterator(ArrayCtor, yield __await(source))))));
     }
-    const wrap = function(x) {
+    const wrap = function(x2) {
       return __asyncGenerator(this, arguments, function* () {
-        yield yield __await(yield __await(x));
+        yield yield __await(yield __await(x2));
       });
     };
     const emit = function(source2) {
@@ -388,15 +388,15 @@ function rebaseValueOffsets(offset, length, valueOffsets) {
   }
   return valueOffsets.subarray(0, length);
 }
-function compareArrayLike(a, b) {
+function compareArrayLike(a2, b2) {
   let i = 0;
-  const n = a.length;
-  if (n !== b.length) {
+  const n = a2.length;
+  if (n !== b2.length) {
     return false;
   }
   if (n > 0) {
     do {
-      if (a[i] !== b[i]) {
+      if (a2[i] !== b2[i]) {
         return false;
       }
     } while (++i < n);
@@ -572,7 +572,7 @@ var AdaptiveByteReader = class {
   }
 };
 var onEvent = (stream, event) => {
-  const handler = (_) => resolve([event, _]);
+  const handler = (_2) => resolve([event, _2]);
   let resolve;
   return [event, handler, new Promise((r) => (resolve = r) && stream["once"](event, handler))];
 };
@@ -600,7 +600,7 @@ function fromNodeStream(stream) {
       events[1] = onEvent(stream, "error");
       do {
         events[2] = onEvent(stream, "readable");
-        [event, err] = yield __await(Promise.race(events.map((x) => x[2])));
+        [event, err] = yield __await(Promise.race(events.map((x2) => x2[2])));
         if (event === "error") {
           break;
         }
@@ -1274,8 +1274,8 @@ var Builder = class _Builder {
     outer_loop: for (i = 0; i < this.vtables.length; i++) {
       const vt2 = this.bb.capacity() - this.vtables[i];
       if (len == this.bb.readInt16(vt2)) {
-        for (let j = SIZEOF_SHORT; j < len; j += SIZEOF_SHORT) {
-          if (this.bb.readInt16(vt1 + j) != this.bb.readInt16(vt2 + j)) {
+        for (let j2 = SIZEOF_SHORT; j2 < len; j2 += SIZEOF_SHORT) {
+          if (this.bb.readInt16(vt1 + j2) != this.bb.readInt16(vt2 + j2)) {
             continue outer_loop;
           }
         }
@@ -1409,13 +1409,13 @@ var Builder = class _Builder {
    * @param v The bytes to add
    * @returns The offset in the buffer where the byte vector starts
    */
-  createByteVector(v) {
-    if (v === null || v === void 0) {
+  createByteVector(v2) {
+    if (v2 === null || v2 === void 0) {
       return 0;
     }
-    this.startVector(1, v.length, 1);
-    this.bb.setPosition(this.space -= v.length);
-    this.bb.bytes().set(v, this.space);
+    this.startVector(1, v2.length, 1);
+    this.bb.setPosition(this.space -= v2.length);
+    this.bb.bytes().set(v2, this.space);
     return this.endVector();
   }
   /**
@@ -3029,31 +3029,31 @@ __export(pretty_exports, {
   valueToString: () => valueToString
 });
 var undf = void 0;
-function valueToString(x) {
-  if (x === null) {
+function valueToString(x2) {
+  if (x2 === null) {
     return "null";
   }
-  if (x === undf) {
+  if (x2 === undf) {
     return "undefined";
   }
-  switch (typeof x) {
+  switch (typeof x2) {
     case "number":
-      return `${x}`;
+      return `${x2}`;
     case "bigint":
-      return `${x}`;
+      return `${x2}`;
     case "string":
-      return `"${x}"`;
+      return `"${x2}"`;
   }
-  if (typeof x[Symbol.toPrimitive] === "function") {
-    return x[Symbol.toPrimitive]("string");
+  if (typeof x2[Symbol.toPrimitive] === "function") {
+    return x2[Symbol.toPrimitive]("string");
   }
-  if (ArrayBuffer.isView(x)) {
-    if (x instanceof BigInt64Array || x instanceof BigUint64Array) {
-      return `[${[...x].map((x2) => valueToString(x2))}]`;
+  if (ArrayBuffer.isView(x2)) {
+    if (x2 instanceof BigInt64Array || x2 instanceof BigUint64Array) {
+      return `[${[...x2].map((x3) => valueToString(x3))}]`;
     }
-    return `[${x}]`;
+    return `[${x2}]`;
   }
-  return ArrayBuffer.isView(x) ? `[${x}]` : JSON.stringify(x, (_, y) => typeof y === "bigint" ? `${y}` : y);
+  return ArrayBuffer.isView(x2) ? `[${x2}]` : JSON.stringify(x2, (_2, y2) => typeof y2 === "bigint" ? `${y2}` : y2);
 }
 
 // node_modules/apache-arrow/util/bn.mjs
@@ -3079,11 +3079,11 @@ function divideBigInts(number, divisor) {
 
 // node_modules/apache-arrow/util/bn.mjs
 var isArrowBigNumSymbol = /* @__PURE__ */ Symbol.for("isArrowBigNum");
-function BigNum(x, ...xs) {
+function BigNum(x2, ...xs) {
   if (xs.length === 0) {
-    return Object.setPrototypeOf(toArrayBufferView(this["TypedArray"], x), this.constructor.prototype);
+    return Object.setPrototypeOf(toArrayBufferView(this["TypedArray"], x2), this.constructor.prototype);
   }
-  return Object.setPrototypeOf(new this["TypedArray"](x, ...xs), this.constructor.prototype);
+  return Object.setPrototypeOf(new this["TypedArray"](x2, ...xs), this.constructor.prototype);
 }
 BigNum.prototype[isArrowBigNumSymbol] = true;
 BigNum.prototype.toJSON = function() {
@@ -3148,18 +3148,18 @@ function bigNumToNumber(bn, scale) {
   }
   return bigIntToNumber(number);
 }
-function bigNumToString(a) {
-  if (a.byteLength === 8) {
-    const bigIntArray = new a["BigIntArray"](a.buffer, a.byteOffset, 1);
+function bigNumToString(a2) {
+  if (a2.byteLength === 8) {
+    const bigIntArray = new a2["BigIntArray"](a2.buffer, a2.byteOffset, 1);
     return `${bigIntArray[0]}`;
   }
-  if (!a["signed"]) {
-    return unsignedBigNumToString(a);
+  if (!a2["signed"]) {
+    return unsignedBigNumToString(a2);
   }
-  let array = new Uint16Array(a.buffer, a.byteOffset, a.byteLength / 2);
+  let array = new Uint16Array(a2.buffer, a2.byteOffset, a2.byteLength / 2);
   const highOrderWord = new Int16Array([array.at(-1)])[0];
   if (highOrderWord >= 0) {
-    return unsignedBigNumToString(a);
+    return unsignedBigNumToString(a2);
   }
   array = array.slice();
   let carry = 1;
@@ -3172,18 +3172,18 @@ function bigNumToString(a) {
   const negated = unsignedBigNumToString(array);
   return `-${negated}`;
 }
-function bigNumToBigInt(a) {
-  if (a.byteLength === 8) {
-    const bigIntArray = new a["BigIntArray"](a.buffer, a.byteOffset, 1);
+function bigNumToBigInt(a2) {
+  if (a2.byteLength === 8) {
+    const bigIntArray = new a2["BigIntArray"](a2.buffer, a2.byteOffset, 1);
     return bigIntArray[0];
   } else {
-    return bigNumToString(a);
+    return bigNumToString(a2);
   }
 }
-function unsignedBigNumToString(a) {
+function unsignedBigNumToString(a2) {
   let digits = "";
   const base64 = new Uint32Array(2);
-  let base32 = new Uint16Array(a.buffer, a.byteOffset, a.byteLength / 2);
+  let base32 = new Uint16Array(a2.buffer, a2.byteOffset, a2.byteLength / 2);
   const checks = new Uint32Array((base32 = new Uint16Array(base32).reverse()).buffer);
   let i = -1;
   const n = base32.length - 1;
@@ -3261,96 +3261,96 @@ var _w;
 var _x;
 var DataType = class _DataType {
   /** @nocollapse */
-  static isNull(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Null;
+  static isNull(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Null;
   }
   /** @nocollapse */
-  static isInt(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Int;
+  static isInt(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Int;
   }
   /** @nocollapse */
-  static isFloat(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Float;
+  static isFloat(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Float;
   }
   /** @nocollapse */
-  static isBinary(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Binary;
+  static isBinary(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Binary;
   }
   /** @nocollapse */
-  static isLargeBinary(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.LargeBinary;
+  static isLargeBinary(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.LargeBinary;
   }
   /** @nocollapse */
-  static isUtf8(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Utf8;
+  static isUtf8(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Utf8;
   }
   /** @nocollapse */
-  static isLargeUtf8(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.LargeUtf8;
+  static isLargeUtf8(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.LargeUtf8;
   }
   /** @nocollapse */
-  static isBool(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Bool;
+  static isBool(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Bool;
   }
   /** @nocollapse */
-  static isDecimal(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Decimal;
+  static isDecimal(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Decimal;
   }
   /** @nocollapse */
-  static isDate(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Date;
+  static isDate(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Date;
   }
   /** @nocollapse */
-  static isTime(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Time;
+  static isTime(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Time;
   }
   /** @nocollapse */
-  static isTimestamp(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Timestamp;
+  static isTimestamp(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Timestamp;
   }
   /** @nocollapse */
-  static isInterval(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Interval;
+  static isInterval(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Interval;
   }
   /** @nocollapse */
-  static isDuration(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Duration;
+  static isDuration(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Duration;
   }
   /** @nocollapse */
-  static isList(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.List;
+  static isList(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.List;
   }
   /** @nocollapse */
-  static isStruct(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Struct;
+  static isStruct(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Struct;
   }
   /** @nocollapse */
-  static isUnion(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Union;
+  static isUnion(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Union;
   }
   /** @nocollapse */
-  static isFixedSizeBinary(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.FixedSizeBinary;
+  static isFixedSizeBinary(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.FixedSizeBinary;
   }
   /** @nocollapse */
-  static isFixedSizeList(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.FixedSizeList;
+  static isFixedSizeList(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.FixedSizeList;
   }
   /** @nocollapse */
-  static isMap(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Map;
+  static isMap(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Map;
   }
   /** @nocollapse */
-  static isDictionary(x) {
-    return (x === null || x === void 0 ? void 0 : x.typeId) === Type2.Dictionary;
+  static isDictionary(x2) {
+    return (x2 === null || x2 === void 0 ? void 0 : x2.typeId) === Type2.Dictionary;
   }
   /** @nocollapse */
-  static isDenseUnion(x) {
-    return _DataType.isUnion(x) && x.mode === UnionMode.Dense;
+  static isDenseUnion(x2) {
+    return _DataType.isUnion(x2) && x2.mode === UnionMode.Dense;
   }
   /** @nocollapse */
-  static isSparseUnion(x) {
-    return _DataType.isUnion(x) && x.mode === UnionMode.Sparse;
+  static isSparseUnion(x2) {
+    return _DataType.isUnion(x2) && x2.mode === UnionMode.Sparse;
   }
   constructor(typeId) {
     this.typeId = typeId;
@@ -3720,7 +3720,7 @@ var Struct = class extends DataType {
     this.children = children;
   }
   toString() {
-    return `Struct<{${this.children.map((f) => `${f.name}:${f.type}`).join(`, `)}}>`;
+    return `Struct<{${this.children.map((f2) => `${f2.name}:${f2.type}`).join(`, `)}}>`;
   }
 };
 _s = Symbol.toStringTag;
@@ -3737,7 +3737,7 @@ var Union_ = class extends DataType {
     this.typeIdToChildIndex = typeIds.reduce((typeIdToChildIndex, typeId, idx) => (typeIdToChildIndex[typeId] = idx) && typeIdToChildIndex || typeIdToChildIndex, /* @__PURE__ */ Object.create(null));
   }
   toString() {
-    return `${this[Symbol.toStringTag]}<${this.children.map((x) => `${x.type}`).join(` | `)}>`;
+    return `${this[Symbol.toStringTag]}<${this.children.map((x2) => `${x2.type}`).join(` | `)}>`;
   }
 };
 _t = Symbol.toStringTag;
@@ -3819,7 +3819,7 @@ var Map_ = class extends DataType {
     return this.children[0].type;
   }
   toString() {
-    return `Map<{${this.children[0].type.children.map((f) => `${f.name}:${f.type}`).join(`, `)}}>`;
+    return `Map<{${this.children[0].type.children.map((f2) => `${f2.name}:${f2.type}`).join(`, `)}}>`;
   }
 };
 _w = Symbol.toStringTag;
@@ -3879,7 +3879,7 @@ function strideForType(type) {
 // node_modules/apache-arrow/visitor.mjs
 var Visitor = class {
   visitMany(nodes, ...args) {
-    return nodes.map((node, i) => this.visit(node, ...args.map((x) => x[i])));
+    return nodes.map((node, i) => this.visit(node, ...args.map((x2) => x2[i])));
   }
   visit(...args) {
     return this.getVisitFn(args[0], false).apply(this, args);
@@ -4283,10 +4283,10 @@ __export(math_exports, {
 });
 var f64 = new Float64Array(1);
 var u32 = new Uint32Array(f64.buffer);
-function uint16ToFloat64(h) {
-  const expo = (h & 31744) >> 10;
-  const sigf = (h & 1023) / 1024;
-  const sign = Math.pow(-1, (h & 32768) >> 15);
+function uint16ToFloat64(h2) {
+  const expo = (h2 & 31744) >> 10;
+  const sigf = (h2 & 1023) / 1024;
+  const sign = Math.pow(-1, (h2 & 32768) >> 15);
   switch (expo) {
     case 31:
       return sign * (sigf ? Number.NaN : 1 / 0);
@@ -4335,9 +4335,9 @@ var setEpochMsToDays = (data, index, epochMs) => {
 };
 var setVariableWidthBytes = (values, valueOffsets, index, value) => {
   if (index + 1 < valueOffsets.length) {
-    const x = bigIntToNumber(valueOffsets[index]);
-    const y = bigIntToNumber(valueOffsets[index + 1]);
-    values.set(value.subarray(0, y - x), x);
+    const x2 = bigIntToNumber(valueOffsets[index]);
+    const y2 = bigIntToNumber(valueOffsets[index + 1]);
+    values.set(value.subarray(0, y2 - x2), x2);
   }
 };
 var setBool = ({ offset, values }, index, val) => {
@@ -4453,14 +4453,14 @@ var setMap = (data, index, value) => {
       break;
   }
 };
-var _setStructArrayValue = (o, v) => (set, c, _, i) => c && set(c, o, v[i]);
-var _setStructVectorValue = (o, v) => (set, c, _, i) => c && set(c, o, v.get(i));
-var _setStructMapValue = (o, v) => (set, c, f, _) => c && set(c, o, v.get(f.name));
-var _setStructObjectValue = (o, v) => (set, c, f, _) => c && set(c, o, v[f.name]);
+var _setStructArrayValue = (o, v2) => (set, c, _2, i) => c && set(c, o, v2[i]);
+var _setStructVectorValue = (o, v2) => (set, c, _2, i) => c && set(c, o, v2.get(i));
+var _setStructMapValue = (o, v2) => (set, c, f2, _2) => c && set(c, o, v2.get(f2.name));
+var _setStructObjectValue = (o, v2) => (set, c, f2, _2) => c && set(c, o, v2[f2.name]);
 var setStruct = (data, index, value) => {
-  const childSetters = data.type.children.map((f) => instance.getVisitFn(f.type));
+  const childSetters = data.type.children.map((f2) => instance.getVisitFn(f2.type));
   const set = value instanceof Map ? _setStructMapValue(index, value) : value instanceof Vector ? _setStructVectorValue(index, value) : Array.isArray(value) ? _setStructArrayValue(index, value) : _setStructObjectValue(index, value);
-  data.type.children.forEach((f, i) => set(childSetters[i], data.children[i], f, i));
+  data.type.children.forEach((f2, i) => set(childSetters[i], data.children[i], f2, i));
 };
 var setUnion = (data, index, value) => {
   data.type.mode === UnionMode.Dense ? setDenseUnion(data, index, value) : setSparseUnion(data, index, value);
@@ -4594,8 +4594,8 @@ var StructRow = class {
     const parent = this[kParent];
     const keys = parent.type.children;
     const json = {};
-    for (let j = -1, n = keys.length; ++j < n; ) {
-      json[keys[j].name] = instance2.visit(parent.children[j], i);
+    for (let j2 = -1, n = keys.length; ++j2 < n; ) {
+      json[keys[j2].name] = instance2.visit(parent.children[j2], i);
     }
     return json;
   }
@@ -4651,13 +4651,13 @@ var StructRowProxyHandler = class {
     return true;
   }
   ownKeys(row) {
-    return row[kParent].type.children.map((f) => f.name);
+    return row[kParent].type.children.map((f2) => f2.name);
   }
   has(row, key) {
-    return row[kParent].type.children.findIndex((f) => f.name === key) !== -1;
+    return row[kParent].type.children.findIndex((f2) => f2.name === key) !== -1;
   }
   getOwnPropertyDescriptor(row, key) {
-    if (row[kParent].type.children.findIndex((f) => f.name === key) !== -1) {
+    if (row[kParent].type.children.findIndex((f2) => f2.name === key) !== -1) {
       return { writable: true, enumerable: true, configurable: true };
     }
     return;
@@ -4666,7 +4666,7 @@ var StructRowProxyHandler = class {
     if (Reflect.has(row, key)) {
       return row[key];
     }
-    const idx = row[kParent].type.children.findIndex((f) => f.name === key);
+    const idx = row[kParent].type.children.findIndex((f2) => f2.name === key);
     if (idx !== -1) {
       const val = instance2.visit(row[kParent].children[idx], row[kRowIndex]);
       Reflect.set(row, key, val);
@@ -4674,7 +4674,7 @@ var StructRowProxyHandler = class {
     }
   }
   set(row, key, val) {
-    const idx = row[kParent].type.children.findIndex((f) => f.name === key);
+    const idx = row[kParent].type.children.findIndex((f2) => f2.name === key);
     if (idx !== -1) {
       instance.visit(row[kParent].children[idx], row[kRowIndex], val);
       return Reflect.set(row, key, val);
@@ -4697,9 +4697,9 @@ var getVariableWidthBytes = (values, valueOffsets, index) => {
   if (index + 1 >= valueOffsets.length) {
     return null;
   }
-  const x = bigIntToNumber(valueOffsets[index]);
-  const y = bigIntToNumber(valueOffsets[index + 1]);
-  return values.subarray(x, y);
+  const x2 = bigIntToNumber(valueOffsets[index]);
+  const y2 = bigIntToNumber(valueOffsets[index + 1]);
+  return values.subarray(x2, y2);
 };
 var getBool = ({ offset, values }, index) => {
   const idx = offset + index;
@@ -5036,8 +5036,8 @@ function createArrayLikeComparator(lhs) {
 function createMapComparator(lhs) {
   let i = -1;
   const comparators = [];
-  for (const v of lhs.values())
-    comparators[++i] = createElementComparator(v);
+  for (const v2 of lhs.values())
+    comparators[++i] = createElementComparator(v2);
   return createSubElementsComparator(comparators);
 }
 function createVectorComparator(lhs) {
@@ -5171,9 +5171,9 @@ function packBools(values) {
   if (i === 0 || bit > 0) {
     xs[i++] = byte;
   }
-  const b = new Uint8Array(xs.length + 7 & ~7);
-  b.set(xs);
-  return b;
+  const b2 = new Uint8Array(xs.length + 7 & ~7);
+  b2.set(xs);
+  return b2;
 }
 var BitIterator = class {
   constructor(bytes, begin, length, context, get) {
@@ -5646,8 +5646,8 @@ function isChunkedValid(data, index) {
   return data.getValid(index);
 }
 function wrapChunkedCall1(fn) {
-  function chunkedFn(chunks, i, j) {
-    return fn(chunks[i], j);
+  function chunkedFn(chunks, i, j2) {
+    return fn(chunks[i], j2);
   }
   return function(index) {
     const data = this.data;
@@ -5656,8 +5656,8 @@ function wrapChunkedCall1(fn) {
 }
 function wrapChunkedCall2(fn) {
   let _2;
-  function chunkedFn(chunks, i, j) {
-    return fn(chunks[i], j, _2);
+  function chunkedFn(chunks, i, j2) {
+    return fn(chunks[i], j2, _2);
   }
   return function(index, value) {
     const data = this.data;
@@ -5896,8 +5896,8 @@ var vectorPrototypesByTypeId = {};
 var Vector = class _Vector {
   constructor(input) {
     var _b2, _c2, _d2;
-    const data = input[0] instanceof _Vector ? input.flatMap((x) => x.data) : input;
-    if (data.length === 0 || data.some((x) => !(x instanceof Data))) {
+    const data = input[0] instanceof _Vector ? input.flatMap((x2) => x2.data) : input;
+    if (data.length === 0 || data.some((x2) => !(x2 instanceof Data))) {
       throw new TypeError("Vector constructor expects an Array of Data instances.");
     }
     const type = (_b2 = data[0]) === null || _b2 === void 0 ? void 0 : _b2.type;
@@ -6018,7 +6018,7 @@ var Vector = class _Vector {
    * @param others Additional Vectors to add to the end of this Vector.
    */
   concat(...others) {
-    return new _Vector(this.data.concat(others.flatMap((x) => x.data).flat(Number.POSITIVE_INFINITY)));
+    return new _Vector(this.data.concat(others.flatMap((x2) => x2.data).flat(Number.POSITIVE_INFINITY)));
   }
   /**
    * Return a zero-copy sub-section of this Vector.
@@ -6079,7 +6079,7 @@ var Vector = class _Vector {
    */
   getChild(name) {
     var _b2;
-    return this.getChildAt((_b2 = this.type.children) === null || _b2 === void 0 ? void 0 : _b2.findIndex((f) => f.name === name));
+    return this.getChildAt((_b2 = this.type.children) === null || _b2 === void 0 ? void 0 : _b2.findIndex((f2) => f2.name === name));
   }
   /**
    * Returns a child Vector by index, or null if this Vector has no child at the supplied index.
@@ -6208,11 +6208,11 @@ function createIsValidFunction(nullValues) {
     };
   }
   let fnBody = "";
-  const noNaNs = nullValues.filter((x) => x === x);
+  const noNaNs = nullValues.filter((x2) => x2 === x2);
   if (noNaNs.length > 0) {
     fnBody = `
-    switch (x) {${noNaNs.map((x) => `
-        case ${valueToCase(x)}:`).join("")}
+    switch (x) {${noNaNs.map((x2) => `
+        case ${valueToCase(x2)}:`).join("")}
             return false;
     }`;
   }
@@ -6223,11 +6223,11 @@ ${fnBody}`;
   return new Function(`x`, `${fnBody}
 return true;`);
 }
-function valueToCase(x) {
-  if (typeof x !== "bigint") {
-    return valueToString(x);
+function valueToCase(x2) {
+  if (typeof x2 !== "bigint") {
+    return valueToString(x2);
   }
-  return `${valueToString(x)}n`;
+  return `${valueToString(x2)}n`;
 }
 
 // node_modules/apache-arrow/builder/buffer.mjs
@@ -6772,10 +6772,10 @@ var Schema2 = class _Schema {
     return "Schema";
   }
   get names() {
-    return this.fields.map((f) => f.name);
+    return this.fields.map((f2) => f2.name);
   }
   toString() {
-    return `Schema<{ ${this.fields.map((f, i) => `${i}: ${f}`).join(", ")} }>`;
+    return `Schema<{ ${this.fields.map((f2, i) => `${i}: ${f2}`).join(", ")} }>`;
   }
   /**
    * Construct a new Schema containing only specified fields.
@@ -6785,7 +6785,7 @@ var Schema2 = class _Schema {
    */
   select(fieldNames) {
     const names = new Set(fieldNames);
-    const fields = this.fields.filter((f) => names.has(f.name));
+    const fields = this.fields.filter((f2) => names.has(f2.name));
     return new _Schema(fields, this.metadata);
   }
   /**
@@ -6803,7 +6803,7 @@ var Schema2 = class _Schema {
     const curFields = [...this.fields];
     const metadata = mergeMaps(mergeMaps(/* @__PURE__ */ new Map(), this.metadata), other.metadata);
     const newFields = other.fields.filter((f2) => {
-      const i = curFields.findIndex((f) => f.name === f2.name);
+      const i = curFields.findIndex((f3) => f3.name === f2.name);
       return ~i ? (curFields[i] = f2.clone({
         metadata: mergeMaps(mergeMaps(/* @__PURE__ */ new Map(), curFields[i].metadata), f2.metadata)
       })) && false : true;
@@ -6886,25 +6886,25 @@ var Footer_ = class {
   }
   /** @nocollapse */
   static encode(footer) {
-    const b = new Builder3();
-    const schemaOffset = Schema2.encode(b, footer.schema);
-    Footer.startRecordBatchesVector(b, footer.numRecordBatches);
+    const b2 = new Builder3();
+    const schemaOffset = Schema2.encode(b2, footer.schema);
+    Footer.startRecordBatchesVector(b2, footer.numRecordBatches);
     for (const rb of [...footer.recordBatches()].slice().reverse()) {
-      FileBlock.encode(b, rb);
+      FileBlock.encode(b2, rb);
     }
-    const recordBatchesOffset = b.endVector();
-    Footer.startDictionariesVector(b, footer.numDictionaries);
+    const recordBatchesOffset = b2.endVector();
+    Footer.startDictionariesVector(b2, footer.numDictionaries);
     for (const db of [...footer.dictionaryBatches()].slice().reverse()) {
-      FileBlock.encode(b, db);
+      FileBlock.encode(b2, db);
     }
-    const dictionaryBatchesOffset = b.endVector();
-    Footer.startFooter(b);
-    Footer.addSchema(b, schemaOffset);
-    Footer.addVersion(b, MetadataVersion.V5);
-    Footer.addRecordBatches(b, recordBatchesOffset);
-    Footer.addDictionaries(b, dictionaryBatchesOffset);
-    Footer.finishFooterBuffer(b, Footer.endFooter(b));
-    return b.asUint8Array();
+    const dictionaryBatchesOffset = b2.endVector();
+    Footer.startFooter(b2);
+    Footer.addSchema(b2, schemaOffset);
+    Footer.addVersion(b2, MetadataVersion.V5);
+    Footer.addRecordBatches(b2, recordBatchesOffset);
+    Footer.addDictionaries(b2, dictionaryBatchesOffset);
+    Footer.finishFooterBuffer(b2, Footer.endFooter(b2));
+    return b2.asUint8Array();
   }
   get numRecordBatches() {
     return this._recordBatches.length;
@@ -6975,11 +6975,11 @@ var FileBlock = class _FileBlock {
     return new _FileBlock(block.metaDataLength(), block.bodyLength(), block.offset());
   }
   /** @nocollapse */
-  static encode(b, fileBlock) {
+  static encode(b2, fileBlock) {
     const { metaDataLength } = fileBlock;
     const offset = BigInt(fileBlock.offset);
     const bodyLength = BigInt(fileBlock.bodyLength);
-    return Block.createBlock(b, offset, metaDataLength, bodyLength);
+    return Block.createBlock(b2, offset, metaDataLength, bodyLength);
   }
   constructor(metaDataLength, bodyLength, offset) {
     this.metaDataLength = metaDataLength;
@@ -7068,13 +7068,13 @@ var AsyncQueue = class extends ReadableInterop {
   toNodeStream(options) {
     return adapters_default.toNodeStream(this._closedPromiseResolve || this._error ? this : this._values, options);
   }
-  throw(_) {
+  throw(_2) {
     return __awaiter(this, void 0, void 0, function* () {
-      yield this.abort(_);
+      yield this.abort(_2);
       return ITERATOR_DONE;
     });
   }
-  return(_) {
+  return(_2) {
     return __awaiter(this, void 0, void 0, function* () {
       yield this.close();
       return ITERATOR_DONE;
@@ -7390,9 +7390,9 @@ var AsyncRandomAccessFile = class extends AsyncByteStream {
   }
   close() {
     return __awaiter(this, void 0, void 0, function* () {
-      const f = this._handle;
+      const f2 = this._handle;
       this._handle = null;
-      f && (yield f.close());
+      f2 && (yield f2.close());
     });
   }
   throw(value) {
@@ -7447,30 +7447,30 @@ var BaseInt64 = class {
     return this.buffer[0];
   }
   _times(other) {
-    const L = new Uint32Array([
+    const L2 = new Uint32Array([
       this.buffer[1] >>> 16,
       this.buffer[1] & 65535,
       this.buffer[0] >>> 16,
       this.buffer[0] & 65535
     ]);
-    const R = new Uint32Array([
+    const R2 = new Uint32Array([
       other.buffer[1] >>> 16,
       other.buffer[1] & 65535,
       other.buffer[0] >>> 16,
       other.buffer[0] & 65535
     ]);
-    let product = L[3] * R[3];
+    let product = L2[3] * R2[3];
     this.buffer[0] = product & 65535;
     let sum = product >>> 16;
-    product = L[2] * R[3];
+    product = L2[2] * R2[3];
     sum += product;
-    product = L[3] * R[2] >>> 0;
+    product = L2[3] * R2[2] >>> 0;
     sum += product;
     this.buffer[0] += sum << 16;
     this.buffer[1] = sum >>> 0 < product ? carryBit16 : 0;
     this.buffer[1] += sum >>> 16;
-    this.buffer[1] += L[1] * R[3] + L[2] * R[2] + L[3] * R[1];
-    this.buffer[1] += L[0] * R[3] + L[1] * R[2] + L[2] * R[1] + L[3] * R[0] << 16;
+    this.buffer[1] += L2[1] * R2[3] + L2[2] * R2[2] + L2[3] * R2[1];
+    this.buffer[1] += L2[0] * R2[3] + L2[1] * R2[2] + L2[2] * R2[1] + L2[3] * R2[0] << 16;
     return this;
   }
   _plus(other) {
@@ -7865,7 +7865,7 @@ var JSONVectorLoader = class extends VectorLoader {
     } else if (DataType.isUtf8(type) || DataType.isLargeUtf8(type)) {
       return encodeUtf8(sources[offset].join(""));
     }
-    return toArrayBufferView(Uint8Array, toArrayBufferView(type.ArrayType, sources[offset].map((x) => +x)));
+    return toArrayBufferView(Uint8Array, toArrayBufferView(type.ArrayType, sources[offset].map((x2) => +x2)));
   }
 };
 function binaryDataFromJSON(values) {
@@ -8159,11 +8159,11 @@ var ListBuilder = class extends VariableWidthBuilder {
       if (typeof value === "undefined") {
         offsets.set(index, 0);
       } else {
-        const v = value;
-        const n = v.length;
+        const v2 = value;
+        const n = v2.length;
         const start = offsets.set(index, n).buffer[index];
         for (let i = -1; ++i < n; ) {
-          child.set(start + i, v[i]);
+          child.set(start + i, v2[i]);
         }
       }
     }
@@ -8226,11 +8226,11 @@ var StructBuilder = class extends Builder2 {
     const { children, type } = this;
     switch (Array.isArray(value) || value.constructor) {
       case true:
-        return type.children.forEach((_, i) => children[i].set(index, value[i]));
+        return type.children.forEach((_2, i) => children[i].set(index, value[i]));
       case Map:
-        return type.children.forEach((f, i) => children[i].set(index, value.get(f.name)));
+        return type.children.forEach((f2, i) => children[i].set(index, value.get(f2.name)));
       default:
-        return type.children.forEach((f, i) => children[i].set(index, value[f.name]));
+        return type.children.forEach((f2, i) => children[i].set(index, value[f2.name]));
     }
   }
   /** @inheritdoc */
@@ -8543,7 +8543,7 @@ var TypeComparator = class extends Visitor {
     return schema === other || other instanceof schema.constructor && this.compareManyFields(schema.fields, other.fields);
   }
   compareManyFields(fields, others) {
-    return fields === others || Array.isArray(fields) && Array.isArray(others) && fields.length === others.length && fields.every((f, i) => this.compareFields(f, others[i]));
+    return fields === others || Array.isArray(fields) && Array.isArray(others) && fields.length === others.length && fields.every((f2, i) => this.compareFields(f2, others[i]));
   }
   compareFields(field, other) {
     return field === other || other instanceof field.constructor && field.name === other.name && field.nullable === other.nullable && this.visit(field.type, other.type);
@@ -8580,7 +8580,7 @@ function compareStruct(type, other) {
   return type === other || compareConstructor(type, other) && type.children.length === other.children.length && instance6.compareManyFields(type.children, other.children);
 }
 function compareUnion(type, other) {
-  return type === other || compareConstructor(type, other) && type.mode === other.mode && type.typeIds.every((x, i) => x === other.typeIds[i]) && instance6.compareManyFields(type.children, other.children);
+  return type === other || compareConstructor(type, other) && type.mode === other.mode && type.typeIds.every((x2, i) => x2 === other.typeIds[i]) && instance6.compareManyFields(type.children, other.children);
 }
 function compareDictionary(type, other) {
   return type === other || compareConstructor(type, other) && type.id === other.id && type.isOrdered === other.isOrdered && instance6.visit(type.indices, other.indices) && instance6.visit(type.dictionary, other.dictionary);
@@ -8665,7 +8665,7 @@ function makeBuilder(options) {
   if (type.children && type.children.length > 0) {
     const children = options["children"] || [];
     const defaultOptions = { "nullValues": options["nullValues"] };
-    const getChildOptions = Array.isArray(children) ? ((_, i) => children[i] || defaultOptions) : (({ name }) => children[name] || defaultOptions);
+    const getChildOptions = Array.isArray(children) ? ((_2, i) => children[i] || defaultOptions) : (({ name }) => children[name] || defaultOptions);
     for (const [index, field] of type.children.entries()) {
       const { type: type2 } = field;
       const opts = getChildOptions(field, index);
@@ -8677,7 +8677,7 @@ function makeBuilder(options) {
 
 // node_modules/apache-arrow/util/recordbatch.mjs
 function distributeVectorsIntoRecordBatches(schema, vecs) {
-  return uniformlyDistributeChunksAcrossRecordBatches(schema, vecs.map((v) => v.data.concat()));
+  return uniformlyDistributeChunksAcrossRecordBatches(schema, vecs.map((v2) => v2.data.concat()));
 }
 function uniformlyDistributeChunksAcrossRecordBatches(schema, cols) {
   const fields = [...schema.fields];
@@ -8755,31 +8755,31 @@ var Table = class _Table {
     if (args.at(-1) instanceof Uint32Array) {
       offsets = args.pop();
     }
-    const unwrap = (x) => {
-      if (x) {
-        if (x instanceof RecordBatch2) {
-          return [x];
-        } else if (x instanceof _Table) {
-          return x.batches;
-        } else if (x instanceof Data) {
-          if (x.type instanceof Struct) {
-            return [new RecordBatch2(new Schema2(x.type.children), x)];
+    const unwrap = (x2) => {
+      if (x2) {
+        if (x2 instanceof RecordBatch2) {
+          return [x2];
+        } else if (x2 instanceof _Table) {
+          return x2.batches;
+        } else if (x2 instanceof Data) {
+          if (x2.type instanceof Struct) {
+            return [new RecordBatch2(new Schema2(x2.type.children), x2)];
           }
-        } else if (Array.isArray(x)) {
-          return x.flatMap((v) => unwrap(v));
-        } else if (typeof x[Symbol.iterator] === "function") {
-          return [...x].flatMap((v) => unwrap(v));
-        } else if (typeof x === "object") {
-          const keys = Object.keys(x);
-          const vecs = keys.map((k) => new Vector([x[k]]));
-          const batchSchema = schema !== null && schema !== void 0 ? schema : new Schema2(keys.map((k, i) => new Field2(String(k), vecs[i].type, vecs[i].nullable)));
+        } else if (Array.isArray(x2)) {
+          return x2.flatMap((v2) => unwrap(v2));
+        } else if (typeof x2[Symbol.iterator] === "function") {
+          return [...x2].flatMap((v2) => unwrap(v2));
+        } else if (typeof x2 === "object") {
+          const keys = Object.keys(x2);
+          const vecs = keys.map((k2) => new Vector([x2[k2]]));
+          const batchSchema = schema !== null && schema !== void 0 ? schema : new Schema2(keys.map((k2, i) => new Field2(String(k2), vecs[i].type, vecs[i].nullable)));
           const [, batches2] = distributeVectorsIntoRecordBatches(batchSchema, vecs);
-          return batches2.length === 0 ? [new RecordBatch2(x)] : batches2;
+          return batches2.length === 0 ? [new RecordBatch2(x2)] : batches2;
         }
       }
       return [];
     };
-    const batches = args.flatMap((v) => unwrap(v));
+    const batches = args.flatMap((v2) => unwrap(v2));
     schema = (_c2 = schema !== null && schema !== void 0 ? schema : (_b2 = batches[0]) === null || _b2 === void 0 ? void 0 : _b2.schema) !== null && _c2 !== void 0 ? _c2 : new Schema2([]);
     if (!(schema instanceof Schema2)) {
       throw new TypeError("Table constructor expects a [Schema, RecordBatch[]] pair.");
@@ -8924,7 +8924,7 @@ var Table = class _Table {
    * @param name The name of the child to retrieve.
    */
   getChild(name) {
-    return this.getChildAt(this.schema.fields.findIndex((f) => f.name === name));
+    return this.getChildAt(this.schema.fields.findIndex((f2) => f2.name === name));
   }
   /**
    * Returns a child Vector by index, or null if this Vector has no child at the supplied index.
@@ -8951,7 +8951,7 @@ var Table = class _Table {
    */
   setChild(name, child) {
     var _b2;
-    return this.setChildAt((_b2 = this.schema.fields) === null || _b2 === void 0 ? void 0 : _b2.findIndex((f) => f.name === name), child);
+    return this.setChildAt((_b2 = this.schema.fields) === null || _b2 === void 0 ? void 0 : _b2.findIndex((f2) => f2.name === name), child);
   }
   setChildAt(index, child) {
     let schema = this.schema;
@@ -8962,7 +8962,7 @@ var Table = class _Table {
       }
       const fields = schema.fields.slice();
       const field = fields[index].clone({ type: child.type });
-      const children = this.schema.fields.map((_, i) => this.getChildAt(i));
+      const children = this.schema.fields.map((_2, i) => this.getChildAt(i));
       [fields[index], children[index]] = [field, child];
       [schema, batches] = distributeVectorsIntoRecordBatches(schema, children);
     }
@@ -8975,8 +8975,8 @@ var Table = class _Table {
    * @returns A new Table of columns matching the specified names.
    */
   select(columnNames) {
-    const nameToIndex = this.schema.fields.reduce((m, f, i) => m.set(f.name, i), /* @__PURE__ */ new Map());
-    return this.selectAt(columnNames.map((columnName) => nameToIndex.get(columnName)).filter((x) => x > -1));
+    const nameToIndex = this.schema.fields.reduce((m2, f2, i) => m2.set(f2.name, i), /* @__PURE__ */ new Map());
+    return this.selectAt(columnNames.map((columnName) => nameToIndex.get(columnName)).filter((x2) => x2 > -1));
   }
   /**
    * Construct a new Table containing only columns at the specified indices.
@@ -8993,13 +8993,13 @@ var Table = class _Table {
     const fields = this.schema.fields;
     const [indices, oldToNew] = other.schema.fields.reduce((memo, f2, newIdx) => {
       const [indices2, oldToNew2] = memo;
-      const i = fields.findIndex((f) => f.name === f2.name);
+      const i = fields.findIndex((f3) => f3.name === f2.name);
       ~i ? oldToNew2[i] = newIdx : indices2.push(newIdx);
       return memo;
     }, [[], []]);
     const schema = this.schema.assign(other.schema);
     const columns = [
-      ...fields.map((_, i) => [i, oldToNew[i]]).map(([i, j]) => j === void 0 ? this.getChildAt(i) : other.getChildAt(j)),
+      ...fields.map((_2, i) => [i, oldToNew[i]]).map(([i, j2]) => j2 === void 0 ? this.getChildAt(i) : other.getChildAt(j2)),
       ...indices.map((i) => other.getChildAt(i))
     ].filter(Boolean);
     return new _Table(...distributeVectorsIntoRecordBatches(schema, columns));
@@ -9034,7 +9034,7 @@ var RecordBatch2 = class _RecordBatch {
           this.data = makeData({
             nullCount: 0,
             type: new Struct(this.schema.fields),
-            children: this.schema.fields.map((f) => makeData({ type: f.type, nullCount: 0 }))
+            children: this.schema.fields.map((f2) => makeData({ type: f2.type, nullCount: 0 }))
           })
         ] = args;
         if (!(this.data instanceof Data)) {
@@ -9157,7 +9157,7 @@ var RecordBatch2 = class _RecordBatch {
    */
   getChild(name) {
     var _b2;
-    return this.getChildAt((_b2 = this.schema.fields) === null || _b2 === void 0 ? void 0 : _b2.findIndex((f) => f.name === name));
+    return this.getChildAt((_b2 = this.schema.fields) === null || _b2 === void 0 ? void 0 : _b2.findIndex((f2) => f2.name === name));
   }
   /**
    * Returns a child Vector by index, or null if this Vector has no child at the supplied index.
@@ -9176,7 +9176,7 @@ var RecordBatch2 = class _RecordBatch {
    */
   setChild(name, child) {
     var _b2;
-    return this.setChildAt((_b2 = this.schema.fields) === null || _b2 === void 0 ? void 0 : _b2.findIndex((f) => f.name === name), child);
+    return this.setChildAt((_b2 = this.schema.fields) === null || _b2 === void 0 ? void 0 : _b2.findIndex((f2) => f2.name === name), child);
   }
   setChildAt(index, child) {
     let schema = this.schema;
@@ -9205,7 +9205,7 @@ var RecordBatch2 = class _RecordBatch {
     const type = new Struct(schema.fields);
     const children = [];
     for (const name of columnNames) {
-      const index = this.schema.fields.findIndex((f) => f.name === name);
+      const index = this.schema.fields.findIndex((f2) => f2.name === name);
       if (~index) {
         children[index] = this.data.children[index];
       }
@@ -9278,7 +9278,7 @@ function collectDictionaries(fields, children, dictionaries = /* @__PURE__ */ ne
 }
 var _InternalEmptyPlaceholderRecordBatch = class extends RecordBatch2 {
   constructor(schema) {
-    const children = schema.fields.map((f) => makeData({ type: f.type }));
+    const children = schema.fields.map((f2) => makeData({ type: f2.type }));
     const data = makeData({ type: new Struct(schema.fields), nullCount: 0, children });
     super(schema, data);
   }
@@ -9380,118 +9380,118 @@ var TypeAssembler = class extends Visitor {
   visit(node, builder) {
     return node == null || builder == null ? void 0 : super.visit(node, builder);
   }
-  visitNull(_node, b) {
-    Null.startNull(b);
-    return Null.endNull(b);
+  visitNull(_node, b2) {
+    Null.startNull(b2);
+    return Null.endNull(b2);
   }
-  visitInt(node, b) {
-    Int.startInt(b);
-    Int.addBitWidth(b, node.bitWidth);
-    Int.addIsSigned(b, node.isSigned);
-    return Int.endInt(b);
+  visitInt(node, b2) {
+    Int.startInt(b2);
+    Int.addBitWidth(b2, node.bitWidth);
+    Int.addIsSigned(b2, node.isSigned);
+    return Int.endInt(b2);
   }
-  visitFloat(node, b) {
-    FloatingPoint.startFloatingPoint(b);
-    FloatingPoint.addPrecision(b, node.precision);
-    return FloatingPoint.endFloatingPoint(b);
+  visitFloat(node, b2) {
+    FloatingPoint.startFloatingPoint(b2);
+    FloatingPoint.addPrecision(b2, node.precision);
+    return FloatingPoint.endFloatingPoint(b2);
   }
-  visitBinary(_node, b) {
-    Binary.startBinary(b);
-    return Binary.endBinary(b);
+  visitBinary(_node, b2) {
+    Binary.startBinary(b2);
+    return Binary.endBinary(b2);
   }
-  visitLargeBinary(_node, b) {
-    LargeBinary.startLargeBinary(b);
-    return LargeBinary.endLargeBinary(b);
+  visitLargeBinary(_node, b2) {
+    LargeBinary.startLargeBinary(b2);
+    return LargeBinary.endLargeBinary(b2);
   }
-  visitBool(_node, b) {
-    Bool.startBool(b);
-    return Bool.endBool(b);
+  visitBool(_node, b2) {
+    Bool.startBool(b2);
+    return Bool.endBool(b2);
   }
-  visitUtf8(_node, b) {
-    Utf8.startUtf8(b);
-    return Utf8.endUtf8(b);
+  visitUtf8(_node, b2) {
+    Utf8.startUtf8(b2);
+    return Utf8.endUtf8(b2);
   }
-  visitLargeUtf8(_node, b) {
-    LargeUtf8.startLargeUtf8(b);
-    return LargeUtf8.endLargeUtf8(b);
+  visitLargeUtf8(_node, b2) {
+    LargeUtf8.startLargeUtf8(b2);
+    return LargeUtf8.endLargeUtf8(b2);
   }
-  visitDecimal(node, b) {
-    Decimal.startDecimal(b);
-    Decimal.addScale(b, node.scale);
-    Decimal.addPrecision(b, node.precision);
-    Decimal.addBitWidth(b, node.bitWidth);
-    return Decimal.endDecimal(b);
+  visitDecimal(node, b2) {
+    Decimal.startDecimal(b2);
+    Decimal.addScale(b2, node.scale);
+    Decimal.addPrecision(b2, node.precision);
+    Decimal.addBitWidth(b2, node.bitWidth);
+    return Decimal.endDecimal(b2);
   }
-  visitDate(node, b) {
-    Date2.startDate(b);
-    Date2.addUnit(b, node.unit);
-    return Date2.endDate(b);
+  visitDate(node, b2) {
+    Date2.startDate(b2);
+    Date2.addUnit(b2, node.unit);
+    return Date2.endDate(b2);
   }
-  visitTime(node, b) {
-    Time.startTime(b);
-    Time.addUnit(b, node.unit);
-    Time.addBitWidth(b, node.bitWidth);
-    return Time.endTime(b);
+  visitTime(node, b2) {
+    Time.startTime(b2);
+    Time.addUnit(b2, node.unit);
+    Time.addBitWidth(b2, node.bitWidth);
+    return Time.endTime(b2);
   }
-  visitTimestamp(node, b) {
-    const timezone = node.timezone && b.createString(node.timezone) || void 0;
-    Timestamp.startTimestamp(b);
-    Timestamp.addUnit(b, node.unit);
+  visitTimestamp(node, b2) {
+    const timezone = node.timezone && b2.createString(node.timezone) || void 0;
+    Timestamp.startTimestamp(b2);
+    Timestamp.addUnit(b2, node.unit);
     if (timezone !== void 0) {
-      Timestamp.addTimezone(b, timezone);
+      Timestamp.addTimezone(b2, timezone);
     }
-    return Timestamp.endTimestamp(b);
+    return Timestamp.endTimestamp(b2);
   }
-  visitInterval(node, b) {
-    Interval.startInterval(b);
-    Interval.addUnit(b, node.unit);
-    return Interval.endInterval(b);
+  visitInterval(node, b2) {
+    Interval.startInterval(b2);
+    Interval.addUnit(b2, node.unit);
+    return Interval.endInterval(b2);
   }
-  visitDuration(node, b) {
-    Duration.startDuration(b);
-    Duration.addUnit(b, node.unit);
-    return Duration.endDuration(b);
+  visitDuration(node, b2) {
+    Duration.startDuration(b2);
+    Duration.addUnit(b2, node.unit);
+    return Duration.endDuration(b2);
   }
-  visitList(_node, b) {
-    List.startList(b);
-    return List.endList(b);
+  visitList(_node, b2) {
+    List.startList(b2);
+    return List.endList(b2);
   }
-  visitStruct(_node, b) {
-    Struct_.startStruct_(b);
-    return Struct_.endStruct_(b);
+  visitStruct(_node, b2) {
+    Struct_.startStruct_(b2);
+    return Struct_.endStruct_(b2);
   }
-  visitUnion(node, b) {
-    Union.startTypeIdsVector(b, node.typeIds.length);
-    const typeIds = Union.createTypeIdsVector(b, node.typeIds);
-    Union.startUnion(b);
-    Union.addMode(b, node.mode);
-    Union.addTypeIds(b, typeIds);
-    return Union.endUnion(b);
+  visitUnion(node, b2) {
+    Union.startTypeIdsVector(b2, node.typeIds.length);
+    const typeIds = Union.createTypeIdsVector(b2, node.typeIds);
+    Union.startUnion(b2);
+    Union.addMode(b2, node.mode);
+    Union.addTypeIds(b2, typeIds);
+    return Union.endUnion(b2);
   }
-  visitDictionary(node, b) {
-    const indexType = this.visit(node.indices, b);
-    DictionaryEncoding.startDictionaryEncoding(b);
-    DictionaryEncoding.addId(b, BigInt(node.id));
-    DictionaryEncoding.addIsOrdered(b, node.isOrdered);
+  visitDictionary(node, b2) {
+    const indexType = this.visit(node.indices, b2);
+    DictionaryEncoding.startDictionaryEncoding(b2);
+    DictionaryEncoding.addId(b2, BigInt(node.id));
+    DictionaryEncoding.addIsOrdered(b2, node.isOrdered);
     if (indexType !== void 0) {
-      DictionaryEncoding.addIndexType(b, indexType);
+      DictionaryEncoding.addIndexType(b2, indexType);
     }
-    return DictionaryEncoding.endDictionaryEncoding(b);
+    return DictionaryEncoding.endDictionaryEncoding(b2);
   }
-  visitFixedSizeBinary(node, b) {
-    FixedSizeBinary.startFixedSizeBinary(b);
-    FixedSizeBinary.addByteWidth(b, node.byteWidth);
-    return FixedSizeBinary.endFixedSizeBinary(b);
+  visitFixedSizeBinary(node, b2) {
+    FixedSizeBinary.startFixedSizeBinary(b2);
+    FixedSizeBinary.addByteWidth(b2, node.byteWidth);
+    return FixedSizeBinary.endFixedSizeBinary(b2);
   }
-  visitFixedSizeList(node, b) {
-    FixedSizeList.startFixedSizeList(b);
-    FixedSizeList.addListSize(b, node.listSize);
-    return FixedSizeList.endFixedSizeList(b);
+  visitFixedSizeList(node, b2) {
+    FixedSizeList.startFixedSizeList(b2);
+    FixedSizeList.addListSize(b2, node.listSize);
+    return FixedSizeList.endFixedSizeList(b2);
   }
-  visitMap(node, b) {
-    Map2.startMap(b);
-    Map2.addKeysSorted(b, node.keysSorted);
-    return Map2.endMap(b);
+  visitMap(node, b2) {
+    Map2.startMap(b2);
+    Map2.addKeysSorted(b2, node.keysSorted);
+    return Map2.endMap(b2);
   }
 };
 var instance7 = new TypeAssembler();
@@ -9500,17 +9500,17 @@ var instance7 = new TypeAssembler();
 function schemaFromJSON(_schema, dictionaries = /* @__PURE__ */ new Map()) {
   return new Schema2(schemaFieldsFromJSON(_schema, dictionaries), customMetadataFromJSON(_schema["metadata"]), dictionaries);
 }
-function recordBatchFromJSON(b) {
-  return new RecordBatch3(b["count"], fieldNodesFromJSON(b["columns"]), buffersFromJSON(b["columns"]));
+function recordBatchFromJSON(b2) {
+  return new RecordBatch3(b2["count"], fieldNodesFromJSON(b2["columns"]), buffersFromJSON(b2["columns"]));
 }
-function dictionaryBatchFromJSON(b) {
-  return new DictionaryBatch2(recordBatchFromJSON(b["data"]), b["id"], b["isDelta"]);
+function dictionaryBatchFromJSON(b2) {
+  return new DictionaryBatch2(recordBatchFromJSON(b2["data"]), b2["id"], b2["isDelta"]);
 }
 function schemaFieldsFromJSON(_schema, dictionaries) {
-  return (_schema["fields"] || []).filter(Boolean).map((f) => Field2.fromJSON(f, dictionaries));
+  return (_schema["fields"] || []).filter(Boolean).map((f2) => Field2.fromJSON(f2, dictionaries));
 }
 function fieldChildrenFromJSON(_field, dictionaries) {
-  return (_field["children"] || []).filter(Boolean).map((f) => Field2.fromJSON(f, dictionaries));
+  return (_field["children"] || []).filter(Boolean).map((f2) => Field2.fromJSON(f2, dictionaries));
 }
 function fieldNodesFromJSON(xs) {
   return (xs || []).reduce((fieldNodes, column) => [
@@ -9561,8 +9561,8 @@ function customMetadataFromJSON(metadata = []) {
 function indexTypeFromJSON(_type) {
   return new Int_(_type["isSigned"], _type["bitWidth"]);
 }
-function typeFromJSON(f, children) {
-  const typeId = f["type"]["name"];
+function typeFromJSON(f2, children) {
+  const typeId = f2["type"]["name"];
   switch (typeId) {
     case "NONE":
       return new Null2();
@@ -9587,53 +9587,53 @@ function typeFromJSON(f, children) {
   }
   switch (typeId) {
     case "int": {
-      const t = f["type"];
+      const t = f2["type"];
       return new Int_(t["isSigned"], t["bitWidth"]);
     }
     case "floatingpoint": {
-      const t = f["type"];
+      const t = f2["type"];
       return new Float(Precision[t["precision"]]);
     }
     case "decimal": {
-      const t = f["type"];
+      const t = f2["type"];
       return new Decimal2(t["scale"], t["precision"], t["bitWidth"]);
     }
     case "date": {
-      const t = f["type"];
+      const t = f2["type"];
       return new Date_(DateUnit[t["unit"]]);
     }
     case "time": {
-      const t = f["type"];
+      const t = f2["type"];
       return new Time_(TimeUnit[t["unit"]], t["bitWidth"]);
     }
     case "timestamp": {
-      const t = f["type"];
+      const t = f2["type"];
       return new Timestamp_(TimeUnit[t["unit"]], t["timezone"]);
     }
     case "interval": {
-      const t = f["type"];
+      const t = f2["type"];
       return new Interval_(IntervalUnit[t["unit"]]);
     }
     case "duration": {
-      const t = f["type"];
+      const t = f2["type"];
       return new Duration2(TimeUnit[t["unit"]]);
     }
     case "union": {
-      const t = f["type"];
-      const [m, ...ms] = (t["mode"] + "").toLowerCase();
-      const mode = m.toUpperCase() + ms.join("");
+      const t = f2["type"];
+      const [m2, ...ms] = (t["mode"] + "").toLowerCase();
+      const mode = m2.toUpperCase() + ms.join("");
       return new Union_(UnionMode[mode], t["typeIds"] || [], children || []);
     }
     case "fixedsizebinary": {
-      const t = f["type"];
+      const t = f2["type"];
       return new FixedSizeBinary2(t["byteWidth"]);
     }
     case "fixedsizelist": {
-      const t = f["type"];
+      const t = f2["type"];
       return new FixedSizeList2(t["listSize"], (children || [])[0]);
     }
     case "map": {
-      const t = f["type"];
+      const t = f2["type"];
       return new Map_((children || [])[0], t["keysSorted"]);
     }
   }
@@ -9663,22 +9663,22 @@ var Message2 = class _Message {
   }
   /** @nocollapse */
   static encode(message) {
-    const b = new Builder4();
+    const b2 = new Builder4();
     let headerOffset = -1;
     if (message.isSchema()) {
-      headerOffset = Schema2.encode(b, message.header());
+      headerOffset = Schema2.encode(b2, message.header());
     } else if (message.isRecordBatch()) {
-      headerOffset = RecordBatch3.encode(b, message.header());
+      headerOffset = RecordBatch3.encode(b2, message.header());
     } else if (message.isDictionaryBatch()) {
-      headerOffset = DictionaryBatch2.encode(b, message.header());
+      headerOffset = DictionaryBatch2.encode(b2, message.header());
     }
-    Message.startMessage(b);
-    Message.addVersion(b, MetadataVersion.V5);
-    Message.addHeader(b, headerOffset);
-    Message.addHeaderType(b, message.headerType);
-    Message.addBodyLength(b, BigInt(message.bodyLength));
-    Message.finishMessageBuffer(b, Message.endMessage(b));
-    return b.asUint8Array();
+    Message.startMessage(b2);
+    Message.addVersion(b2, MetadataVersion.V5);
+    Message.addHeader(b2, headerOffset);
+    Message.addHeaderType(b2, message.headerType);
+    Message.addBodyLength(b2, BigInt(message.bodyLength));
+    Message.finishMessageBuffer(b2, Message.endMessage(b2));
+    return b2.asUint8Array();
   }
   /** @nocollapse */
   static from(header, bodyLength = 0) {
@@ -9833,70 +9833,70 @@ function decodeRecordBatch(batch, version = MetadataVersion.V5) {
 function decodeDictionaryBatch(batch, version = MetadataVersion.V5) {
   return new DictionaryBatch2(RecordBatch3.decode(batch.data(), version), batch.id(), batch.isDelta());
 }
-function decodeBufferRegion(b) {
-  return new BufferRegion(b.offset(), b.length());
+function decodeBufferRegion(b2) {
+  return new BufferRegion(b2.offset(), b2.length());
 }
-function decodeFieldNode(f) {
-  return new FieldNode2(f.length(), f.nullCount());
+function decodeFieldNode(f2) {
+  return new FieldNode2(f2.length(), f2.nullCount());
 }
 function decodeFieldNodes(batch) {
   const nodes = [];
-  for (let f, i = -1, j = -1, n = batch.nodesLength(); ++i < n; ) {
-    if (f = batch.nodes(i)) {
-      nodes[++j] = FieldNode2.decode(f);
+  for (let f2, i = -1, j2 = -1, n = batch.nodesLength(); ++i < n; ) {
+    if (f2 = batch.nodes(i)) {
+      nodes[++j2] = FieldNode2.decode(f2);
     }
   }
   return nodes;
 }
 function decodeBuffers(batch, version) {
   const bufferRegions = [];
-  for (let b, i = -1, j = -1, n = batch.buffersLength(); ++i < n; ) {
-    if (b = batch.buffers(i)) {
+  for (let b2, i = -1, j2 = -1, n = batch.buffersLength(); ++i < n; ) {
+    if (b2 = batch.buffers(i)) {
       if (version < MetadataVersion.V4) {
-        b.bb_pos += 8 * (i + 1);
+        b2.bb_pos += 8 * (i + 1);
       }
-      bufferRegions[++j] = BufferRegion.decode(b);
+      bufferRegions[++j2] = BufferRegion.decode(b2);
     }
   }
   return bufferRegions;
 }
 function decodeSchemaFields(schema, dictionaries) {
   const fields = [];
-  for (let f, i = -1, j = -1, n = schema.fieldsLength(); ++i < n; ) {
-    if (f = schema.fields(i)) {
-      fields[++j] = Field2.decode(f, dictionaries);
+  for (let f2, i = -1, j2 = -1, n = schema.fieldsLength(); ++i < n; ) {
+    if (f2 = schema.fields(i)) {
+      fields[++j2] = Field2.decode(f2, dictionaries);
     }
   }
   return fields;
 }
 function decodeFieldChildren(field, dictionaries) {
   const children = [];
-  for (let f, i = -1, j = -1, n = field.childrenLength(); ++i < n; ) {
-    if (f = field.children(i)) {
-      children[++j] = Field2.decode(f, dictionaries);
+  for (let f2, i = -1, j2 = -1, n = field.childrenLength(); ++i < n; ) {
+    if (f2 = field.children(i)) {
+      children[++j2] = Field2.decode(f2, dictionaries);
     }
   }
   return children;
 }
-function decodeField(f, dictionaries) {
+function decodeField(f2, dictionaries) {
   let id;
   let field;
   let type;
   let keys;
   let dictType;
   let dictMeta;
-  if (!dictionaries || !(dictMeta = f.dictionary())) {
-    type = decodeFieldType(f, decodeFieldChildren(f, dictionaries));
-    field = new Field2(f.name(), type, f.nullable(), decodeCustomMetadata(f));
+  if (!dictionaries || !(dictMeta = f2.dictionary())) {
+    type = decodeFieldType(f2, decodeFieldChildren(f2, dictionaries));
+    field = new Field2(f2.name(), type, f2.nullable(), decodeCustomMetadata(f2));
   } else if (!dictionaries.has(id = bigIntToNumber(dictMeta.id()))) {
     keys = (keys = dictMeta.indexType()) ? decodeIndexType(keys) : new Int32();
-    dictionaries.set(id, type = decodeFieldType(f, decodeFieldChildren(f, dictionaries)));
+    dictionaries.set(id, type = decodeFieldType(f2, decodeFieldChildren(f2, dictionaries)));
     dictType = new Dictionary(type, keys, id, dictMeta.isOrdered());
-    field = new Field2(f.name(), dictType, f.nullable(), decodeCustomMetadata(f));
+    field = new Field2(f2.name(), dictType, f2.nullable(), decodeCustomMetadata(f2));
   } else {
     keys = (keys = dictMeta.indexType()) ? decodeIndexType(keys) : new Int32();
     dictType = new Dictionary(dictionaries.get(id), keys, id, dictMeta.isOrdered());
-    field = new Field2(f.name(), dictType, f.nullable(), decodeCustomMetadata(f));
+    field = new Field2(f2.name(), dictType, f2.nullable(), decodeCustomMetadata(f2));
   }
   return field || null;
 }
@@ -9914,8 +9914,8 @@ function decodeCustomMetadata(parent) {
 function decodeIndexType(_type) {
   return new Int_(_type.isSigned(), _type.bitWidth());
 }
-function decodeFieldType(f, children) {
-  const typeId = f.typeType();
+function decodeFieldType(f2, children) {
+  const typeId = f2.typeType();
   switch (typeId) {
     case Type["NONE"]:
       return new Null2();
@@ -9938,148 +9938,148 @@ function decodeFieldType(f, children) {
   }
   switch (typeId) {
     case Type["Int"]: {
-      const t = f.type(new Int());
+      const t = f2.type(new Int());
       return new Int_(t.isSigned(), t.bitWidth());
     }
     case Type["FloatingPoint"]: {
-      const t = f.type(new FloatingPoint());
+      const t = f2.type(new FloatingPoint());
       return new Float(t.precision());
     }
     case Type["Decimal"]: {
-      const t = f.type(new Decimal());
+      const t = f2.type(new Decimal());
       return new Decimal2(t.scale(), t.precision(), t.bitWidth());
     }
     case Type["Date"]: {
-      const t = f.type(new Date2());
+      const t = f2.type(new Date2());
       return new Date_(t.unit());
     }
     case Type["Time"]: {
-      const t = f.type(new Time());
+      const t = f2.type(new Time());
       return new Time_(t.unit(), t.bitWidth());
     }
     case Type["Timestamp"]: {
-      const t = f.type(new Timestamp());
+      const t = f2.type(new Timestamp());
       return new Timestamp_(t.unit(), t.timezone());
     }
     case Type["Interval"]: {
-      const t = f.type(new Interval());
+      const t = f2.type(new Interval());
       return new Interval_(t.unit());
     }
     case Type["Duration"]: {
-      const t = f.type(new Duration());
+      const t = f2.type(new Duration());
       return new Duration2(t.unit());
     }
     case Type["Union"]: {
-      const t = f.type(new Union());
+      const t = f2.type(new Union());
       return new Union_(t.mode(), t.typeIdsArray() || [], children || []);
     }
     case Type["FixedSizeBinary"]: {
-      const t = f.type(new FixedSizeBinary());
+      const t = f2.type(new FixedSizeBinary());
       return new FixedSizeBinary2(t.byteWidth());
     }
     case Type["FixedSizeList"]: {
-      const t = f.type(new FixedSizeList());
+      const t = f2.type(new FixedSizeList());
       return new FixedSizeList2(t.listSize(), (children || [])[0]);
     }
     case Type["Map"]: {
-      const t = f.type(new Map2());
+      const t = f2.type(new Map2());
       return new Map_((children || [])[0], t.keysSorted());
     }
   }
   throw new Error(`Unrecognized type: "${Type[typeId]}" (${typeId})`);
 }
-function encodeSchema(b, schema) {
-  const fieldOffsets = schema.fields.map((f) => Field2.encode(b, f));
-  Schema.startFieldsVector(b, fieldOffsets.length);
-  const fieldsVectorOffset = Schema.createFieldsVector(b, fieldOffsets);
-  const metadataOffset = !(schema.metadata && schema.metadata.size > 0) ? -1 : Schema.createCustomMetadataVector(b, [...schema.metadata].map(([k, v]) => {
-    const key = b.createString(`${k}`);
-    const val = b.createString(`${v}`);
-    KeyValue.startKeyValue(b);
-    KeyValue.addKey(b, key);
-    KeyValue.addValue(b, val);
-    return KeyValue.endKeyValue(b);
+function encodeSchema(b2, schema) {
+  const fieldOffsets = schema.fields.map((f2) => Field2.encode(b2, f2));
+  Schema.startFieldsVector(b2, fieldOffsets.length);
+  const fieldsVectorOffset = Schema.createFieldsVector(b2, fieldOffsets);
+  const metadataOffset = !(schema.metadata && schema.metadata.size > 0) ? -1 : Schema.createCustomMetadataVector(b2, [...schema.metadata].map(([k2, v2]) => {
+    const key = b2.createString(`${k2}`);
+    const val = b2.createString(`${v2}`);
+    KeyValue.startKeyValue(b2);
+    KeyValue.addKey(b2, key);
+    KeyValue.addValue(b2, val);
+    return KeyValue.endKeyValue(b2);
   }));
-  Schema.startSchema(b);
-  Schema.addFields(b, fieldsVectorOffset);
-  Schema.addEndianness(b, platformIsLittleEndian ? Endianness.Little : Endianness.Big);
+  Schema.startSchema(b2);
+  Schema.addFields(b2, fieldsVectorOffset);
+  Schema.addEndianness(b2, platformIsLittleEndian ? Endianness.Little : Endianness.Big);
   if (metadataOffset !== -1) {
-    Schema.addCustomMetadata(b, metadataOffset);
+    Schema.addCustomMetadata(b2, metadataOffset);
   }
-  return Schema.endSchema(b);
+  return Schema.endSchema(b2);
 }
-function encodeField(b, field) {
+function encodeField(b2, field) {
   let nameOffset = -1;
   let typeOffset = -1;
   let dictionaryOffset = -1;
   const type = field.type;
   let typeId = field.typeId;
   if (!DataType.isDictionary(type)) {
-    typeOffset = instance7.visit(type, b);
+    typeOffset = instance7.visit(type, b2);
   } else {
     typeId = type.dictionary.typeId;
-    dictionaryOffset = instance7.visit(type, b);
-    typeOffset = instance7.visit(type.dictionary, b);
+    dictionaryOffset = instance7.visit(type, b2);
+    typeOffset = instance7.visit(type.dictionary, b2);
   }
-  const childOffsets = (type.children || []).map((f) => Field2.encode(b, f));
-  const childrenVectorOffset = Field.createChildrenVector(b, childOffsets);
-  const metadataOffset = !(field.metadata && field.metadata.size > 0) ? -1 : Field.createCustomMetadataVector(b, [...field.metadata].map(([k, v]) => {
-    const key = b.createString(`${k}`);
-    const val = b.createString(`${v}`);
-    KeyValue.startKeyValue(b);
-    KeyValue.addKey(b, key);
-    KeyValue.addValue(b, val);
-    return KeyValue.endKeyValue(b);
+  const childOffsets = (type.children || []).map((f2) => Field2.encode(b2, f2));
+  const childrenVectorOffset = Field.createChildrenVector(b2, childOffsets);
+  const metadataOffset = !(field.metadata && field.metadata.size > 0) ? -1 : Field.createCustomMetadataVector(b2, [...field.metadata].map(([k2, v2]) => {
+    const key = b2.createString(`${k2}`);
+    const val = b2.createString(`${v2}`);
+    KeyValue.startKeyValue(b2);
+    KeyValue.addKey(b2, key);
+    KeyValue.addValue(b2, val);
+    return KeyValue.endKeyValue(b2);
   }));
   if (field.name) {
-    nameOffset = b.createString(field.name);
+    nameOffset = b2.createString(field.name);
   }
-  Field.startField(b);
-  Field.addType(b, typeOffset);
-  Field.addTypeType(b, typeId);
-  Field.addChildren(b, childrenVectorOffset);
-  Field.addNullable(b, !!field.nullable);
+  Field.startField(b2);
+  Field.addType(b2, typeOffset);
+  Field.addTypeType(b2, typeId);
+  Field.addChildren(b2, childrenVectorOffset);
+  Field.addNullable(b2, !!field.nullable);
   if (nameOffset !== -1) {
-    Field.addName(b, nameOffset);
+    Field.addName(b2, nameOffset);
   }
   if (dictionaryOffset !== -1) {
-    Field.addDictionary(b, dictionaryOffset);
+    Field.addDictionary(b2, dictionaryOffset);
   }
   if (metadataOffset !== -1) {
-    Field.addCustomMetadata(b, metadataOffset);
+    Field.addCustomMetadata(b2, metadataOffset);
   }
-  return Field.endField(b);
+  return Field.endField(b2);
 }
-function encodeRecordBatch(b, recordBatch) {
+function encodeRecordBatch(b2, recordBatch) {
   const nodes = recordBatch.nodes || [];
   const buffers = recordBatch.buffers || [];
-  RecordBatch.startNodesVector(b, nodes.length);
+  RecordBatch.startNodesVector(b2, nodes.length);
   for (const n of nodes.slice().reverse())
-    FieldNode2.encode(b, n);
-  const nodesVectorOffset = b.endVector();
-  RecordBatch.startBuffersVector(b, buffers.length);
+    FieldNode2.encode(b2, n);
+  const nodesVectorOffset = b2.endVector();
+  RecordBatch.startBuffersVector(b2, buffers.length);
   for (const b_ of buffers.slice().reverse())
-    BufferRegion.encode(b, b_);
-  const buffersVectorOffset = b.endVector();
-  RecordBatch.startRecordBatch(b);
-  RecordBatch.addLength(b, BigInt(recordBatch.length));
-  RecordBatch.addNodes(b, nodesVectorOffset);
-  RecordBatch.addBuffers(b, buffersVectorOffset);
-  return RecordBatch.endRecordBatch(b);
+    BufferRegion.encode(b2, b_);
+  const buffersVectorOffset = b2.endVector();
+  RecordBatch.startRecordBatch(b2);
+  RecordBatch.addLength(b2, BigInt(recordBatch.length));
+  RecordBatch.addNodes(b2, nodesVectorOffset);
+  RecordBatch.addBuffers(b2, buffersVectorOffset);
+  return RecordBatch.endRecordBatch(b2);
 }
-function encodeDictionaryBatch(b, dictionaryBatch) {
-  const dataOffset = RecordBatch3.encode(b, dictionaryBatch.data);
-  DictionaryBatch.startDictionaryBatch(b);
-  DictionaryBatch.addId(b, BigInt(dictionaryBatch.id));
-  DictionaryBatch.addIsDelta(b, dictionaryBatch.isDelta);
-  DictionaryBatch.addData(b, dataOffset);
-  return DictionaryBatch.endDictionaryBatch(b);
+function encodeDictionaryBatch(b2, dictionaryBatch) {
+  const dataOffset = RecordBatch3.encode(b2, dictionaryBatch.data);
+  DictionaryBatch.startDictionaryBatch(b2);
+  DictionaryBatch.addId(b2, BigInt(dictionaryBatch.id));
+  DictionaryBatch.addIsDelta(b2, dictionaryBatch.isDelta);
+  DictionaryBatch.addData(b2, dataOffset);
+  return DictionaryBatch.endDictionaryBatch(b2);
 }
-function encodeFieldNode(b, node) {
-  return FieldNode.createFieldNode(b, BigInt(node.length), BigInt(node.nullCount));
+function encodeFieldNode(b2, node) {
+  return FieldNode.createFieldNode(b2, BigInt(node.length), BigInt(node.nullCount));
 }
-function encodeBufferRegion(b, node) {
-  return Buffer2.createBuffer(b, BigInt(node.offset), BigInt(node.length));
+function encodeBufferRegion(b2, node) {
+  return Buffer2.createBuffer(b2, BigInt(node.offset), BigInt(node.length));
 }
 var platformIsLittleEndian = (() => {
   const buffer = new ArrayBuffer(2);
@@ -11110,7 +11110,7 @@ function assembleListVector(data) {
   return this.visit(data.children[0]);
 }
 function assembleNestedVector(data) {
-  return this.visitMany(data.type.children.map((_, i) => data.children[i]).filter(Boolean))[0];
+  return this.visitMany(data.type.children.map((_2, i) => data.children[i]).filter(Boolean))[0];
 }
 VectorAssembler.prototype.visitBool = assembleBoolVector;
 VectorAssembler.prototype.visitInt = assembleFlatVector;
@@ -11165,7 +11165,7 @@ var RecordBatchWriter = class extends ReadableInterop {
   }
   writeAll(input) {
     if (isPromise(input)) {
-      return input.then((x) => this.writeAll(x));
+      return input.then((x2) => this.writeAll(x2));
     } else if (isAsyncIterable(input)) {
       return writeAllAsync(this, input);
     }
@@ -11252,11 +11252,11 @@ var RecordBatchWriter = class extends ReadableInterop {
     }
   }
   _writeMessage(message, alignment = 8) {
-    const a = alignment - 1;
+    const a2 = alignment - 1;
     const buffer = Message2.encode(message);
     const flatbufferSize = buffer.byteLength;
     const prefixSize = !this._writeLegacyIpcFormat ? 8 : 4;
-    const alignedSize = flatbufferSize + prefixSize + a & ~a;
+    const alignedSize = flatbufferSize + prefixSize + a2 & ~a2;
     const nPaddingBytes = alignedSize - flatbufferSize - prefixSize;
     if (message.headerType === MessageHeader.RecordBatch) {
       this._recordBatchBlocks.push(new FileBlock(alignedSize, message.bodyLength, this._position));
@@ -11345,7 +11345,7 @@ var RecordBatchStreamWriter = class _RecordBatchStreamWriter extends RecordBatch
   static writeAll(input, options) {
     const writer = new _RecordBatchStreamWriter(options);
     if (isPromise(input)) {
-      return input.then((x) => writer.writeAll(x));
+      return input.then((x2) => writer.writeAll(x2));
     } else if (isAsyncIterable(input)) {
       return writeAllAsync(writer, input);
     }
@@ -11357,7 +11357,7 @@ var RecordBatchFileWriter = class _RecordBatchFileWriter extends RecordBatchWrit
   static writeAll(input) {
     const writer = new _RecordBatchFileWriter();
     if (isPromise(input)) {
-      return input.then((x) => writer.writeAll(x));
+      return input.then((x2) => writer.writeAll(x2));
     } else if (isAsyncIterable(input)) {
       return writeAllAsync(writer, input);
     }
@@ -11683,102 +11683,41 @@ RecordBatchFileWriter["throughDOM"] = recordBatchWriterThroughDOMStream;
 RecordBatchStreamWriter["throughDOM"] = recordBatchWriterThroughDOMStream;
 
 // ../../../../../../../Users/jeroen/projects/fast-api/docs/external/duckdb-browser.mjs
-var __create = Object.create;
-var __defProp2 = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __commonJS = (cb, mod) => function __require() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+var j = Object.create;
+var P = Object.defineProperty;
+var K = Object.getOwnPropertyDescriptor;
+var V = Object.getOwnPropertyNames;
+var z = Object.getPrototypeOf;
+var J = Object.prototype.hasOwnProperty;
+var X = (s, e) => () => (e || s((e = { exports: {} }).exports, e), e.exports);
+var $ = (s, e, r, t) => {
+  if (e && typeof e == "object" || typeof e == "function") for (let o of V(e)) !J.call(s, o) && o !== r && P(s, o, { get: () => e[o], enumerable: !(t = K(e, o)) || t.enumerable });
+  return s;
 };
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp2(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp2(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
-var require_browser = __commonJS({
-  "../../node_modules/web-worker/cjs/browser.js"(exports, module) {
-    module.exports = Worker;
-  }
+var Z = (s, e, r) => (r = s != null ? j(z(s)) : {}, $(e || !s || !s.__esModule ? P(r, "default", { value: s, enumerable: true }) : r, s));
+var q = X((Ze, H) => {
+  H.exports = Worker;
 });
-var DuckDBAccessMode = /* @__PURE__ */ ((DuckDBAccessMode2) => {
-  DuckDBAccessMode2[DuckDBAccessMode2["UNDEFINED"] = 0] = "UNDEFINED";
-  DuckDBAccessMode2[DuckDBAccessMode2["AUTOMATIC"] = 1] = "AUTOMATIC";
-  DuckDBAccessMode2[DuckDBAccessMode2["READ_ONLY"] = 2] = "READ_ONLY";
-  DuckDBAccessMode2[DuckDBAccessMode2["READ_WRITE"] = 3] = "READ_WRITE";
-  return DuckDBAccessMode2;
-})(DuckDBAccessMode || {});
-var TokenType = /* @__PURE__ */ ((TokenType2) => {
-  TokenType2[TokenType2["IDENTIFIER"] = 0] = "IDENTIFIER";
-  TokenType2[TokenType2["NUMERIC_CONSTANT"] = 1] = "NUMERIC_CONSTANT";
-  TokenType2[TokenType2["STRING_CONSTANT"] = 2] = "STRING_CONSTANT";
-  TokenType2[TokenType2["OPERATOR"] = 3] = "OPERATOR";
-  TokenType2[TokenType2["KEYWORD"] = 4] = "KEYWORD";
-  TokenType2[TokenType2["COMMENT"] = 5] = "COMMENT";
-  return TokenType2;
-})(TokenType || {});
-var LogLevel = /* @__PURE__ */ ((LogLevel2) => {
-  LogLevel2[LogLevel2["NONE"] = 0] = "NONE";
-  LogLevel2[LogLevel2["DEBUG"] = 1] = "DEBUG";
-  LogLevel2[LogLevel2["INFO"] = 2] = "INFO";
-  LogLevel2[LogLevel2["WARNING"] = 3] = "WARNING";
-  LogLevel2[LogLevel2["ERROR"] = 4] = "ERROR";
-  return LogLevel2;
-})(LogLevel || {});
-var LogTopic = /* @__PURE__ */ ((LogTopic2) => {
-  LogTopic2[LogTopic2["NONE"] = 0] = "NONE";
-  LogTopic2[LogTopic2["CONNECT"] = 1] = "CONNECT";
-  LogTopic2[LogTopic2["DISCONNECT"] = 2] = "DISCONNECT";
-  LogTopic2[LogTopic2["OPEN"] = 3] = "OPEN";
-  LogTopic2[LogTopic2["QUERY"] = 4] = "QUERY";
-  LogTopic2[LogTopic2["INSTANTIATE"] = 5] = "INSTANTIATE";
-  return LogTopic2;
-})(LogTopic || {});
-var LogEvent = /* @__PURE__ */ ((LogEvent2) => {
-  LogEvent2[LogEvent2["NONE"] = 0] = "NONE";
-  LogEvent2[LogEvent2["OK"] = 1] = "OK";
-  LogEvent2[LogEvent2["ERROR"] = 2] = "ERROR";
-  LogEvent2[LogEvent2["START"] = 3] = "START";
-  LogEvent2[LogEvent2["RUN"] = 4] = "RUN";
-  LogEvent2[LogEvent2["CAPTURE"] = 5] = "CAPTURE";
-  return LogEvent2;
-})(LogEvent || {});
-var LogOrigin = /* @__PURE__ */ ((LogOrigin2) => {
-  LogOrigin2[LogOrigin2["NONE"] = 0] = "NONE";
-  LogOrigin2[LogOrigin2["WEB_WORKER"] = 1] = "WEB_WORKER";
-  LogOrigin2[LogOrigin2["NODE_WORKER"] = 2] = "NODE_WORKER";
-  LogOrigin2[LogOrigin2["BINDINGS"] = 3] = "BINDINGS";
-  LogOrigin2[LogOrigin2["ASYNC_DUCKDB"] = 4] = "ASYNC_DUCKDB";
-  return LogOrigin2;
-})(LogOrigin || {});
-var VoidLogger = class {
-  log(_entry) {
+var ee = ((o) => (o[o.UNDEFINED = 0] = "UNDEFINED", o[o.AUTOMATIC = 1] = "AUTOMATIC", o[o.READ_ONLY = 2] = "READ_ONLY", o[o.READ_WRITE = 3] = "READ_WRITE", o))(ee || {});
+var re = ((n) => (n[n.IDENTIFIER = 0] = "IDENTIFIER", n[n.NUMERIC_CONSTANT = 1] = "NUMERIC_CONSTANT", n[n.STRING_CONSTANT = 2] = "STRING_CONSTANT", n[n.OPERATOR = 3] = "OPERATOR", n[n.KEYWORD = 4] = "KEYWORD", n[n.COMMENT = 5] = "COMMENT", n))(re || {});
+var te = ((i) => (i[i.NONE = 0] = "NONE", i[i.DEBUG = 1] = "DEBUG", i[i.INFO = 2] = "INFO", i[i.WARNING = 3] = "WARNING", i[i.ERROR = 4] = "ERROR", i))(te || {});
+var se = ((n) => (n[n.NONE = 0] = "NONE", n[n.CONNECT = 1] = "CONNECT", n[n.DISCONNECT = 2] = "DISCONNECT", n[n.OPEN = 3] = "OPEN", n[n.QUERY = 4] = "QUERY", n[n.INSTANTIATE = 5] = "INSTANTIATE", n))(se || {});
+var ne = ((n) => (n[n.NONE = 0] = "NONE", n[n.OK = 1] = "OK", n[n.ERROR = 2] = "ERROR", n[n.START = 3] = "START", n[n.RUN = 4] = "RUN", n[n.CAPTURE = 5] = "CAPTURE", n))(ne || {});
+var oe = ((i) => (i[i.NONE = 0] = "NONE", i[i.WEB_WORKER = 1] = "WEB_WORKER", i[i.NODE_WORKER = 2] = "NODE_WORKER", i[i.BINDINGS = 3] = "BINDINGS", i[i.ASYNC_DUCKDB = 4] = "ASYNC_DUCKDB", i))(oe || {});
+var N = class {
+  log(e) {
   }
 };
-var ConsoleLogger = class {
-  constructor(level = 2) {
-    this.level = level;
+var A = class {
+  constructor(e = 2) {
+    this.level = e;
   }
-  log(entry) {
-    if (entry.level >= this.level) {
-      console.log(entry);
-    }
+  log(e) {
+    e.level >= this.level && console.log(e);
   }
 };
-function getLogLevelLabel(level) {
-  switch (level) {
+function Te(s) {
+  switch (s) {
     case 0:
       return "NONE";
     case 1:
@@ -11793,8 +11732,8 @@ function getLogLevelLabel(level) {
       return "?";
   }
 }
-function getLogEventLabel(event) {
-  switch (event) {
+function be(s) {
+  switch (s) {
     case 0:
       return "NONE";
     case 1:
@@ -11811,8 +11750,8 @@ function getLogEventLabel(event) {
       return "?";
   }
 }
-function getLogTopicLabel(topic) {
-  switch (topic) {
+function Ie(s) {
+  switch (s) {
     case 1:
       return "CONNECT";
     case 2:
@@ -11827,8 +11766,8 @@ function getLogTopicLabel(topic) {
       return "?";
   }
 }
-function getLogOriginLabel(origin) {
-  switch (origin) {
+function ke(s) {
+  switch (s) {
     case 0:
       return "NONE";
     case 1:
@@ -11843,253 +11782,117 @@ function getLogOriginLabel(origin) {
       return "?";
   }
 }
-var StatusCode = /* @__PURE__ */ ((StatusCode2) => {
-  StatusCode2[StatusCode2["SUCCESS"] = 0] = "SUCCESS";
-  StatusCode2[StatusCode2["MAX_ARROW_ERROR"] = 255] = "MAX_ARROW_ERROR";
-  StatusCode2[StatusCode2["DUCKDB_WASM_RETRY"] = 256] = "DUCKDB_WASM_RETRY";
-  return StatusCode2;
-})(StatusCode || {});
-function IsArrowBuffer(status) {
-  return status <= 255;
+var ie = ((t) => (t[t.SUCCESS = 0] = "SUCCESS", t[t.MAX_ARROW_ERROR = 255] = "MAX_ARROW_ERROR", t[t.DUCKDB_WASM_RETRY = 256] = "DUCKDB_WASM_RETRY", t))(ie || {});
+function ge(s) {
+  return s <= 255;
 }
-function IsDuckDBWasmRetry(status) {
-  return status === 256;
+function Se(s) {
+  return s === 256;
 }
-var AsyncDuckDBConnection = class {
-  constructor(bindings, conn) {
-    this._bindings = bindings;
-    this._conn = conn;
+var E = class {
+  constructor(e, r) {
+    this._bindings = e, this._conn = r;
   }
-  /** Access the database bindings */
   get bindings() {
     return this._bindings;
   }
-  /** Disconnect from the database */
   async close() {
     return this._bindings.disconnect(this._conn);
   }
-  /** Brave souls may use this function to consume the underlying connection id */
-  useUnsafe(callback) {
-    return callback(this._bindings, this._conn);
+  useUnsafe(e) {
+    return e(this._bindings, this._conn);
   }
-  /** Run a query */
-  async query(text) {
-    this._bindings.logger.log({
-      timestamp: /* @__PURE__ */ new Date(),
-      level: 2,
-      origin: 4,
-      topic: 4,
-      event: 4,
-      value: text
-    });
-    const buffer = await this._bindings.runQuery(this._conn, text);
-    const reader = RecordBatchReader.from(buffer);
-    console.assert(reader.isSync(), "Reader is not sync");
-    console.assert(reader.isFile(), "Reader is not file");
-    return new Table(reader);
+  async query(e) {
+    this._bindings.logger.log({ timestamp: /* @__PURE__ */ new Date(), level: 2, origin: 4, topic: 4, event: 4, value: e });
+    let r = await this._bindings.runQuery(this._conn, e), t = RecordBatchReader.from(r);
+    return console.assert(t.isSync(), "Reader is not sync"), console.assert(t.isFile(), "Reader is not file"), new Table(t);
   }
-  /** Send a query */
-  async send(text, allowStreamResult = false) {
-    this._bindings.logger.log({
-      timestamp: /* @__PURE__ */ new Date(),
-      level: 2,
-      origin: 4,
-      topic: 4,
-      event: 4,
-      value: text
-    });
-    let header = await this._bindings.startPendingQuery(this._conn, text, allowStreamResult);
-    while (header == null) {
+  async send(e, r = false) {
+    this._bindings.logger.log({ timestamp: /* @__PURE__ */ new Date(), level: 2, origin: 4, topic: 4, event: 4, value: e });
+    let t = await this._bindings.startPendingQuery(this._conn, e, r);
+    for (; t == null; ) {
       if (this._bindings.isDetached()) {
         console.error("cannot send a message since the worker is not set!");
-        return void 0;
+        return;
       }
-      header = await this._bindings.pollPendingQuery(this._conn);
+      t = await this._bindings.pollPendingQuery(this._conn);
     }
-    const iter = new AsyncResultStreamIterator(this._bindings, this._conn, header);
-    const reader = await RecordBatchReader.from(iter);
-    console.assert(reader.isAsync());
-    console.assert(reader.isStream());
-    return reader;
+    let o = new p(this._bindings, this._conn, t), i = await RecordBatchReader.from(o);
+    return console.assert(i.isAsync()), console.assert(i.isStream()), i;
   }
-  /** Cancel a query that was sent earlier */
   async cancelSent() {
     return await this._bindings.cancelPendingQuery(this._conn);
   }
-  /** Get table names */
-  async getTableNames(query) {
-    return await this._bindings.getTableNames(this._conn, query);
+  async getTableNames(e) {
+    return await this._bindings.getTableNames(this._conn, e);
   }
-  /** Create a prepared statement */
-  async prepare(text) {
-    const stmt = await this._bindings.createPrepared(this._conn, text);
-    return new AsyncPreparedStatement(this._bindings, this._conn, stmt);
+  async prepare(e) {
+    let r = await this._bindings.createPrepared(this._conn, e);
+    return new b(this._bindings, this._conn, r);
   }
-  /** Insert an arrow table */
-  async insertArrowTable(table, options) {
-    const buffer = tableToIPC(table, "stream");
-    await this.insertArrowFromIPCStream(buffer, options);
+  async insertArrowTable(e, r) {
+    let t = tableToIPC(e, "stream");
+    await this.insertArrowFromIPCStream(t, r);
   }
-  /** Insert an arrow table from an ipc stream */
-  async insertArrowFromIPCStream(buffer, options) {
-    await this._bindings.insertArrowFromIPCStream(this._conn, buffer, options);
+  async insertArrowFromIPCStream(e, r) {
+    await this._bindings.insertArrowFromIPCStream(this._conn, e, r);
   }
-  /** Insert csv file from path */
-  async insertCSVFromPath(text, options) {
-    await this._bindings.insertCSVFromPath(this._conn, text, options);
+  async insertCSVFromPath(e, r) {
+    await this._bindings.insertCSVFromPath(this._conn, e, r);
   }
-  /** Insert json file from path */
-  async insertJSONFromPath(text, options) {
-    await this._bindings.insertJSONFromPath(this._conn, text, options);
+  async insertJSONFromPath(e, r) {
+    await this._bindings.insertJSONFromPath(this._conn, e, r);
   }
 };
-var AsyncResultStreamIterator = class {
-  constructor(db, conn, header) {
-    this.db = db;
-    this.conn = conn;
-    this.header = header;
-    this._first = true;
-    this._depleted = false;
-    this._inFlight = null;
+var p = class {
+  constructor(e, r, t) {
+    this.db = e;
+    this.conn = r;
+    this.header = t;
+    this._first = true, this._depleted = false, this._inFlight = null;
   }
   async next() {
-    if (this._first) {
-      this._first = false;
-      return { done: false, value: this.header };
-    }
-    if (this._depleted) {
-      return { done: true, value: null };
-    }
-    let buffer = null;
-    if (this._inFlight != null) {
-      buffer = await this._inFlight;
-      this._inFlight = null;
-    }
-    while (buffer == null) {
-      buffer = await this.db.fetchQueryResults(this.conn);
-    }
-    this._depleted = buffer.length == 0;
-    if (!this._depleted) {
-      this._inFlight = this.db.fetchQueryResults(this.conn);
-    }
-    return {
-      done: this._depleted,
-      value: buffer
-    };
+    if (this._first) return this._first = false, { done: false, value: this.header };
+    if (this._depleted) return { done: true, value: null };
+    let e = null;
+    for (this._inFlight != null && (e = await this._inFlight, this._inFlight = null); e == null; ) e = await this.db.fetchQueryResults(this.conn);
+    return this._depleted = e.length == 0, this._depleted || (this._inFlight = this.db.fetchQueryResults(this.conn)), { done: this._depleted, value: e };
   }
   [Symbol.asyncIterator]() {
     return this;
   }
 };
-var AsyncPreparedStatement = class {
-  /** Constructor */
-  constructor(bindings, connectionId, statementId) {
-    this.bindings = bindings;
-    this.connectionId = connectionId;
-    this.statementId = statementId;
+var b = class {
+  constructor(e, r, t) {
+    this.bindings = e, this.connectionId = r, this.statementId = t;
   }
-  /** Close a prepared statement */
   async close() {
     await this.bindings.closePrepared(this.connectionId, this.statementId);
   }
-  /** Run a prepared statement */
-  async query(...params) {
-    const buffer = await this.bindings.runPrepared(this.connectionId, this.statementId, params);
-    const reader = RecordBatchReader.from(buffer);
-    console.assert(reader.isSync());
-    console.assert(reader.isFile());
-    return new Table(reader);
+  async query(...e) {
+    let r = await this.bindings.runPrepared(this.connectionId, this.statementId, e), t = RecordBatchReader.from(r);
+    return console.assert(t.isSync()), console.assert(t.isFile()), new Table(t);
   }
-  /** Send a prepared statement */
-  async send(...params) {
-    const header = await this.bindings.sendPrepared(this.connectionId, this.statementId, params);
-    const iter = new AsyncResultStreamIterator(this.bindings, this.connectionId, header);
-    const reader = await RecordBatchReader.from(iter);
-    console.assert(reader.isAsync());
-    console.assert(reader.isStream());
-    return reader;
+  async send(...e) {
+    let r = await this.bindings.sendPrepared(this.connectionId, this.statementId, e), t = new p(this.bindings, this.connectionId, r), o = await RecordBatchReader.from(t);
+    return console.assert(o.isAsync()), console.assert(o.isStream()), o;
   }
 };
-var WorkerRequestType = /* @__PURE__ */ ((WorkerRequestType2) => {
-  WorkerRequestType2["CANCEL_PENDING_QUERY"] = "CANCEL_PENDING_QUERY";
-  WorkerRequestType2["CLOSE_PREPARED"] = "CLOSE_PREPARED";
-  WorkerRequestType2["COLLECT_FILE_STATISTICS"] = "COLLECT_FILE_STATISTICS";
-  WorkerRequestType2["REGISTER_OPFS_FILE_NAME"] = "REGISTER_OPFS_FILE_NAME";
-  WorkerRequestType2["CONNECT"] = "CONNECT";
-  WorkerRequestType2["COPY_FILE_TO_BUFFER"] = "COPY_FILE_TO_BUFFER";
-  WorkerRequestType2["COPY_FILE_TO_PATH"] = "COPY_FILE_TO_PATH";
-  WorkerRequestType2["CREATE_PREPARED"] = "CREATE_PREPARED";
-  WorkerRequestType2["DISCONNECT"] = "DISCONNECT";
-  WorkerRequestType2["DROP_FILE"] = "DROP_FILE";
-  WorkerRequestType2["DROP_FILES"] = "DROP_FILES";
-  WorkerRequestType2["EXPORT_FILE_STATISTICS"] = "EXPORT_FILE_STATISTICS";
-  WorkerRequestType2["FETCH_QUERY_RESULTS"] = "FETCH_QUERY_RESULTS";
-  WorkerRequestType2["FLUSH_FILES"] = "FLUSH_FILES";
-  WorkerRequestType2["GET_FEATURE_FLAGS"] = "GET_FEATURE_FLAGS";
-  WorkerRequestType2["GET_TABLE_NAMES"] = "GET_TABLE_NAMES";
-  WorkerRequestType2["GET_VERSION"] = "GET_VERSION";
-  WorkerRequestType2["GLOB_FILE_INFOS"] = "GLOB_FILE_INFOS";
-  WorkerRequestType2["INSERT_ARROW_FROM_IPC_STREAM"] = "INSERT_ARROW_FROM_IPC_STREAM";
-  WorkerRequestType2["INSERT_CSV_FROM_PATH"] = "IMPORT_CSV_FROM_PATH";
-  WorkerRequestType2["INSERT_JSON_FROM_PATH"] = "IMPORT_JSON_FROM_PATH";
-  WorkerRequestType2["INSTANTIATE"] = "INSTANTIATE";
-  WorkerRequestType2["OPEN"] = "OPEN";
-  WorkerRequestType2["PING"] = "PING";
-  WorkerRequestType2["POLL_PENDING_QUERY"] = "POLL_PENDING_QUERY";
-  WorkerRequestType2["REGISTER_FILE_BUFFER"] = "REGISTER_FILE_BUFFER";
-  WorkerRequestType2["REGISTER_FILE_HANDLE"] = "REGISTER_FILE_HANDLE";
-  WorkerRequestType2["REGISTER_FILE_URL"] = "REGISTER_FILE_URL";
-  WorkerRequestType2["RESET"] = "RESET";
-  WorkerRequestType2["RUN_PREPARED"] = "RUN_PREPARED";
-  WorkerRequestType2["RUN_QUERY"] = "RUN_QUERY";
-  WorkerRequestType2["SEND_PREPARED"] = "SEND_PREPARED";
-  WorkerRequestType2["START_PENDING_QUERY"] = "START_PENDING_QUERY";
-  WorkerRequestType2["TOKENIZE"] = "TOKENIZE";
-  return WorkerRequestType2;
-})(WorkerRequestType || {});
-var WorkerResponseType = /* @__PURE__ */ ((WorkerResponseType2) => {
-  WorkerResponseType2["CONNECTION_INFO"] = "CONNECTION_INFO";
-  WorkerResponseType2["ERROR"] = "ERROR";
-  WorkerResponseType2["FEATURE_FLAGS"] = "FEATURE_FLAGS";
-  WorkerResponseType2["FILE_BUFFER"] = "FILE_BUFFER";
-  WorkerResponseType2["FILE_INFOS"] = "FILE_INFOS";
-  WorkerResponseType2["FILE_SIZE"] = "FILE_SIZE";
-  WorkerResponseType2["FILE_STATISTICS"] = "FILE_STATISTICS";
-  WorkerResponseType2["INSTANTIATE_PROGRESS"] = "INSTANTIATE_PROGRESS";
-  WorkerResponseType2["LOG"] = "LOG";
-  WorkerResponseType2["PROGRESS_UPDATE"] = "PROGRESS_UPDATE";
-  WorkerResponseType2["OK"] = "OK";
-  WorkerResponseType2["PREPARED_STATEMENT_ID"] = "PREPARED_STATEMENT_ID";
-  WorkerResponseType2["QUERY_PLAN"] = "QUERY_PLAN";
-  WorkerResponseType2["QUERY_RESULT"] = "QUERY_RESULT";
-  WorkerResponseType2["QUERY_RESULT_CHUNK"] = "QUERY_RESULT_CHUNK";
-  WorkerResponseType2["QUERY_RESULT_HEADER"] = "QUERY_RESULT_HEADER";
-  WorkerResponseType2["QUERY_RESULT_HEADER_OR_NULL"] = "QUERY_RESULT_HEADER_OR_NULL";
-  WorkerResponseType2["REGISTERED_FILE"] = "REGISTERED_FILE";
-  WorkerResponseType2["SCRIPT_TOKENS"] = "SCRIPT_TOKENS";
-  WorkerResponseType2["SUCCESS"] = "SUCCESS";
-  WorkerResponseType2["TABLE_NAMES"] = "TABLE_NAMES";
-  WorkerResponseType2["VERSION_STRING"] = "VERSION_STRING";
-  return WorkerResponseType2;
-})(WorkerResponseType || {});
-var WorkerTask = class {
-  constructor(type, data) {
+var D = ((c) => (c.CANCEL_PENDING_QUERY = "CANCEL_PENDING_QUERY", c.CLOSE_PREPARED = "CLOSE_PREPARED", c.COLLECT_FILE_STATISTICS = "COLLECT_FILE_STATISTICS", c.REGISTER_OPFS_FILE_NAME = "REGISTER_OPFS_FILE_NAME", c.CONNECT = "CONNECT", c.COPY_FILE_TO_BUFFER = "COPY_FILE_TO_BUFFER", c.COPY_FILE_TO_PATH = "COPY_FILE_TO_PATH", c.CREATE_PREPARED = "CREATE_PREPARED", c.DISCONNECT = "DISCONNECT", c.DROP_FILE = "DROP_FILE", c.DROP_FILES = "DROP_FILES", c.EXPORT_FILE_STATISTICS = "EXPORT_FILE_STATISTICS", c.FETCH_QUERY_RESULTS = "FETCH_QUERY_RESULTS", c.FLUSH_FILES = "FLUSH_FILES", c.GET_FEATURE_FLAGS = "GET_FEATURE_FLAGS", c.GET_TABLE_NAMES = "GET_TABLE_NAMES", c.GET_VERSION = "GET_VERSION", c.GLOB_FILE_INFOS = "GLOB_FILE_INFOS", c.INSERT_ARROW_FROM_IPC_STREAM = "INSERT_ARROW_FROM_IPC_STREAM", c.INSERT_CSV_FROM_PATH = "IMPORT_CSV_FROM_PATH", c.INSERT_JSON_FROM_PATH = "IMPORT_JSON_FROM_PATH", c.INSTANTIATE = "INSTANTIATE", c.OPEN = "OPEN", c.PING = "PING", c.POLL_PENDING_QUERY = "POLL_PENDING_QUERY", c.REGISTER_FILE_BUFFER = "REGISTER_FILE_BUFFER", c.REGISTER_FILE_HANDLE = "REGISTER_FILE_HANDLE", c.REGISTER_FILE_URL = "REGISTER_FILE_URL", c.RESET = "RESET", c.RUN_PREPARED = "RUN_PREPARED", c.RUN_QUERY = "RUN_QUERY", c.SEND_PREPARED = "SEND_PREPARED", c.START_PENDING_QUERY = "START_PENDING_QUERY", c.TOKENIZE = "TOKENIZE", c))(D || {});
+var O = ((l) => (l.CONNECTION_INFO = "CONNECTION_INFO", l.ERROR = "ERROR", l.FEATURE_FLAGS = "FEATURE_FLAGS", l.FILE_BUFFER = "FILE_BUFFER", l.FILE_INFOS = "FILE_INFOS", l.FILE_SIZE = "FILE_SIZE", l.FILE_STATISTICS = "FILE_STATISTICS", l.INSTANTIATE_PROGRESS = "INSTANTIATE_PROGRESS", l.LOG = "LOG", l.PROGRESS_UPDATE = "PROGRESS_UPDATE", l.OK = "OK", l.PREPARED_STATEMENT_ID = "PREPARED_STATEMENT_ID", l.QUERY_PLAN = "QUERY_PLAN", l.QUERY_RESULT = "QUERY_RESULT", l.QUERY_RESULT_CHUNK = "QUERY_RESULT_CHUNK", l.QUERY_RESULT_HEADER = "QUERY_RESULT_HEADER", l.QUERY_RESULT_HEADER_OR_NULL = "QUERY_RESULT_HEADER_OR_NULL", l.REGISTERED_FILE = "REGISTERED_FILE", l.SCRIPT_TOKENS = "SCRIPT_TOKENS", l.SUCCESS = "SUCCESS", l.TABLE_NAMES = "TABLE_NAMES", l.VERSION_STRING = "VERSION_STRING", l))(O || {});
+var a = class {
+  constructor(e, r) {
     this.promiseResolver = () => {
     };
     this.promiseRejecter = () => {
     };
-    this.type = type;
-    this.data = data;
-    this.promise = new Promise(
-      (resolve, reject) => {
-        this.promiseResolver = resolve;
-        this.promiseRejecter = reject;
-      }
-    );
+    this.type = e, this.data = r, this.promise = new Promise((t, o) => {
+      this.promiseResolver = t, this.promiseRejecter = o;
+    });
   }
 };
-function arrowToSQLType(type) {
-  switch (type.typeId) {
+function _(s) {
+  switch (s.typeId) {
     case Type2.Binary:
       return { sqlType: "binary" };
     case Type2.Bool:
@@ -12101,8 +11904,8 @@ function arrowToSQLType(type) {
     case Type2.DateMillisecond:
       return { sqlType: "date64[ms]" };
     case Type2.Decimal: {
-      const dec = type;
-      return { sqlType: "decimal", precision: dec.precision, scale: dec.scale };
+      let e = s;
+      return { sqlType: "decimal", precision: e.precision, scale: e.scale };
     }
     case Type2.Float:
       return { sqlType: "float" };
@@ -12132,35 +11935,19 @@ function arrowToSQLType(type) {
       return { sqlType: "interval[dt]" };
     case Type2.IntervalYearMonth:
       return { sqlType: "interval[m]" };
-    case Type2.List: {
-      const list = type;
-      return {
-        sqlType: "list",
-        valueType: arrowToSQLType(list.valueType)
-      };
-    }
-    case Type2.FixedSizeBinary: {
-      const bin = type;
-      return { sqlType: "fixedsizebinary", byteWidth: bin.byteWidth };
-    }
+    case Type2.List:
+      return { sqlType: "list", valueType: _(s.valueType) };
+    case Type2.FixedSizeBinary:
+      return { sqlType: "fixedsizebinary", byteWidth: s.byteWidth };
     case Type2.Null:
       return { sqlType: "null" };
     case Type2.Utf8:
       return { sqlType: "utf8" };
-    case Type2.Struct: {
-      const struct_ = type;
-      return {
-        sqlType: "struct",
-        fields: struct_.children.map((c) => arrowToSQLField(c.name, c.type))
-      };
-    }
+    case Type2.Struct:
+      return { sqlType: "struct", fields: s.children.map((r) => R(r.name, r.type)) };
     case Type2.Map: {
-      const map_ = type;
-      return {
-        sqlType: "map",
-        keyType: arrowToSQLType(map_.keyType),
-        valueType: arrowToSQLType(map_.valueType)
-      };
+      let e = s;
+      return { sqlType: "map", keyType: _(e.keyType), valueType: _(e.valueType) };
     }
     case Type2.Time:
       return { sqlType: "time[s]" };
@@ -12172,45 +11959,34 @@ function arrowToSQLType(type) {
       return { sqlType: "time[ns]" };
     case Type2.TimeSecond:
       return { sqlType: "time[s]" };
-    case Type2.Timestamp: {
-      const ts = type;
-      return { sqlType: "timestamp", timezone: ts.timezone || void 0 };
-    }
-    case Type2.TimestampSecond: {
-      const ts = type;
-      return { sqlType: "timestamp[s]", timezone: ts.timezone || void 0 };
-    }
-    case Type2.TimestampMicrosecond: {
-      const ts = type;
-      return { sqlType: "timestamp[us]", timezone: ts.timezone || void 0 };
-    }
-    case Type2.TimestampNanosecond: {
-      const ts = type;
-      return { sqlType: "timestamp[ns]", timezone: ts.timezone || void 0 };
-    }
-    case Type2.TimestampMillisecond: {
-      const ts = type;
-      return { sqlType: "timestamp[ms]", timezone: ts.timezone || void 0 };
-    }
+    case Type2.Timestamp:
+      return { sqlType: "timestamp", timezone: s.timezone || void 0 };
+    case Type2.TimestampSecond:
+      return { sqlType: "timestamp[s]", timezone: s.timezone || void 0 };
+    case Type2.TimestampMicrosecond:
+      return { sqlType: "timestamp[us]", timezone: s.timezone || void 0 };
+    case Type2.TimestampNanosecond:
+      return { sqlType: "timestamp[ns]", timezone: s.timezone || void 0 };
+    case Type2.TimestampMillisecond:
+      return { sqlType: "timestamp[ms]", timezone: s.timezone || void 0 };
   }
-  throw new Error("unsupported arrow type: ".concat(type.toString()));
+  throw new Error("unsupported arrow type: ".concat(s.toString()));
 }
-function arrowToSQLField(name, type) {
-  const t = arrowToSQLType(type);
-  t.name = name;
-  return t;
+function R(s, e) {
+  let r = _(e);
+  return r.name = s, r;
 }
-var REGEX_OPFS_FILE = /'(opfs:\/\/\S*?)'/g;
-var REGEX_OPFS_PROTOCOL = /(opfs:\/\/\S*?)/g;
-function isOPFSProtocol(path) {
-  return path.search(REGEX_OPFS_PROTOCOL) > -1;
+var ae = /'(opfs:\/\/\S*?)'/g;
+var de = /(opfs:\/\/\S*?)/g;
+function L(s) {
+  return s.search(de) > -1;
 }
-function searchOPFSFiles(text) {
-  return [...text.matchAll(REGEX_OPFS_FILE)].map((match) => match[1]);
+function F(s) {
+  return [...s.matchAll(ae)].map((e) => e[1]);
 }
-var TEXT_ENCODER = new TextEncoder();
-var AsyncDuckDB = class {
-  constructor(logger, worker = null) {
+var ce = new TextEncoder();
+var f = class {
+  constructor(e, r = null) {
     this._onInstantiationProgress = [];
     this._onExecutionProgress = [];
     this._worker = null;
@@ -12220,112 +11996,63 @@ var AsyncDuckDB = class {
     this._nextMessageId = 0;
     this._pendingRequests = /* @__PURE__ */ new Map();
     this._config = {};
-    this._logger = logger;
-    this._onMessageHandler = this.onMessage.bind(this);
-    this._onErrorHandler = this.onError.bind(this);
-    this._onCloseHandler = this.onClose.bind(this);
-    if (worker != null)
-      this.attach(worker);
+    this._logger = e, this._onMessageHandler = this.onMessage.bind(this), this._onErrorHandler = this.onError.bind(this), this._onCloseHandler = this.onClose.bind(this), r != null && this.attach(r);
   }
-  /** Get the logger */
   get logger() {
     return this._logger;
   }
-  /** Get the logger */
   get config() {
     return this._config;
   }
-  /** Attach to worker */
-  attach(worker) {
-    this._worker = worker;
-    this._worker.addEventListener("message", this._onMessageHandler);
-    this._worker.addEventListener("error", this._onErrorHandler);
-    this._worker.addEventListener("close", this._onCloseHandler);
-    this._workerShutdownPromise = new Promise(
-      (resolve, _reject) => {
-        this._workerShutdownResolver = resolve;
-      }
-    );
+  attach(e) {
+    this._worker = e, this._worker.addEventListener("message", this._onMessageHandler), this._worker.addEventListener("error", this._onErrorHandler), this._worker.addEventListener("close", this._onCloseHandler), this._workerShutdownPromise = new Promise((r, t) => {
+      this._workerShutdownResolver = r;
+    });
   }
-  /** Detach from worker */
   detach() {
-    if (!this._worker)
-      return;
-    this._worker.removeEventListener("message", this._onMessageHandler);
-    this._worker.removeEventListener("error", this._onErrorHandler);
-    this._worker.removeEventListener("close", this._onCloseHandler);
-    this._worker = null;
-    this._workerShutdownResolver(null);
-    this._workerShutdownPromise = null;
-    this._workerShutdownResolver = () => {
-    };
+    this._worker && (this._worker.removeEventListener("message", this._onMessageHandler), this._worker.removeEventListener("error", this._onErrorHandler), this._worker.removeEventListener("close", this._onCloseHandler), this._worker = null, this._workerShutdownResolver(null), this._workerShutdownPromise = null, this._workerShutdownResolver = () => {
+    });
   }
-  /** Kill the worker */
   async terminate() {
-    if (!this._worker)
-      return;
-    this._worker.terminate();
-    this._worker = null;
-    this._workerShutdownPromise = null;
-    this._workerShutdownResolver = () => {
-    };
+    this._worker && (this._worker.terminate(), this._worker = null, this._workerShutdownPromise = null, this._workerShutdownResolver = () => {
+    });
   }
-  /** Post a task */
-  async postTask(task, transfer = []) {
+  async postTask(e, r = []) {
     if (!this._worker) {
-      console.error("cannot send a message since the worker is not set!:" + task.type + "," + task.data);
-      return void 0;
+      console.error("cannot send a message since the worker is not set!:" + e.type + "," + e.data);
+      return;
     }
-    const mid = this._nextMessageId++;
-    this._pendingRequests.set(mid, task);
-    this._worker.postMessage(
-      {
-        messageId: mid,
-        type: task.type,
-        data: task.data
-      },
-      transfer
-    );
-    return await task.promise;
+    let t = this._nextMessageId++;
+    return this._pendingRequests.set(t, e), this._worker.postMessage({ messageId: t, type: e.type, data: e.data }, r), await e.promise;
   }
-  /** Received a message */
-  onMessage(event) {
-    var _a5;
-    const response = event.data;
-    switch (response.type) {
+  onMessage(e) {
+    var o;
+    let r = e.data;
+    switch (r.type) {
       case "PROGRESS_UPDATE": {
-        for (const p of this._onExecutionProgress) {
-          p(response.data);
-        }
+        for (let i of this._onExecutionProgress) i(r.data);
         return;
       }
       case "LOG": {
-        this._logger.log(response.data);
+        this._logger.log(r.data);
         return;
       }
       case "INSTANTIATE_PROGRESS": {
-        for (const p of this._onInstantiationProgress) {
-          p(response.data);
-        }
+        for (let i of this._onInstantiationProgress) i(r.data);
         return;
       }
     }
-    const task = this._pendingRequests.get(response.requestId);
-    if (!task) {
-      console.warn("unassociated response: [".concat(response.requestId, ", ").concat(response.type.toString(), "]"));
+    let t = this._pendingRequests.get(r.requestId);
+    if (!t) {
+      console.warn("unassociated response: [".concat(r.requestId, ", ").concat(r.type.toString(), "]"));
       return;
     }
-    this._pendingRequests.delete(response.requestId);
-    if (response.type == "ERROR") {
-      const e = new Error(response.data.message);
-      e.name = response.data.name;
-      if ((_a5 = Object.getOwnPropertyDescriptor(e, "stack")) == null ? void 0 : _a5.writable) {
-        e.stack = response.data.stack;
-      }
-      task.promiseRejecter(e);
+    if (this._pendingRequests.delete(r.requestId), r.type == "ERROR") {
+      let i = new Error(r.data.message);
+      i.name = r.data.name, (o = Object.getOwnPropertyDescriptor(i, "stack")) != null && o.writable && (i.stack = r.data.stack), t.promiseRejecter(i);
       return;
     }
-    switch (task.type) {
+    switch (t.type) {
       case "CLOSE_PREPARED":
       case "COLLECT_FILE_STATISTICS":
       case "REGISTER_OPFS_FILE_NAME":
@@ -12343,1135 +12070,583 @@ var AsyncDuckDB = class {
       case "REGISTER_FILE_HANDLE":
       case "REGISTER_FILE_URL":
       case "RESET":
-        if (response.type == "OK") {
-          task.promiseResolver(response.data);
+        if (r.type == "OK") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "INSTANTIATE":
-        this._onInstantiationProgress = [];
-        if (response.type == "OK") {
-          task.promiseResolver(response.data);
+        if (this._onInstantiationProgress = [], r.type == "OK") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "GLOB_FILE_INFOS":
-        if (response.type == "FILE_INFOS") {
-          task.promiseResolver(response.data);
+        if (r.type == "FILE_INFOS") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "GET_VERSION":
-        if (response.type == "VERSION_STRING") {
-          task.promiseResolver(response.data);
+        if (r.type == "VERSION_STRING") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "GET_FEATURE_FLAGS":
-        if (response.type == "FEATURE_FLAGS") {
-          task.promiseResolver(response.data);
+        if (r.type == "FEATURE_FLAGS") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "GET_TABLE_NAMES":
-        if (response.type == "TABLE_NAMES") {
-          task.promiseResolver(response.data);
+        if (r.type == "TABLE_NAMES") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "TOKENIZE":
-        if (response.type == "SCRIPT_TOKENS") {
-          task.promiseResolver(response.data);
+        if (r.type == "SCRIPT_TOKENS") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "COPY_FILE_TO_BUFFER":
-        if (response.type == "FILE_BUFFER") {
-          task.promiseResolver(response.data);
+        if (r.type == "FILE_BUFFER") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "EXPORT_FILE_STATISTICS":
-        if (response.type == "FILE_STATISTICS") {
-          task.promiseResolver(response.data);
+        if (r.type == "FILE_STATISTICS") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "CONNECT":
-        if (response.type == "CONNECTION_INFO") {
-          task.promiseResolver(response.data);
+        if (r.type == "CONNECTION_INFO") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "RUN_PREPARED":
       case "RUN_QUERY":
-        if (response.type == "QUERY_RESULT") {
-          task.promiseResolver(response.data);
+        if (r.type == "QUERY_RESULT") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "SEND_PREPARED":
-        if (response.type == "QUERY_RESULT_HEADER") {
-          task.promiseResolver(response.data);
+        if (r.type == "QUERY_RESULT_HEADER") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "START_PENDING_QUERY":
-        if (response.type == "QUERY_RESULT_HEADER_OR_NULL") {
-          task.promiseResolver(response.data);
+        if (r.type == "QUERY_RESULT_HEADER_OR_NULL") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "POLL_PENDING_QUERY":
-        if (response.type == "QUERY_RESULT_HEADER_OR_NULL") {
-          task.promiseResolver(response.data);
+        if (r.type == "QUERY_RESULT_HEADER_OR_NULL") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "CANCEL_PENDING_QUERY":
-        this._onInstantiationProgress = [];
-        if (response.type == "SUCCESS") {
-          task.promiseResolver(response.data);
+        if (this._onInstantiationProgress = [], r.type == "SUCCESS") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "FETCH_QUERY_RESULTS":
-        if (response.type == "QUERY_RESULT_CHUNK") {
-          task.promiseResolver(response.data);
+        if (r.type == "QUERY_RESULT_CHUNK") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
       case "CREATE_PREPARED":
-        if (response.type == "PREPARED_STATEMENT_ID") {
-          task.promiseResolver(response.data);
+        if (r.type == "PREPARED_STATEMENT_ID") {
+          t.promiseResolver(r.data);
           return;
         }
         break;
     }
-    task.promiseRejecter(new Error("unexpected response type: ".concat(response.type.toString())));
+    t.promiseRejecter(new Error("unexpected response type: ".concat(r.type.toString())));
   }
-  /** Received an error */
-  onError(event) {
-    console.error(event);
-    console.error("error in duckdb worker: ".concat(event.message));
-    this._pendingRequests.clear();
+  onError(e) {
+    console.error(e), console.error("error in duckdb worker: ".concat(e.message)), this._pendingRequests.clear();
   }
-  /** The worker was closed */
   onClose() {
-    this._workerShutdownResolver(null);
-    if (this._pendingRequests.size != 0) {
+    if (this._workerShutdownResolver(null), this._pendingRequests.size != 0) {
       console.warn("worker terminated with ".concat(this._pendingRequests.size, " pending requests"));
       return;
     }
     this._pendingRequests.clear();
   }
-  /** Is in detached state, no worker defined */
   isDetached() {
     return !this._worker;
   }
-  /** Reset the duckdb */
   async reset() {
-    const task = new WorkerTask("RESET", null);
-    return await this.postTask(task);
+    let e = new a("RESET", null);
+    return await this.postTask(e);
   }
-  /** Ping the worker thread */
   async ping() {
-    const task = new WorkerTask("PING", null);
-    await this.postTask(task);
+    let e = new a("PING", null);
+    await this.postTask(e);
   }
-  /** Try to drop a file */
-  async dropFile(name) {
-    const task = new WorkerTask("DROP_FILE", name);
-    return await this.postTask(task);
+  async dropFile(e) {
+    let r = new a("DROP_FILE", e);
+    return await this.postTask(r);
   }
-  /** Try to drop files */
-  async dropFiles(names) {
-    const task = new WorkerTask("DROP_FILES", names);
-    return await this.postTask(task);
+  async dropFiles(e) {
+    let r = new a("DROP_FILES", e);
+    return await this.postTask(r);
   }
-  /** Flush all files */
   async flushFiles() {
-    const task = new WorkerTask("FLUSH_FILES", null);
-    return await this.postTask(task);
+    let e = new a("FLUSH_FILES", null);
+    return await this.postTask(e);
   }
-  /** Open the database */
-  async instantiate(mainModuleURL, pthreadWorkerURL = null, progress = (_p2) => {
+  async instantiate(e, r = null, t = (o) => {
   }) {
-    this._onInstantiationProgress.push(progress);
-    const task = new WorkerTask(
-      "INSTANTIATE",
-      [mainModuleURL, pthreadWorkerURL]
-    );
-    return await this.postTask(task);
+    this._onInstantiationProgress.push(t);
+    let o = new a("INSTANTIATE", [e, r]);
+    return await this.postTask(o);
   }
-  /** Get the version */
   async getVersion() {
-    const task = new WorkerTask("GET_VERSION", null);
-    const version = await this.postTask(task);
-    return version;
+    let e = new a("GET_VERSION", null);
+    return await this.postTask(e);
   }
-  /** Get the feature flags */
   async getFeatureFlags() {
-    const task = new WorkerTask(
-      "GET_FEATURE_FLAGS",
-      null
-    );
-    const feature = await this.postTask(task);
-    return feature;
+    let e = new a("GET_FEATURE_FLAGS", null);
+    return await this.postTask(e);
   }
-  /** Open a new database */
-  async open(config) {
-    this._config = config;
-    const task = new WorkerTask("OPEN", config);
-    await this.postTask(task);
+  async open(e) {
+    this._config = e;
+    let r = new a("OPEN", e);
+    await this.postTask(r);
   }
-  /** Tokenize a script text */
-  async tokenize(text) {
-    const task = new WorkerTask("TOKENIZE", text);
-    const tokens = await this.postTask(task);
-    return tokens;
+  async tokenize(e) {
+    let r = new a("TOKENIZE", e);
+    return await this.postTask(r);
   }
-  /** Connect to the database */
   async connectInternal() {
-    const task = new WorkerTask("CONNECT", null);
-    return await this.postTask(task);
+    let e = new a("CONNECT", null);
+    return await this.postTask(e);
   }
-  /** Connect to the database */
   async connect() {
-    const cid = await this.connectInternal();
-    return new AsyncDuckDBConnection(this, cid);
+    let e = await this.connectInternal();
+    return new E(this, e);
   }
-  /** Disconnect from the database */
-  async disconnect(conn) {
-    const task = new WorkerTask(
-      "DISCONNECT",
-      conn
-    );
-    await this.postTask(task);
+  async disconnect(e) {
+    let r = new a("DISCONNECT", e);
+    await this.postTask(r);
   }
-  /** Run a query */
-  async runQuery(conn, text) {
+  async runQuery(e, r) {
     if (this.shouldOPFSFileHandling()) {
-      const files = await this.registerOPFSFileFromSQL(text);
+      let t = await this.registerOPFSFileFromSQL(r);
       try {
-        return await this._runQueryAsync(conn, text);
+        return await this._runQueryAsync(e, r);
       } finally {
-        if (files.length > 0) {
-          await this.dropFiles(files);
-        }
+        t.length > 0 && await this.dropFiles(t);
       }
-    } else {
-      return await this._runQueryAsync(conn, text);
-    }
+    } else return await this._runQueryAsync(e, r);
   }
-  async _runQueryAsync(conn, text) {
-    const task = new WorkerTask(
-      "RUN_QUERY",
-      [conn, text]
-    );
-    return await this.postTask(task);
+  async _runQueryAsync(e, r) {
+    let t = new a("RUN_QUERY", [e, r]);
+    return await this.postTask(t);
   }
-  /** Start a pending query */
-  async startPendingQuery(conn, text, allowStreamResult = false) {
+  async startPendingQuery(e, r, t = false) {
     if (this.shouldOPFSFileHandling()) {
-      const files = await this.registerOPFSFileFromSQL(text);
+      let o = await this.registerOPFSFileFromSQL(r);
       try {
-        return await this._startPendingQueryAsync(conn, text, allowStreamResult);
+        return await this._startPendingQueryAsync(e, r, t);
       } finally {
-        if (files.length > 0) {
-          await this.dropFiles(files);
-        }
+        o.length > 0 && await this.dropFiles(o);
       }
-    } else {
-      return await this._startPendingQueryAsync(conn, text, allowStreamResult);
-    }
+    } else return await this._startPendingQueryAsync(e, r, t);
   }
-  async _startPendingQueryAsync(conn, text, allowStreamResult = false) {
-    const task = new WorkerTask("START_PENDING_QUERY", [conn, text, allowStreamResult]);
-    return await this.postTask(task);
+  async _startPendingQueryAsync(e, r, t = false) {
+    let o = new a("START_PENDING_QUERY", [e, r, t]);
+    return await this.postTask(o);
   }
-  /** Poll a pending query */
-  async pollPendingQuery(conn) {
-    const task = new WorkerTask(
-      "POLL_PENDING_QUERY",
-      conn
-    );
-    return await this.postTask(task);
+  async pollPendingQuery(e) {
+    let r = new a("POLL_PENDING_QUERY", e);
+    return await this.postTask(r);
   }
-  /** Cancel a pending query */
-  async cancelPendingQuery(conn) {
-    const task = new WorkerTask(
-      "CANCEL_PENDING_QUERY",
-      conn
-    );
-    return await this.postTask(task);
+  async cancelPendingQuery(e) {
+    let r = new a("CANCEL_PENDING_QUERY", e);
+    return await this.postTask(r);
   }
-  /** Fetch query results */
-  async fetchQueryResults(conn) {
-    const task = new WorkerTask(
-      "FETCH_QUERY_RESULTS",
-      conn
-    );
-    return await this.postTask(task);
+  async fetchQueryResults(e) {
+    let r = new a("FETCH_QUERY_RESULTS", e);
+    return await this.postTask(r);
   }
-  /** Get table names */
-  async getTableNames(conn, text) {
-    const task = new WorkerTask(
-      "GET_TABLE_NAMES",
-      [conn, text]
-    );
-    return await this.postTask(task);
+  async getTableNames(e, r) {
+    let t = new a("GET_TABLE_NAMES", [e, r]);
+    return await this.postTask(t);
   }
-  /** Prepare a statement and return its identifier */
-  async createPrepared(conn, text) {
-    const task = new WorkerTask(
-      "CREATE_PREPARED",
-      [conn, text]
-    );
-    return await this.postTask(task);
+  async createPrepared(e, r) {
+    let t = new a("CREATE_PREPARED", [e, r]);
+    return await this.postTask(t);
   }
-  /** Close a prepared statement */
-  async closePrepared(conn, statement) {
-    const task = new WorkerTask(
-      "CLOSE_PREPARED",
-      [conn, statement]
-    );
-    await this.postTask(task);
+  async closePrepared(e, r) {
+    let t = new a("CLOSE_PREPARED", [e, r]);
+    await this.postTask(t);
   }
-  /** Execute a prepared statement and return the full result */
-  async runPrepared(conn, statement, params) {
-    const task = new WorkerTask(
-      "RUN_PREPARED",
-      [conn, statement, params]
-    );
-    return await this.postTask(task);
+  async runPrepared(e, r, t) {
+    let o = new a("RUN_PREPARED", [e, r, t]);
+    return await this.postTask(o);
   }
-  /** Execute a prepared statement and stream the result */
-  async sendPrepared(conn, statement, params) {
-    const task = new WorkerTask(
-      "SEND_PREPARED",
-      [conn, statement, params]
-    );
-    return await this.postTask(task);
+  async sendPrepared(e, r, t) {
+    let o = new a("SEND_PREPARED", [e, r, t]);
+    return await this.postTask(o);
   }
-  /** Glob file infos */
-  async globFiles(path) {
-    const task = new WorkerTask(
-      "GLOB_FILE_INFOS",
-      path
-    );
-    return await this.postTask(task);
+  async globFiles(e) {
+    let r = new a("GLOB_FILE_INFOS", e);
+    return await this.postTask(r);
   }
-  /** Register file text */
-  async registerFileText(name, text) {
-    const buffer = TEXT_ENCODER.encode(text);
-    await this.registerFileBuffer(name, buffer);
+  async registerFileText(e, r) {
+    let t = ce.encode(r);
+    await this.registerFileBuffer(e, t);
   }
-  /** Register a file path. */
-  async registerFileURL(name, url, proto, directIO) {
-    if (url === void 0) {
-      url = name;
-    }
-    const task = new WorkerTask("REGISTER_FILE_URL", [name, url, proto, directIO]);
-    await this.postTask(task);
+  async registerFileURL(e, r, t, o) {
+    r === void 0 && (r = e);
+    let i = new a("REGISTER_FILE_URL", [e, r, t, o]);
+    await this.postTask(i);
   }
-  /** Register an empty file buffer. */
-  async registerEmptyFileBuffer(name) {
+  async registerEmptyFileBuffer(e) {
   }
-  /** Register a file buffer. */
-  async registerFileBuffer(name, buffer) {
-    const task = new WorkerTask(
-      "REGISTER_FILE_BUFFER",
-      [name, buffer]
-    );
-    await this.postTask(task, [buffer.buffer]);
+  async registerFileBuffer(e, r) {
+    let t = new a("REGISTER_FILE_BUFFER", [e, r]);
+    await this.postTask(t, [r.buffer]);
   }
-  /** Register a file handle. */
-  async registerFileHandle(name, handle, protocol, directIO) {
-    const task = new WorkerTask("REGISTER_FILE_HANDLE", [name, handle, protocol, directIO]);
-    await this.postTask(task, []);
+  async registerFileHandle(e, r, t, o) {
+    let i = new a("REGISTER_FILE_HANDLE", [e, r, t, o]);
+    await this.postTask(i, []);
   }
-  /** Enable file statistics */
-  async registerOPFSFileName(name) {
-    const task = new WorkerTask(
-      "REGISTER_OPFS_FILE_NAME",
-      [name]
-    );
-    await this.postTask(task, []);
+  async registerOPFSFileName(e) {
+    let r = new a("REGISTER_OPFS_FILE_NAME", [e]);
+    await this.postTask(r, []);
   }
-  /** Enable file statistics */
-  async collectFileStatistics(name, enable) {
-    const task = new WorkerTask(
-      "COLLECT_FILE_STATISTICS",
-      [name, enable]
-    );
-    await this.postTask(task, []);
+  async collectFileStatistics(e, r) {
+    let t = new a("COLLECT_FILE_STATISTICS", [e, r]);
+    await this.postTask(t, []);
   }
-  /** Export file statistics */
-  async exportFileStatistics(name) {
-    const task = new WorkerTask(
-      "EXPORT_FILE_STATISTICS",
-      name
-    );
-    return await this.postTask(task, []);
+  async exportFileStatistics(e) {
+    let r = new a("EXPORT_FILE_STATISTICS", e);
+    return await this.postTask(r, []);
   }
-  /** Copy a file to a buffer. */
-  async copyFileToBuffer(name) {
-    const task = new WorkerTask(
-      "COPY_FILE_TO_BUFFER",
-      name
-    );
-    return await this.postTask(task);
+  async copyFileToBuffer(e) {
+    let r = new a("COPY_FILE_TO_BUFFER", e);
+    return await this.postTask(r);
   }
-  /** Copy a file to a path. */
-  async copyFileToPath(name, path) {
-    const task = new WorkerTask(
-      "COPY_FILE_TO_PATH",
-      [name, path]
-    );
-    await this.postTask(task);
+  async copyFileToPath(e, r) {
+    let t = new a("COPY_FILE_TO_PATH", [e, r]);
+    await this.postTask(t);
   }
-  /** Insert arrow from an ipc stream */
-  async insertArrowFromIPCStream(conn, buffer, options) {
-    if (buffer.length == 0)
-      return;
-    const task = new WorkerTask("INSERT_ARROW_FROM_IPC_STREAM", [conn, buffer, options]);
-    await this.postTask(task, [buffer.buffer]);
+  async insertArrowFromIPCStream(e, r, t) {
+    if (r.length == 0) return;
+    let o = new a("INSERT_ARROW_FROM_IPC_STREAM", [e, r, t]);
+    await this.postTask(o, [r.buffer]);
   }
-  /** Insert a csv file */
-  async insertCSVFromPath(conn, path, options) {
-    if (options.columns !== void 0) {
-      const out = [];
-      for (const k in options.columns) {
-        const type = options.columns[k];
-        out.push(arrowToSQLField(k, type));
+  async insertCSVFromPath(e, r, t) {
+    if (t.columns !== void 0) {
+      let i = [];
+      for (let n in t.columns) {
+        let T = t.columns[n];
+        i.push(R(n, T));
       }
-      options.columnsFlat = out;
-      delete options.columns;
+      t.columnsFlat = i, delete t.columns;
     }
-    const task = new WorkerTask(
-      "IMPORT_CSV_FROM_PATH",
-      [conn, path, options]
-    );
-    await this.postTask(task);
+    let o = new a("IMPORT_CSV_FROM_PATH", [e, r, t]);
+    await this.postTask(o);
   }
-  /** Insert a json file */
-  async insertJSONFromPath(conn, path, options) {
-    if (options.columns !== void 0) {
-      const out = [];
-      for (const k in options.columns) {
-        const type = options.columns[k];
-        out.push(arrowToSQLField(k, type));
+  async insertJSONFromPath(e, r, t) {
+    if (t.columns !== void 0) {
+      let i = [];
+      for (let n in t.columns) {
+        let T = t.columns[n];
+        i.push(R(n, T));
       }
-      options.columnsFlat = out;
-      delete options.columns;
+      t.columnsFlat = i, delete t.columns;
     }
-    const task = new WorkerTask(
-      "IMPORT_JSON_FROM_PATH",
-      [conn, path, options]
-    );
-    await this.postTask(task);
+    let o = new a("IMPORT_JSON_FROM_PATH", [e, r, t]);
+    await this.postTask(o);
   }
   shouldOPFSFileHandling() {
-    var _a5, _b2;
-    if (isOPFSProtocol((_a5 = this.config.path) != null ? _a5 : "")) {
-      return ((_b2 = this.config.opfs) == null ? void 0 : _b2.fileHandling) == "auto";
-    }
-    return false;
+    var e, r;
+    return L((e = this.config.path) != null ? e : "") ? ((r = this.config.opfs) == null ? void 0 : r.fileHandling) == "auto" : false;
   }
-  async registerOPFSFileFromSQL(text) {
-    const files = searchOPFSFiles(text);
-    const result = [];
-    for (const file of files) {
-      try {
-        await this.registerOPFSFileName(file);
-        result.push(file);
-      } catch (e) {
-        console.error(e);
-        throw new Error("File Not found:" + file);
-      }
+  async registerOPFSFileFromSQL(e) {
+    let r = F(e), t = [];
+    for (let o of r) try {
+      await this.registerOPFSFileName(o), t.push(o);
+    } catch (i) {
+      throw console.error(i), new Error("File Not found:" + o);
     }
-    return result;
+    return t;
   }
 };
-function TextDecoderWrapper() {
-  const decoder2 = new TextDecoder();
-  return (data) => {
-    if (typeof SharedArrayBuffer !== "undefined" && data.buffer instanceof SharedArrayBuffer) {
-      data = new Uint8Array(data);
-    }
-    return decoder2.decode(data);
-  };
+function le() {
+  let s = new TextDecoder();
+  return (e) => (typeof SharedArrayBuffer < "u" && e.buffer instanceof SharedArrayBuffer && (e = new Uint8Array(e)), s.decode(e));
 }
-var decodeText = TextDecoderWrapper();
-var DuckDBDataProtocol = /* @__PURE__ */ ((DuckDBDataProtocol2) => {
-  DuckDBDataProtocol2[DuckDBDataProtocol2["BUFFER"] = 0] = "BUFFER";
-  DuckDBDataProtocol2[DuckDBDataProtocol2["NODE_FS"] = 1] = "NODE_FS";
-  DuckDBDataProtocol2[DuckDBDataProtocol2["BROWSER_FILEREADER"] = 2] = "BROWSER_FILEREADER";
-  DuckDBDataProtocol2[DuckDBDataProtocol2["BROWSER_FSACCESS"] = 3] = "BROWSER_FSACCESS";
-  DuckDBDataProtocol2[DuckDBDataProtocol2["HTTP"] = 4] = "HTTP";
-  DuckDBDataProtocol2[DuckDBDataProtocol2["S3"] = 5] = "S3";
-  return DuckDBDataProtocol2;
-})(DuckDBDataProtocol || {});
-var AsyncDuckDBDispatcher = class {
+var Be = le();
+var w = ((n) => (n[n.BUFFER = 0] = "BUFFER", n[n.NODE_FS = 1] = "NODE_FS", n[n.BROWSER_FILEREADER = 2] = "BROWSER_FILEREADER", n[n.BROWSER_FSACCESS = 3] = "BROWSER_FSACCESS", n[n.HTTP = 4] = "HTTP", n[n.S3 = 5] = "S3", n))(w || {});
+var C = class {
   constructor() {
     this._bindings = null;
     this._nextMessageId = 0;
   }
-  /** Send log entry to the main thread */
-  log(entry) {
-    this.postMessage(
-      {
-        messageId: this._nextMessageId++,
-        requestId: 0,
-        type: "LOG",
-        data: entry
-      },
-      []
-    );
+  log(e) {
+    this.postMessage({ messageId: this._nextMessageId++, requestId: 0, type: "LOG", data: e }, []);
   }
-  /** Send plain OK without further data */
-  sendOK(request) {
-    this.postMessage(
-      {
-        messageId: this._nextMessageId++,
-        requestId: request.messageId,
-        type: "OK",
-        data: null
-      },
-      []
-    );
+  sendOK(e) {
+    this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "OK", data: null }, []);
   }
-  /** Fail with an error */
-  failWith(request, e) {
-    const obj = {
-      name: e.name,
-      message: e.message,
-      stack: e.stack || void 0
-    };
-    this.postMessage(
-      {
-        messageId: this._nextMessageId++,
-        requestId: request.messageId,
-        type: "ERROR",
-        data: obj
-      },
-      []
-    );
-    return;
+  failWith(e, r) {
+    let t = { name: r.name, message: r.message, stack: r.stack || void 0 };
+    this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "ERROR", data: t }, []);
   }
-  /** Process a request from the main thread */
-  async onMessage(request) {
-    switch (request.type) {
+  async onMessage(e) {
+    switch (e.type) {
       case "PING":
-        this.sendOK(request);
+        this.sendOK(e);
         return;
       case "INSTANTIATE":
-        if (this._bindings != null) {
-          this.failWith(request, new Error("duckdb already initialized"));
-        }
+        this._bindings != null && this.failWith(e, new Error("duckdb already initialized"));
         try {
-          this._bindings = await this.instantiate(request.data[0], request.data[1], (p) => {
-            this.postMessage(
-              {
-                messageId: this._nextMessageId++,
-                requestId: request.messageId,
-                type: "INSTANTIATE_PROGRESS",
-                data: p
-              },
-              []
-            );
-          });
-          this.sendOK(request);
-        } catch (e) {
-          console.log(e);
-          this._bindings = null;
-          this.failWith(request, e);
+          this._bindings = await this.instantiate(e.data[0], e.data[1], (r) => {
+            this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "INSTANTIATE_PROGRESS", data: r }, []);
+          }), this.sendOK(e);
+        } catch (r) {
+          console.log(r), this._bindings = null, this.failWith(e, r);
         }
         return;
       default:
         break;
     }
-    if (!this._bindings) {
-      return this.failWith(request, new Error("duckdb is not initialized"));
-    }
+    if (!this._bindings) return this.failWith(e, new Error("duckdb is not initialized"));
     try {
-      switch (request.type) {
+      switch (e.type) {
         case "GET_VERSION":
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "VERSION_STRING",
-              data: this._bindings.getVersion()
-            },
-            []
-          );
+          this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "VERSION_STRING", data: this._bindings.getVersion() }, []);
           break;
         case "GET_FEATURE_FLAGS":
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "FEATURE_FLAGS",
-              data: this._bindings.getFeatureFlags()
-            },
-            []
-          );
+          this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "FEATURE_FLAGS", data: this._bindings.getFeatureFlags() }, []);
           break;
         case "RESET":
-          this._bindings.reset();
-          this.sendOK(request);
+          this._bindings.reset(), this.sendOK(e);
           break;
         case "OPEN": {
-          const path = request.data.path;
-          if (path == null ? void 0 : path.startsWith("opfs://")) {
-            await this._bindings.prepareDBFileHandle(
-              path,
-              3
-              /* BROWSER_FSACCESS */
-            );
-            request.data.useDirectIO = true;
-          }
-          this._bindings.open(request.data);
-          this.sendOK(request);
+          let r = e.data.path;
+          r != null && r.startsWith("opfs://") && (await this._bindings.prepareDBFileHandle(r, 3), e.data.useDirectIO = true), this._bindings.open(e.data), this.sendOK(e);
           break;
         }
         case "DROP_FILE":
-          this._bindings.dropFile(request.data);
-          this.sendOK(request);
+          this._bindings.dropFile(e.data), this.sendOK(e);
           break;
         case "DROP_FILES":
-          this._bindings.dropFiles(request.data);
-          this.sendOK(request);
+          this._bindings.dropFiles(e.data), this.sendOK(e);
           break;
         case "FLUSH_FILES":
-          this._bindings.flushFiles();
-          this.sendOK(request);
+          this._bindings.flushFiles(), this.sendOK(e);
           break;
         case "CONNECT": {
-          const conn = this._bindings.connect();
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "CONNECTION_INFO",
-              data: conn.useUnsafe((_, c) => c)
-            },
-            []
-          );
+          let r = this._bindings.connect();
+          this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "CONNECTION_INFO", data: r.useUnsafe((t, o) => o) }, []);
           break;
         }
         case "DISCONNECT":
-          this._bindings.disconnect(request.data);
-          this.sendOK(request);
+          this._bindings.disconnect(e.data), this.sendOK(e);
           break;
         case "CREATE_PREPARED": {
-          const result = this._bindings.createPrepared(request.data[0], request.data[1]);
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "PREPARED_STATEMENT_ID",
-              data: result
-            },
-            []
-          );
+          let r = this._bindings.createPrepared(e.data[0], e.data[1]);
+          this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "PREPARED_STATEMENT_ID", data: r }, []);
           break;
         }
         case "CLOSE_PREPARED": {
-          this._bindings.closePrepared(request.data[0], request.data[1]);
-          this.sendOK(request);
+          this._bindings.closePrepared(e.data[0], e.data[1]), this.sendOK(e);
           break;
         }
         case "RUN_PREPARED": {
-          const result = this._bindings.runPrepared(request.data[0], request.data[1], request.data[2]);
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "QUERY_RESULT",
-              data: result
-            },
-            [result.buffer]
-          );
+          let r = this._bindings.runPrepared(e.data[0], e.data[1], e.data[2]);
+          this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "QUERY_RESULT", data: r }, [r.buffer]);
           break;
         }
         case "RUN_QUERY": {
-          const result = this._bindings.runQuery(request.data[0], request.data[1]);
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "QUERY_RESULT",
-              data: result
-            },
-            [result.buffer]
-          );
+          let r = this._bindings.runQuery(e.data[0], e.data[1]);
+          this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "QUERY_RESULT", data: r }, [r.buffer]);
           break;
         }
         case "SEND_PREPARED": {
-          const result = this._bindings.sendPrepared(request.data[0], request.data[1], request.data[2]);
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "QUERY_RESULT_HEADER",
-              data: result
-            },
-            [result.buffer]
-          );
+          let r = this._bindings.sendPrepared(e.data[0], e.data[1], e.data[2]);
+          this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "QUERY_RESULT_HEADER", data: r }, [r.buffer]);
           break;
         }
         case "START_PENDING_QUERY": {
-          const result = this._bindings.startPendingQuery(request.data[0], request.data[1], request.data[2]);
-          const transfer = [];
-          if (result) {
-            transfer.push(result.buffer);
-          }
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "QUERY_RESULT_HEADER_OR_NULL",
-              data: result
-            },
-            transfer
-          );
+          let r = this._bindings.startPendingQuery(e.data[0], e.data[1], e.data[2]), t = [];
+          r && t.push(r.buffer), this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "QUERY_RESULT_HEADER_OR_NULL", data: r }, t);
           break;
         }
         case "POLL_PENDING_QUERY": {
-          const result = this._bindings.pollPendingQuery(request.data);
-          const transfer = [];
-          if (result) {
-            transfer.push(result.buffer);
-          }
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "QUERY_RESULT_HEADER_OR_NULL",
-              data: result
-            },
-            transfer
-          );
+          let r = this._bindings.pollPendingQuery(e.data), t = [];
+          r && t.push(r.buffer), this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "QUERY_RESULT_HEADER_OR_NULL", data: r }, t);
           break;
         }
         case "CANCEL_PENDING_QUERY": {
-          const result = this._bindings.cancelPendingQuery(request.data);
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "SUCCESS",
-              data: result
-            },
-            []
-          );
+          let r = this._bindings.cancelPendingQuery(e.data);
+          this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "SUCCESS", data: r }, []);
           break;
         }
         case "FETCH_QUERY_RESULTS": {
-          const result = this._bindings.fetchQueryResults(request.data);
-          const transfer = result ? [result.buffer] : [];
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "QUERY_RESULT_CHUNK",
-              data: result
-            },
-            transfer
-          );
+          let r = this._bindings.fetchQueryResults(e.data), t = r ? [r.buffer] : [];
+          this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "QUERY_RESULT_CHUNK", data: r }, t);
           break;
         }
         case "GET_TABLE_NAMES": {
-          const result = this._bindings.getTableNames(request.data[0], request.data[1]);
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "TABLE_NAMES",
-              data: result
-            },
-            []
-          );
+          let r = this._bindings.getTableNames(e.data[0], e.data[1]);
+          this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "TABLE_NAMES", data: r }, []);
           break;
         }
         case "GLOB_FILE_INFOS": {
-          const infos = this._bindings.globFiles(request.data);
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "FILE_INFOS",
-              data: infos
-            },
-            []
-          );
+          let r = this._bindings.globFiles(e.data);
+          this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "FILE_INFOS", data: r }, []);
           break;
         }
         case "REGISTER_FILE_URL":
-          this._bindings.registerFileURL(request.data[0], request.data[1], request.data[2], request.data[3]);
-          this.sendOK(request);
+          this._bindings.registerFileURL(e.data[0], e.data[1], e.data[2], e.data[3]), this.sendOK(e);
           break;
         case "REGISTER_FILE_BUFFER":
-          this._bindings.registerFileBuffer(request.data[0], request.data[1]);
-          this.sendOK(request);
+          this._bindings.registerFileBuffer(e.data[0], e.data[1]), this.sendOK(e);
           break;
         case "REGISTER_FILE_HANDLE":
-          await this._bindings.registerFileHandleAsync(
-            request.data[0],
-            request.data[1],
-            request.data[2],
-            request.data[3]
-          );
-          this.sendOK(request);
+          await this._bindings.registerFileHandleAsync(e.data[0], e.data[1], e.data[2], e.data[3]), this.sendOK(e);
           break;
         case "COPY_FILE_TO_PATH":
-          this._bindings.copyFileToPath(request.data[0], request.data[1]);
-          this.sendOK(request);
+          this._bindings.copyFileToPath(e.data[0], e.data[1]), this.sendOK(e);
           break;
         case "COPY_FILE_TO_BUFFER": {
-          const buffer = this._bindings.copyFileToBuffer(request.data);
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "FILE_BUFFER",
-              data: buffer
-            },
-            []
-          );
+          let r = this._bindings.copyFileToBuffer(e.data);
+          this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "FILE_BUFFER", data: r }, []);
           break;
         }
         case "COLLECT_FILE_STATISTICS":
-          this._bindings.collectFileStatistics(request.data[0], request.data[1]);
-          this.sendOK(request);
+          this._bindings.collectFileStatistics(e.data[0], e.data[1]), this.sendOK(e);
           break;
         case "REGISTER_OPFS_FILE_NAME":
-          await this._bindings.registerOPFSFileName(request.data[0]);
-          this.sendOK(request);
+          await this._bindings.registerOPFSFileName(e.data[0]), this.sendOK(e);
           break;
         case "EXPORT_FILE_STATISTICS": {
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "FILE_STATISTICS",
-              data: this._bindings.exportFileStatistics(request.data)
-            },
-            []
-          );
+          this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "FILE_STATISTICS", data: this._bindings.exportFileStatistics(e.data) }, []);
           break;
         }
         case "INSERT_ARROW_FROM_IPC_STREAM": {
-          this._bindings.insertArrowFromIPCStream(request.data[0], request.data[1], request.data[2]);
-          this.sendOK(request);
+          this._bindings.insertArrowFromIPCStream(e.data[0], e.data[1], e.data[2]), this.sendOK(e);
           break;
         }
         case "IMPORT_CSV_FROM_PATH": {
-          this._bindings.insertCSVFromPath(request.data[0], request.data[1], request.data[2]);
-          this.sendOK(request);
+          this._bindings.insertCSVFromPath(e.data[0], e.data[1], e.data[2]), this.sendOK(e);
           break;
         }
         case "IMPORT_JSON_FROM_PATH": {
-          this._bindings.insertJSONFromPath(request.data[0], request.data[1], request.data[2]);
-          this.sendOK(request);
+          this._bindings.insertJSONFromPath(e.data[0], e.data[1], e.data[2]), this.sendOK(e);
           break;
         }
         case "TOKENIZE": {
-          const result = this._bindings.tokenize(request.data);
-          this.postMessage(
-            {
-              messageId: this._nextMessageId++,
-              requestId: request.messageId,
-              type: "SCRIPT_TOKENS",
-              data: result
-            },
-            []
-          );
+          let r = this._bindings.tokenize(e.data);
+          this.postMessage({ messageId: this._nextMessageId++, requestId: e.messageId, type: "SCRIPT_TOKENS", data: r }, []);
           break;
         }
       }
-    } catch (e) {
-      console.log(e);
-      return this.failWith(request, e);
+    } catch (r) {
+      return console.log(r), this.failWith(e, r);
     }
   }
 };
-var bulkMemory = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 5, 3, 1, 0, 1, 10, 14, 1, 12, 0, 65, 0, 65, 0, 65, 0, 252, 10, 0, 0, 11]));
-var exceptions = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 8, 1, 6, 0, 6, 64, 25, 11, 11]));
-var simd = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11]));
-var threads = () => (async (e) => {
+var U = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 5, 3, 1, 0, 1, 10, 14, 1, 12, 0, 65, 0, 65, 0, 65, 0, 252, 10, 0, 0, 11]));
+var W = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 8, 1, 6, 0, 6, 64, 25, 11, 11]));
+var v = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11]));
+var B = () => (async (s) => {
   try {
-    return "undefined" != typeof MessageChannel && new MessageChannel().port1.postMessage(new SharedArrayBuffer(1)), WebAssembly.validate(e);
-  } catch (e2) {
+    return typeof MessageChannel < "u" && new MessageChannel().port1.postMessage(new SharedArrayBuffer(1)), WebAssembly.validate(s);
+  } catch (e) {
     return false;
   }
 })(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 5, 4, 1, 3, 1, 1, 10, 11, 1, 9, 0, 65, 0, 254, 16, 2, 0, 26, 11]));
-var package_default = {
-  name: "@duckdb/duckdb-wasm",
-  version: "1.11.0",
-  description: "DuckDB powered by WebAssembly",
-  license: "MIT",
-  repository: {
-    type: "git",
-    url: "https://github.com/duckdb/duckdb-wasm.git"
-  },
-  keywords: [
-    "sql",
-    "duckdb",
-    "relational",
-    "database",
-    "data",
-    "query",
-    "wasm",
-    "analytics",
-    "olap",
-    "arrow",
-    "parquet",
-    "json",
-    "csv"
-  ],
-  dependencies: {
-    "apache-arrow": "^17.0.0",
-    qs: "^6.14.1"
-  },
-  devDependencies: {
-    "@types/emscripten": "^1.39.10",
-    "@types/jasmine": "^5.1.13",
-    "@typescript-eslint/eslint-plugin": "^6.21.0",
-    "@typescript-eslint/parser": "^6.21.0",
-    esbuild: "^0.20.2",
-    eslint: "^8.57.0",
-    "eslint-plugin-jasmine": "^4.1.3",
-    "eslint-plugin-react": "^7.37.5",
-    "fast-glob": "^3.3.2",
-    jasmine: "^5.13.0",
-    "jasmine-core": "^5.1.2",
-    "jasmine-spec-reporter": "^7.0.0",
-    "js-sha256": "^0.11.1",
-    karma: "^6.4.2",
-    "karma-chrome-launcher": "^3.2.0",
-    "karma-coverage": "^2.2.1",
-    "karma-firefox-launcher": "^2.1.3",
-    "karma-jasmine": "^5.1.0",
-    "karma-jasmine-html-reporter": "^2.1.0",
-    "karma-sourcemap-loader": "^0.4.0",
-    "karma-spec-reporter": "^0.0.36",
-    "make-dir": "^4.0.0",
-    nyc: "^15.1.0",
-    prettier: "^3.2.5",
-    puppeteer: "^22.8.0",
-    rimraf: "^5.0.5",
-    s3rver: "^3.7.1",
-    typedoc: "^0.28.15",
-    typescript: "^5.3.3",
-    "wasm-feature-detect": "^1.6.1",
-    "web-worker": "^1.2.0"
-  },
-  scripts: {
-    "build:debug": "node bundle.mjs debug && tsc --emitDeclarationOnly",
-    "build:release": "node bundle.mjs release && tsc --emitDeclarationOnly",
-    docs: "typedoc",
-    format: 'prettier --write "**/*.+(js|ts)"',
-    report: "node ./coverage.mjs",
-    "test:node": "node --enable-source-maps ../../node_modules/jasmine/bin/jasmine ./dist/tests-node.cjs",
-    "test:node:debug": "node --inspect-brk --enable-source-maps ../../node_modules/jasmine/bin/jasmine ./dist/tests-node.cjs",
-    "test:node:coverage": "nyc -r json --report-dir ./coverage/node node ../../node_modules/jasmine/bin/jasmine ./dist/tests-node.cjs",
-    "test:firefox": "karma start ./karma/tests-firefox.cjs",
-    "test:chrome": "karma start ./karma/tests-chrome.cjs",
-    "test:chrome:eh": "karma start ./karma/tests-chrome-eh.cjs",
-    "test:chrome:coverage": "karma start ./karma/tests-chrome-coverage.cjs",
-    "test:browser": "karma start ./karma/tests-all.cjs",
-    "test:browser:debug": "karma start ./karma/tests-debug.cjs",
-    test: "npm run test:chrome && npm run test:node",
-    "test:coverage": "npm run test:chrome:coverage && npm run test:node:coverage && npm run report",
-    lint: "eslint src test"
-  },
-  files: [
-    "dist",
-    "!dist/tests-*",
-    "!dist/duckdb-browser-mvp.worker.js.map",
-    "!dist/types/test"
-  ],
-  main: "dist/duckdb-browser.cjs",
-  module: "dist/duckdb-browser.mjs",
-  types: "dist/duckdb-browser.d.ts",
-  jsdelivr: "dist/duckdb-browser.cjs",
-  unpkg: "dist/duckdb-browser.mjs",
-  sideEffects: false,
-  browser: {
-    fs: false,
-    path: false,
-    perf_hooks: false,
-    os: false,
-    worker_threads: false
-  },
-  exports: {
-    "./dist/duckdb-mvp.wasm": "./dist/duckdb-mvp.wasm",
-    "./dist/duckdb-eh.wasm": "./dist/duckdb-eh.wasm",
-    "./dist/duckdb-coi.wasm": "./dist/duckdb-coi.wasm",
-    "./dist/duckdb-browser": "./dist/duckdb-browser.mjs",
-    "./dist/duckdb-browser.cjs": "./dist/duckdb-browser.cjs",
-    "./dist/duckdb-browser.mjs": "./dist/duckdb-browser.mjs",
-    "./dist/duckdb-browser-coi.pthread.worker.js": "./dist/duckdb-browser-coi.pthread.worker.js",
-    "./dist/duckdb-browser-coi.worker.js": "./dist/duckdb-browser-coi.worker.js",
-    "./dist/duckdb-browser-eh.worker.js": "./dist/duckdb-browser-eh.worker.js",
-    "./dist/duckdb-browser-mvp.worker.js": "./dist/duckdb-browser-mvp.worker.js",
-    "./dist/duckdb-node": "./dist/duckdb-node.cjs",
-    "./dist/duckdb-node.cjs": "./dist/duckdb-node.cjs",
-    "./dist/duckdb-node-blocking": "./dist/duckdb-node-blocking.cjs",
-    "./dist/duckdb-node-blocking.cjs": "./dist/duckdb-node-blocking.cjs",
-    "./dist/duckdb-node-eh.worker.cjs": "./dist/duckdb-node-eh.worker.cjs",
-    "./dist/duckdb-node-mvp.worker.cjs": "./dist/duckdb-node-mvp.worker.cjs",
-    "./blocking": {
-      node: {
-        types: "./dist/duckdb-node-blocking.d.ts",
-        require: "./dist/duckdb-node-blocking.cjs",
-        import: "./dist/duckdb-node-blocking.cjs"
-      },
-      types: "./dist/duckdb-node-blocking.d.ts",
-      import: "./dist/duckdb-node-blocking.mjs",
-      require: "./dist/duckdb-node-blocking.cjs"
-    },
-    ".": {
-      browser: {
-        types: "./dist/duckdb-browser.d.ts",
-        import: "./dist/duckdb-browser.mjs",
-        require: "./dist/duckdb-browser.cjs"
-      },
-      node: {
-        types: "./dist/duckdb-node.d.ts",
-        import: "./dist/duckdb-node.cjs",
-        require: "./dist/duckdb-node.cjs"
-      },
-      types: "./dist/duckdb-browser.d.ts",
-      import: "./dist/duckdb-browser.mjs",
-      require: "./dist/duckdb-browser.cjs"
-    }
-  }
-};
-var PACKAGE_NAME = package_default.name;
-var PACKAGE_VERSION = package_default.version;
-var VERSION_PARTS = package_default.version.split(".");
-var PACKAGE_VERSION_MAJOR = VERSION_PARTS[0];
-var PACKAGE_VERSION_MINOR = VERSION_PARTS[1];
-var PACKAGE_VERSION_PATCH = VERSION_PARTS[2];
-var isNode = () => typeof navigator === "undefined" ? true : false;
-var userAgent = () => isNode() ? "node" : navigator.userAgent;
-var isFirefox = () => userAgent().includes("Firefox");
-var isSafari = () => /^((?!chrome|android).)*safari/i.test(userAgent());
-function getJsDelivrBundles() {
-  const jsdelivr_dist_url = "https://cdn.jsdelivr.net/npm/".concat(PACKAGE_NAME, "@").concat(PACKAGE_VERSION, "/dist/");
-  return {
-    mvp: {
-      mainModule: "".concat(jsdelivr_dist_url, "duckdb-mvp.wasm"),
-      mainWorker: "".concat(jsdelivr_dist_url, "duckdb-browser-mvp.worker.js")
-    },
-    eh: {
-      mainModule: "".concat(jsdelivr_dist_url, "duckdb-eh.wasm"),
-      mainWorker: "".concat(jsdelivr_dist_url, "duckdb-browser-eh.worker.js")
-    }
-    // COI is still experimental, let the user opt in explicitly
-  };
+var m = { name: "@duckdb/duckdb-wasm", version: "1.11.0", description: "DuckDB powered by WebAssembly", license: "MIT", repository: { type: "git", url: "https://github.com/duckdb/duckdb-wasm.git" }, keywords: ["sql", "duckdb", "relational", "database", "data", "query", "wasm", "analytics", "olap", "arrow", "parquet", "json", "csv"], dependencies: { "apache-arrow": "^17.0.0", qs: "^6.14.1" }, devDependencies: { "@types/emscripten": "^1.39.10", "@types/jasmine": "^5.1.13", "@typescript-eslint/eslint-plugin": "^6.21.0", "@typescript-eslint/parser": "^6.21.0", esbuild: "^0.20.2", eslint: "^8.57.0", "eslint-plugin-jasmine": "^4.1.3", "eslint-plugin-react": "^7.37.5", "fast-glob": "^3.3.2", jasmine: "^5.13.0", "jasmine-core": "^5.1.2", "jasmine-spec-reporter": "^7.0.0", "js-sha256": "^0.11.1", karma: "^6.4.2", "karma-chrome-launcher": "^3.2.0", "karma-coverage": "^2.2.1", "karma-firefox-launcher": "^2.1.3", "karma-jasmine": "^5.1.0", "karma-jasmine-html-reporter": "^2.1.0", "karma-sourcemap-loader": "^0.4.0", "karma-spec-reporter": "^0.0.36", "make-dir": "^4.0.0", nyc: "^15.1.0", prettier: "^3.2.5", puppeteer: "^22.8.0", rimraf: "^5.0.5", s3rver: "^3.7.1", typedoc: "^0.28.15", typescript: "^5.3.3", "wasm-feature-detect": "^1.6.1", "web-worker": "^1.2.0" }, scripts: { "build:debug": "node bundle.mjs debug && tsc --emitDeclarationOnly", "build:release": "node bundle.mjs release && tsc --emitDeclarationOnly", docs: "typedoc", format: 'prettier --write "**/*.+(js|ts)"', report: "node ./coverage.mjs", "test:node": "node --enable-source-maps ../../node_modules/jasmine/bin/jasmine ./dist/tests-node.cjs", "test:node:debug": "node --inspect-brk --enable-source-maps ../../node_modules/jasmine/bin/jasmine ./dist/tests-node.cjs", "test:node:coverage": "nyc -r json --report-dir ./coverage/node node ../../node_modules/jasmine/bin/jasmine ./dist/tests-node.cjs", "test:firefox": "karma start ./karma/tests-firefox.cjs", "test:chrome": "karma start ./karma/tests-chrome.cjs", "test:chrome:eh": "karma start ./karma/tests-chrome-eh.cjs", "test:chrome:coverage": "karma start ./karma/tests-chrome-coverage.cjs", "test:browser": "karma start ./karma/tests-all.cjs", "test:browser:debug": "karma start ./karma/tests-debug.cjs", test: "npm run test:chrome && npm run test:node", "test:coverage": "npm run test:chrome:coverage && npm run test:node:coverage && npm run report", lint: "eslint src test" }, files: ["dist", "!dist/tests-*", "!dist/duckdb-browser-mvp.worker.js.map", "!dist/types/test"], main: "dist/duckdb-browser.cjs", module: "dist/duckdb-browser.mjs", types: "dist/duckdb-browser.d.ts", jsdelivr: "dist/duckdb-browser.cjs", unpkg: "dist/duckdb-browser.mjs", sideEffects: false, browser: { fs: false, path: false, perf_hooks: false, os: false, worker_threads: false }, exports: { "./dist/duckdb-mvp.wasm": "./dist/duckdb-mvp.wasm", "./dist/duckdb-eh.wasm": "./dist/duckdb-eh.wasm", "./dist/duckdb-coi.wasm": "./dist/duckdb-coi.wasm", "./dist/duckdb-browser": "./dist/duckdb-browser.mjs", "./dist/duckdb-browser.cjs": "./dist/duckdb-browser.cjs", "./dist/duckdb-browser.mjs": "./dist/duckdb-browser.mjs", "./dist/duckdb-browser-coi.pthread.worker.js": "./dist/duckdb-browser-coi.pthread.worker.js", "./dist/duckdb-browser-coi.worker.js": "./dist/duckdb-browser-coi.worker.js", "./dist/duckdb-browser-eh.worker.js": "./dist/duckdb-browser-eh.worker.js", "./dist/duckdb-browser-mvp.worker.js": "./dist/duckdb-browser-mvp.worker.js", "./dist/duckdb-node": "./dist/duckdb-node.cjs", "./dist/duckdb-node.cjs": "./dist/duckdb-node.cjs", "./dist/duckdb-node-blocking": "./dist/duckdb-node-blocking.cjs", "./dist/duckdb-node-blocking.cjs": "./dist/duckdb-node-blocking.cjs", "./dist/duckdb-node-eh.worker.cjs": "./dist/duckdb-node-eh.worker.cjs", "./dist/duckdb-node-mvp.worker.cjs": "./dist/duckdb-node-mvp.worker.cjs", "./blocking": { node: { types: "./dist/duckdb-node-blocking.d.ts", require: "./dist/duckdb-node-blocking.cjs", import: "./dist/duckdb-node-blocking.cjs" }, types: "./dist/duckdb-node-blocking.d.ts", import: "./dist/duckdb-node-blocking.mjs", require: "./dist/duckdb-node-blocking.cjs" }, ".": { browser: { types: "./dist/duckdb-browser.d.ts", import: "./dist/duckdb-browser.mjs", require: "./dist/duckdb-browser.cjs" }, node: { types: "./dist/duckdb-node.d.ts", import: "./dist/duckdb-node.cjs", require: "./dist/duckdb-node.cjs" }, types: "./dist/duckdb-browser.d.ts", import: "./dist/duckdb-browser.mjs", require: "./dist/duckdb-browser.cjs" } } };
+var M = m.name;
+var G = m.version;
+var I = m.version.split(".");
+var He = I[0];
+var qe = I[1];
+var Ye = I[2];
+var x = () => typeof navigator > "u";
+var Q = () => x() ? "node" : navigator.userAgent;
+var Ve = () => Q().includes("Firefox");
+var ze = () => /^((?!chrome|android).)*safari/i.test(Q());
+function Je() {
+  let s = "https://cdn.jsdelivr.net/npm/".concat(M, "@").concat(G, "/dist/");
+  return { mvp: { mainModule: "".concat(s, "duckdb-mvp.wasm"), mainWorker: "".concat(s, "duckdb-browser-mvp.worker.js") }, eh: { mainModule: "".concat(s, "duckdb-eh.wasm"), mainWorker: "".concat(s, "duckdb-browser-eh.worker.js") } };
 }
-var bigInt64Array = null;
-var wasmExceptions = null;
-var wasmThreads = null;
-var wasmSIMD = null;
-var wasmBulkMemory = null;
-async function getPlatformFeatures() {
-  if (bigInt64Array == null) {
-    bigInt64Array = typeof BigInt64Array != "undefined";
-  }
-  if (wasmExceptions == null) {
-    wasmExceptions = await exceptions();
-  }
-  if (wasmThreads == null) {
-    wasmThreads = await threads();
-  }
-  if (wasmSIMD == null) {
-    wasmSIMD = await simd();
-  }
-  if (wasmBulkMemory == null) {
-    wasmBulkMemory = await bulkMemory();
-  }
-  return {
-    bigInt64Array,
-    crossOriginIsolated: isNode() || globalThis.crossOriginIsolated || false,
-    wasmExceptions,
-    wasmSIMD,
-    wasmThreads,
-    wasmBulkMemory
-  };
+var k = null;
+var y = null;
+var g = null;
+var S = null;
+var h = null;
+async function pe() {
+  return k == null && (k = typeof BigInt64Array < "u"), y == null && (y = await W()), g == null && (g = await B()), S == null && (S = await v()), h == null && (h = await U()), { bigInt64Array: k, crossOriginIsolated: x() || globalThis.crossOriginIsolated || false, wasmExceptions: y, wasmSIMD: S, wasmThreads: g, wasmBulkMemory: h };
 }
-async function selectBundle(bundles) {
-  const platform = await getPlatformFeatures();
-  if (platform.wasmExceptions) {
-    if (platform.wasmSIMD && platform.wasmThreads && platform.crossOriginIsolated && bundles.coi) {
-      return {
-        mainModule: bundles.coi.mainModule,
-        mainWorker: bundles.coi.mainWorker,
-        pthreadWorker: bundles.coi.pthreadWorker
-      };
-    }
-    if (bundles.eh) {
-      return {
-        mainModule: bundles.eh.mainModule,
-        mainWorker: bundles.eh.mainWorker,
-        pthreadWorker: null
-      };
-    }
+async function Xe(s) {
+  let e = await pe();
+  if (e.wasmExceptions) {
+    if (e.wasmSIMD && e.wasmThreads && e.crossOriginIsolated && s.coi) return { mainModule: s.coi.mainModule, mainWorker: s.coi.mainWorker, pthreadWorker: s.coi.pthreadWorker };
+    if (s.eh) return { mainModule: s.eh.mainModule, mainWorker: s.eh.mainWorker, pthreadWorker: null };
   }
-  return {
-    mainModule: bundles.mvp.mainModule,
-    mainWorker: bundles.mvp.mainWorker,
-    pthreadWorker: null
-  };
+  return { mainModule: s.mvp.mainModule, mainWorker: s.mvp.mainWorker, pthreadWorker: null };
 }
-var import_web_worker = __toESM(require_browser());
-async function createWorker(url) {
-  const request = new Request(url);
-  const workerScript = await fetch(request);
-  const workerURL = URL.createObjectURL(await workerScript.blob());
-  return new import_web_worker.default(workerURL);
+var Y = Z(q());
+async function er(s) {
+  let e = new Request(s), r = await fetch(e), t = URL.createObjectURL(await r.blob());
+  return new Y.default(t);
 }
 export {
-  AsyncDuckDB,
-  AsyncDuckDBConnection,
-  AsyncDuckDBDispatcher,
-  AsyncPreparedStatement,
-  AsyncResultStreamIterator,
-  ConsoleLogger,
-  DuckDBAccessMode,
-  DuckDBDataProtocol,
-  IsArrowBuffer,
-  IsDuckDBWasmRetry,
-  LogEvent,
-  LogLevel,
-  LogOrigin,
-  LogTopic,
-  PACKAGE_NAME,
-  PACKAGE_VERSION,
-  PACKAGE_VERSION_MAJOR,
-  PACKAGE_VERSION_MINOR,
-  PACKAGE_VERSION_PATCH,
-  StatusCode,
-  TokenType,
-  VoidLogger,
-  WorkerRequestType,
-  WorkerResponseType,
-  WorkerTask,
-  createWorker,
-  getJsDelivrBundles,
-  getLogEventLabel,
-  getLogLevelLabel,
-  getLogOriginLabel,
-  getLogTopicLabel,
-  getPlatformFeatures,
-  isFirefox,
-  isNode,
-  isSafari,
-  selectBundle
+  f as AsyncDuckDB,
+  E as AsyncDuckDBConnection,
+  C as AsyncDuckDBDispatcher,
+  b as AsyncPreparedStatement,
+  p as AsyncResultStreamIterator,
+  A as ConsoleLogger,
+  ee as DuckDBAccessMode,
+  w as DuckDBDataProtocol,
+  ge as IsArrowBuffer,
+  Se as IsDuckDBWasmRetry,
+  ne as LogEvent,
+  te as LogLevel,
+  oe as LogOrigin,
+  se as LogTopic,
+  M as PACKAGE_NAME,
+  G as PACKAGE_VERSION,
+  He as PACKAGE_VERSION_MAJOR,
+  qe as PACKAGE_VERSION_MINOR,
+  Ye as PACKAGE_VERSION_PATCH,
+  ie as StatusCode,
+  re as TokenType,
+  N as VoidLogger,
+  D as WorkerRequestType,
+  O as WorkerResponseType,
+  a as WorkerTask,
+  er as createWorker,
+  Je as getJsDelivrBundles,
+  be as getLogEventLabel,
+  Te as getLogLevelLabel,
+  ke as getLogOriginLabel,
+  Ie as getLogTopicLabel,
+  pe as getPlatformFeatures,
+  Ve as isFirefox,
+  x as isNode,
+  ze as isSafari,
+  Xe as selectBundle
 };

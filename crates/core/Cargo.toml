@@ -42,8 +42,10 @@ auth       = ["dep:jsonwebtoken", "jsonwebtoken/aws_lc_rs", "dep:reqwest", "dep:
 # Embed the dataset explorer UI (Actix + Askama templates + htmx +
 # Bootstrap). Served from `[explorer].path` (default `/explore`). Off by
 # default at compile time; can be toggled at runtime via
-# `[explorer].enabled`.
-explorer   = ["dep:askama"]
+# `[explorer].enabled`. Also embeds the self-hosted DuckDB-WASM terminal
+# assets (wasm + workers + bundled ESM) via `include_dir`, so the shell
+# runs with no CDN dependency.
+explorer   = ["dep:askama", "dep:include_dir", "dep:mime_guess"]
 
 [dependencies]
 actix-web.workspace   = true

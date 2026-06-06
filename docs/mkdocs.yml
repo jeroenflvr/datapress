@@ -1,4 +1,4 @@
-site_name: DataPress - datap-rs
+site_name: DataPress|datap-rs
 site_description: >-
   Configuration-driven, columnar HTTP query server over Parquet and Delta —
   one config, two backends (DuckDB and Apache Arrow + DataFusion). Serve

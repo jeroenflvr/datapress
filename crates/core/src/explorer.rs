@@ -18,12 +18,22 @@
 
 use std::sync::Arc;
 
-use actix_web::{HttpResponse, http::header, web};
+use actix_web::{HttpRequest, HttpResponse, http::header, web};
 use askama::Template;
+use include_dir::{Dir, include_dir};
 
 use crate::backend::Backend;
 use crate::config::DatasetConfig;
 use crate::schema::LogicalType;
+
+/// Self-hosted DuckDB-WASM assets, embedded at compile time.
+///
+/// `$CARGO_MANIFEST_DIR` is `crates/core/`; the vendored wasm binaries,
+/// worker scripts and bundled ESM live two levels up under
+/// `docs/src/assets/vendor/duckdb/` (refreshed by `task docs:vendor-duckdb`).
+/// Embedding them lets the explorer terminal run the shell with no CDN.
+static DUCKDB_VENDOR: Dir<'_> =
+    include_dir!("$CARGO_MANIFEST_DIR/../../docs/src/assets/vendor/duckdb");
 
 /// Shared state handed to the explorer handlers.
 pub struct ExplorerState {
@@ -136,6 +146,10 @@ pub fn configure(state: web::Data<ExplorerState>, cfg: &mut web::ServiceConfig) 
                 .route("/assets/explorer.js", web::get().to(asset_explorer_js))
                 .route("/assets/terminal.css", web::get().to(asset_terminal_css))
                 .route("/assets/terminal.js", web::get().to(asset_terminal_js))
+                .route(
+                    "/assets/vendor/duckdb/{path:.*}",
+                    web::get().to(asset_duckdb_vendor),
+                )
                 .route("/datasets/{name}", web::get().to(dataset_detail)),
         );
 }
@@ -227,6 +241,26 @@ async fn asset_terminal_css() -> HttpResponse {
 
 async fn asset_terminal_js() -> HttpResponse {
     asset("application/javascript; charset=utf-8", TERMINAL_JS)
+}
+
+/// Serve a vendored DuckDB-WASM asset (wasm binary, worker script, bundled
+/// ESM, or xterm CSS) from the binary-embedded directory. The large wasm
+/// binaries are immutable per release, so they carry a long-lived cache header.
+async fn asset_duckdb_vendor(req: HttpRequest) -> HttpResponse {
+    let path: String = req.match_info().query("path").into();
+    match DUCKDB_VENDOR.get_file(&path) {
+        Some(f) => HttpResponse::Ok()
+            .content_type(
+                mime_guess::from_path(&path)
+                    .first_or_octet_stream()
+                    .as_ref(),
+            )
+            .insert_header((header::CACHE_CONTROL, "public, max-age=86400"))
+            .body(f.contents()),
+        None => HttpResponse::NotFound()
+            .content_type("text/plain; charset=utf-8")
+            .body("Not Found"),
+    }
 }
 
 async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>) -> HttpResponse {

@@ -48,13 +48,13 @@ var require_xterm = __commonJS({
           };
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.AccessibilityManager = void 0;
-        const n = i2(9042), o = i2(6114), a = i2(9924), h = i2(844), c = i2(5596), l = i2(4725), d = i2(3656);
-        let _ = t2.AccessibilityManager = class extends h.Disposable {
+        const n = i2(9042), o = i2(6114), a = i2(9924), h2 = i2(844), c = i2(5596), l = i2(4725), d = i2(3656);
+        let _ = t2.AccessibilityManager = class extends h2.Disposable {
           constructor(e3, t3) {
             super(), this._terminal = e3, this._renderService = t3, this._liveRegionLineCount = 0, this._charsToConsume = [], this._charsToAnnounce = "", this._accessibilityContainer = document.createElement("div"), this._accessibilityContainer.classList.add("xterm-accessibility"), this._rowContainer = document.createElement("div"), this._rowContainer.setAttribute("role", "list"), this._rowContainer.classList.add("xterm-accessibility-tree"), this._rowElements = [];
             for (let e4 = 0; e4 < this._terminal.rows; e4++) this._rowElements[e4] = this._createAccessibilityTreeNode(), this._rowContainer.appendChild(this._rowElements[e4]);
             if (this._topBoundaryFocusListener = (e4) => this._handleBoundaryFocus(e4, 0), this._bottomBoundaryFocusListener = (e4) => this._handleBoundaryFocus(e4, 1), this._rowElements[0].addEventListener("focus", this._topBoundaryFocusListener), this._rowElements[this._rowElements.length - 1].addEventListener("focus", this._bottomBoundaryFocusListener), this._refreshRowsDimensions(), this._accessibilityContainer.appendChild(this._rowContainer), this._liveRegion = document.createElement("div"), this._liveRegion.classList.add("live-region"), this._liveRegion.setAttribute("aria-live", "assertive"), this._accessibilityContainer.appendChild(this._liveRegion), this._liveRegionDebouncer = this.register(new a.TimeBasedDebouncer(this._renderRows.bind(this))), !this._terminal.element) throw new Error("Cannot enable accessibility before Terminal.open");
-            this._terminal.element.insertAdjacentElement("afterbegin", this._accessibilityContainer), this.register(this._terminal.onResize(((e4) => this._handleResize(e4.rows)))), this.register(this._terminal.onRender(((e4) => this._refreshRows(e4.start, e4.end)))), this.register(this._terminal.onScroll((() => this._refreshRows()))), this.register(this._terminal.onA11yChar(((e4) => this._handleChar(e4)))), this.register(this._terminal.onLineFeed((() => this._handleChar("\n")))), this.register(this._terminal.onA11yTab(((e4) => this._handleTab(e4)))), this.register(this._terminal.onKey(((e4) => this._handleKey(e4.key)))), this.register(this._terminal.onBlur((() => this._clearLiveRegion()))), this.register(this._renderService.onDimensionsChange((() => this._refreshRowsDimensions()))), this._screenDprMonitor = new c.ScreenDprMonitor(window), this.register(this._screenDprMonitor), this._screenDprMonitor.setListener((() => this._refreshRowsDimensions())), this.register((0, d.addDisposableDomListener)(window, "resize", (() => this._refreshRowsDimensions()))), this._refreshRows(), this.register((0, h.toDisposable)((() => {
+            this._terminal.element.insertAdjacentElement("afterbegin", this._accessibilityContainer), this.register(this._terminal.onResize(((e4) => this._handleResize(e4.rows)))), this.register(this._terminal.onRender(((e4) => this._refreshRows(e4.start, e4.end)))), this.register(this._terminal.onScroll((() => this._refreshRows()))), this.register(this._terminal.onA11yChar(((e4) => this._handleChar(e4)))), this.register(this._terminal.onLineFeed((() => this._handleChar("\n")))), this.register(this._terminal.onA11yTab(((e4) => this._handleTab(e4)))), this.register(this._terminal.onKey(((e4) => this._handleKey(e4.key)))), this.register(this._terminal.onBlur((() => this._clearLiveRegion()))), this.register(this._renderService.onDimensionsChange((() => this._refreshRowsDimensions()))), this._screenDprMonitor = new c.ScreenDprMonitor(window), this.register(this._screenDprMonitor), this._screenDprMonitor.setListener((() => this._refreshRowsDimensions())), this.register((0, d.addDisposableDomListener)(window, "resize", (() => this._refreshRowsDimensions()))), this._refreshRows(), this.register((0, h2.toDisposable)((() => {
               this._accessibilityContainer.remove(), this._rowElements.length = 0;
             })));
           }
@@ -185,7 +185,7 @@ var require_xterm = __commonJS({
           };
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.Linkifier2 = void 0;
-        const n = i2(3656), o = i2(8460), a = i2(844), h = i2(2585);
+        const n = i2(3656), o = i2(8460), a = i2(844), h2 = i2(2585);
         let c = t2.Linkifier2 = class extends a.Disposable {
           get currentLink() {
             return this._currentLink;
@@ -334,7 +334,7 @@ var require_xterm = __commonJS({
             return { x1: e3, y1: t3, x2: i3, y2: s3, cols: this._bufferService.cols, fg: r2 };
           }
         };
-        t2.Linkifier2 = c = s2([r(0, h.IBufferService)], c);
+        t2.Linkifier2 = c = s2([r(0, h2.IBufferService)], c);
       }, 9042: (e2, t2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.tooMuchOutput = t2.promptLabel = void 0, t2.promptLabel = "Terminal input", t2.tooMuchOutput = "Too much output to announce, navigate to rows manually to read";
       }, 3730: function(e2, t2, i2) {
@@ -379,7 +379,7 @@ var require_xterm = __commonJS({
                   } catch (e4) {
                     n2 = true;
                   }
-                  n2 || r2.push({ text: s4, range: i4, activate: (e4, t5) => o2 ? o2.activate(e4, t5, i4) : h(0, t5), hover: (e4, t5) => {
+                  n2 || r2.push({ text: s4, range: i4, activate: (e4, t5) => o2 ? o2.activate(e4, t5, i4) : h2(0, t5), hover: (e4, t5) => {
                     var s5;
                     return null === (s5 = null == o2 ? void 0 : o2.hover) || void 0 === s5 ? void 0 : s5.call(o2, e4, t5, i4);
                   }, leave: (e4, t5) => {
@@ -393,7 +393,7 @@ var require_xterm = __commonJS({
             t3(r2);
           }
         };
-        function h(e3, t3) {
+        function h2(e3, t3) {
           if (confirm(`Do you want to navigate to ${t3}?
 
 WARNING: This link could potentially be dangerous`)) {
@@ -457,8 +457,8 @@ WARNING: This link could potentially be dangerous`)) {
         t2.ScreenDprMonitor = r;
       }, 3236: (e2, t2, i2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.Terminal = void 0;
-        const s2 = i2(3614), r = i2(3656), n = i2(6465), o = i2(9042), a = i2(3730), h = i2(1680), c = i2(3107), l = i2(5744), d = i2(2950), _ = i2(1296), u = i2(428), f = i2(4269), v = i2(5114), p = i2(8934), g = i2(3230), m = i2(9312), S = i2(4725), C = i2(6731), b = i2(8055), y = i2(8969), w = i2(8460), E = i2(844), k = i2(6114), L = i2(8437), D = i2(2584), R = i2(7399), x = i2(5941), A = i2(9074), B = i2(2585), T = i2(5435), M = i2(4567), O = "undefined" != typeof window ? window.document : null;
-        class P extends y.CoreTerminal {
+        const s2 = i2(3614), r = i2(3656), n = i2(6465), o = i2(9042), a = i2(3730), h2 = i2(1680), c = i2(3107), l = i2(5744), d = i2(2950), _ = i2(1296), u = i2(428), f = i2(4269), v2 = i2(5114), p = i2(8934), g2 = i2(3230), m2 = i2(9312), S2 = i2(4725), C = i2(6731), b = i2(8055), y2 = i2(8969), w2 = i2(8460), E = i2(844), k2 = i2(6114), L = i2(8437), D2 = i2(2584), R = i2(7399), x2 = i2(5941), A = i2(9074), B2 = i2(2585), T = i2(5435), M2 = i2(4567), O2 = "undefined" != typeof window ? window.document : null;
+        class P2 extends y2.CoreTerminal {
           get onFocus() {
             return this._onFocus.event;
           }
@@ -475,7 +475,7 @@ WARNING: This link could potentially be dangerous`)) {
             return this._onWillOpen.event;
           }
           constructor(e3 = {}) {
-            super(e3), this.browser = k, this._keyDownHandled = false, this._keyDownSeen = false, this._keyPressHandled = false, this._unprocessedDeadKey = false, this._accessibilityManager = this.register(new E.MutableDisposable()), this._onCursorMove = this.register(new w.EventEmitter()), this.onCursorMove = this._onCursorMove.event, this._onKey = this.register(new w.EventEmitter()), this.onKey = this._onKey.event, this._onRender = this.register(new w.EventEmitter()), this.onRender = this._onRender.event, this._onSelectionChange = this.register(new w.EventEmitter()), this.onSelectionChange = this._onSelectionChange.event, this._onTitleChange = this.register(new w.EventEmitter()), this.onTitleChange = this._onTitleChange.event, this._onBell = this.register(new w.EventEmitter()), this.onBell = this._onBell.event, this._onFocus = this.register(new w.EventEmitter()), this._onBlur = this.register(new w.EventEmitter()), this._onA11yCharEmitter = this.register(new w.EventEmitter()), this._onA11yTabEmitter = this.register(new w.EventEmitter()), this._onWillOpen = this.register(new w.EventEmitter()), this._setup(), this.linkifier2 = this.register(this._instantiationService.createInstance(n.Linkifier2)), this.linkifier2.registerLinkProvider(this._instantiationService.createInstance(a.OscLinkProvider)), this._decorationService = this._instantiationService.createInstance(A.DecorationService), this._instantiationService.setService(B.IDecorationService, this._decorationService), this.register(this._inputHandler.onRequestBell((() => this._onBell.fire()))), this.register(this._inputHandler.onRequestRefreshRows(((e4, t3) => this.refresh(e4, t3)))), this.register(this._inputHandler.onRequestSendFocus((() => this._reportFocus()))), this.register(this._inputHandler.onRequestReset((() => this.reset()))), this.register(this._inputHandler.onRequestWindowsOptionsReport(((e4) => this._reportWindowsOptions(e4)))), this.register(this._inputHandler.onColor(((e4) => this._handleColorEvent(e4)))), this.register((0, w.forwardEvent)(this._inputHandler.onCursorMove, this._onCursorMove)), this.register((0, w.forwardEvent)(this._inputHandler.onTitleChange, this._onTitleChange)), this.register((0, w.forwardEvent)(this._inputHandler.onA11yChar, this._onA11yCharEmitter)), this.register((0, w.forwardEvent)(this._inputHandler.onA11yTab, this._onA11yTabEmitter)), this.register(this._bufferService.onResize(((e4) => this._afterResize(e4.cols, e4.rows)))), this.register((0, E.toDisposable)((() => {
+            super(e3), this.browser = k2, this._keyDownHandled = false, this._keyDownSeen = false, this._keyPressHandled = false, this._unprocessedDeadKey = false, this._accessibilityManager = this.register(new E.MutableDisposable()), this._onCursorMove = this.register(new w2.EventEmitter()), this.onCursorMove = this._onCursorMove.event, this._onKey = this.register(new w2.EventEmitter()), this.onKey = this._onKey.event, this._onRender = this.register(new w2.EventEmitter()), this.onRender = this._onRender.event, this._onSelectionChange = this.register(new w2.EventEmitter()), this.onSelectionChange = this._onSelectionChange.event, this._onTitleChange = this.register(new w2.EventEmitter()), this.onTitleChange = this._onTitleChange.event, this._onBell = this.register(new w2.EventEmitter()), this.onBell = this._onBell.event, this._onFocus = this.register(new w2.EventEmitter()), this._onBlur = this.register(new w2.EventEmitter()), this._onA11yCharEmitter = this.register(new w2.EventEmitter()), this._onA11yTabEmitter = this.register(new w2.EventEmitter()), this._onWillOpen = this.register(new w2.EventEmitter()), this._setup(), this.linkifier2 = this.register(this._instantiationService.createInstance(n.Linkifier2)), this.linkifier2.registerLinkProvider(this._instantiationService.createInstance(a.OscLinkProvider)), this._decorationService = this._instantiationService.createInstance(A.DecorationService), this._instantiationService.setService(B2.IDecorationService, this._decorationService), this.register(this._inputHandler.onRequestBell((() => this._onBell.fire()))), this.register(this._inputHandler.onRequestRefreshRows(((e4, t3) => this.refresh(e4, t3)))), this.register(this._inputHandler.onRequestSendFocus((() => this._reportFocus()))), this.register(this._inputHandler.onRequestReset((() => this.reset()))), this.register(this._inputHandler.onRequestWindowsOptionsReport(((e4) => this._reportWindowsOptions(e4)))), this.register(this._inputHandler.onColor(((e4) => this._handleColorEvent(e4)))), this.register((0, w2.forwardEvent)(this._inputHandler.onCursorMove, this._onCursorMove)), this.register((0, w2.forwardEvent)(this._inputHandler.onTitleChange, this._onTitleChange)), this.register((0, w2.forwardEvent)(this._inputHandler.onA11yChar, this._onA11yCharEmitter)), this.register((0, w2.forwardEvent)(this._inputHandler.onA11yTab, this._onA11yTabEmitter)), this.register(this._bufferService.onResize(((e4) => this._afterResize(e4.cols, e4.rows)))), this.register((0, E.toDisposable)((() => {
               var e4, t3;
               this._customKeyEventHandler = void 0, null === (t3 = null === (e4 = this.element) || void 0 === e4 ? void 0 : e4.parentNode) || void 0 === t3 || t3.removeChild(this.element);
             })));
@@ -499,7 +499,7 @@ WARNING: This link could potentially be dangerous`)) {
               switch (t3.type) {
                 case 0:
                   const s3 = b.color.toColorRGB("ansi" === e4 ? this._themeService.colors.ansi[t3.index] : this._themeService.colors[e4]);
-                  this.coreService.triggerDataEvent(`${D.C0.ESC}]${i3};${(0, x.toRgbString)(s3)}${D.C1_ESCAPED.ST}`);
+                  this.coreService.triggerDataEvent(`${D2.C0.ESC}]${i3};${(0, x2.toRgbString)(s3)}${D2.C1_ESCAPED.ST}`);
                   break;
                 case 1:
                   if ("ansi" === e4) this._themeService.modifyColors(((e5) => e5.ansi[t3.index] = b.rgba.toColor(...t3.color)));
@@ -523,17 +523,17 @@ WARNING: This link could potentially be dangerous`)) {
             this.textarea && this.textarea.focus({ preventScroll: true });
           }
           _handleScreenReaderModeOptionChange(e3) {
-            e3 ? !this._accessibilityManager.value && this._renderService && (this._accessibilityManager.value = this._instantiationService.createInstance(M.AccessibilityManager, this)) : this._accessibilityManager.clear();
+            e3 ? !this._accessibilityManager.value && this._renderService && (this._accessibilityManager.value = this._instantiationService.createInstance(M2.AccessibilityManager, this)) : this._accessibilityManager.clear();
           }
           _handleTextAreaFocus(e3) {
-            this.coreService.decPrivateModes.sendFocus && this.coreService.triggerDataEvent(D.C0.ESC + "[I"), this.updateCursorStyle(e3), this.element.classList.add("focus"), this._showCursor(), this._onFocus.fire();
+            this.coreService.decPrivateModes.sendFocus && this.coreService.triggerDataEvent(D2.C0.ESC + "[I"), this.updateCursorStyle(e3), this.element.classList.add("focus"), this._showCursor(), this._onFocus.fire();
           }
           blur() {
             var e3;
             return null === (e3 = this.textarea) || void 0 === e3 ? void 0 : e3.blur();
           }
           _handleTextAreaBlur() {
-            this.textarea.value = "", this.refresh(this.buffer.y, this.buffer.y), this.coreService.decPrivateModes.sendFocus && this.coreService.triggerDataEvent(D.C0.ESC + "[O"), this.element.classList.remove("focus"), this._onBlur.fire();
+            this.textarea.value = "", this.refresh(this.buffer.y, this.buffer.y), this.coreService.decPrivateModes.sendFocus && this.coreService.triggerDataEvent(D2.C0.ESC + "[O"), this.element.classList.remove("focus"), this._onBlur.fire();
           }
           _syncTextArea() {
             if (!this.textarea || !this.buffer.isCursorInViewport || this._compositionHelper.isComposing || !this._renderService) return;
@@ -547,11 +547,11 @@ WARNING: This link could potentially be dangerous`)) {
               this.hasSelection() && (0, s2.copyHandler)(e4, this._selectionService);
             })));
             const e3 = (e4) => (0, s2.handlePasteEvent)(e4, this.textarea, this.coreService, this.optionsService);
-            this.register((0, r.addDisposableDomListener)(this.textarea, "paste", e3)), this.register((0, r.addDisposableDomListener)(this.element, "paste", e3)), k.isFirefox ? this.register((0, r.addDisposableDomListener)(this.element, "mousedown", ((e4) => {
+            this.register((0, r.addDisposableDomListener)(this.textarea, "paste", e3)), this.register((0, r.addDisposableDomListener)(this.element, "paste", e3)), k2.isFirefox ? this.register((0, r.addDisposableDomListener)(this.element, "mousedown", ((e4) => {
               2 === e4.button && (0, s2.rightClickHandler)(e4, this.textarea, this.screenElement, this._selectionService, this.options.rightClickSelectsWord);
             }))) : this.register((0, r.addDisposableDomListener)(this.element, "contextmenu", ((e4) => {
               (0, s2.rightClickHandler)(e4, this.textarea, this.screenElement, this._selectionService, this.options.rightClickSelectsWord);
-            }))), k.isLinux && this.register((0, r.addDisposableDomListener)(this.element, "auxclick", ((e4) => {
+            }))), k2.isLinux && this.register((0, r.addDisposableDomListener)(this.element, "auxclick", ((e4) => {
               1 === e4.button && (0, s2.moveTextAreaUnderMouseCursor)(e4, this.textarea, this.screenElement);
             })));
           }
@@ -562,19 +562,19 @@ WARNING: This link could potentially be dangerous`)) {
             var t3;
             if (!e3) throw new Error("Terminal requires a parent element.");
             e3.isConnected || this._logService.debug("Terminal.open was called on an element that was not attached to the DOM"), this._document = e3.ownerDocument, this.element = this._document.createElement("div"), this.element.dir = "ltr", this.element.classList.add("terminal"), this.element.classList.add("xterm"), e3.appendChild(this.element);
-            const i3 = O.createDocumentFragment();
-            this._viewportElement = O.createElement("div"), this._viewportElement.classList.add("xterm-viewport"), i3.appendChild(this._viewportElement), this._viewportScrollArea = O.createElement("div"), this._viewportScrollArea.classList.add("xterm-scroll-area"), this._viewportElement.appendChild(this._viewportScrollArea), this.screenElement = O.createElement("div"), this.screenElement.classList.add("xterm-screen"), this._helperContainer = O.createElement("div"), this._helperContainer.classList.add("xterm-helpers"), this.screenElement.appendChild(this._helperContainer), i3.appendChild(this.screenElement), this.textarea = O.createElement("textarea"), this.textarea.classList.add("xterm-helper-textarea"), this.textarea.setAttribute("aria-label", o.promptLabel), k.isChromeOS || this.textarea.setAttribute("aria-multiline", "false"), this.textarea.setAttribute("autocorrect", "off"), this.textarea.setAttribute("autocapitalize", "off"), this.textarea.setAttribute("spellcheck", "false"), this.textarea.tabIndex = 0, this._coreBrowserService = this._instantiationService.createInstance(v.CoreBrowserService, this.textarea, null !== (t3 = this._document.defaultView) && void 0 !== t3 ? t3 : window), this._instantiationService.setService(S.ICoreBrowserService, this._coreBrowserService), this.register((0, r.addDisposableDomListener)(this.textarea, "focus", ((e4) => this._handleTextAreaFocus(e4)))), this.register((0, r.addDisposableDomListener)(this.textarea, "blur", (() => this._handleTextAreaBlur()))), this._helperContainer.appendChild(this.textarea), this._charSizeService = this._instantiationService.createInstance(u.CharSizeService, this._document, this._helperContainer), this._instantiationService.setService(S.ICharSizeService, this._charSizeService), this._themeService = this._instantiationService.createInstance(C.ThemeService), this._instantiationService.setService(S.IThemeService, this._themeService), this._characterJoinerService = this._instantiationService.createInstance(f.CharacterJoinerService), this._instantiationService.setService(S.ICharacterJoinerService, this._characterJoinerService), this._renderService = this.register(this._instantiationService.createInstance(g.RenderService, this.rows, this.screenElement)), this._instantiationService.setService(S.IRenderService, this._renderService), this.register(this._renderService.onRenderedViewportChange(((e4) => this._onRender.fire(e4)))), this.onResize(((e4) => this._renderService.resize(e4.cols, e4.rows))), this._compositionView = O.createElement("div"), this._compositionView.classList.add("composition-view"), this._compositionHelper = this._instantiationService.createInstance(d.CompositionHelper, this.textarea, this._compositionView), this._helperContainer.appendChild(this._compositionView), this.element.appendChild(i3);
+            const i3 = O2.createDocumentFragment();
+            this._viewportElement = O2.createElement("div"), this._viewportElement.classList.add("xterm-viewport"), i3.appendChild(this._viewportElement), this._viewportScrollArea = O2.createElement("div"), this._viewportScrollArea.classList.add("xterm-scroll-area"), this._viewportElement.appendChild(this._viewportScrollArea), this.screenElement = O2.createElement("div"), this.screenElement.classList.add("xterm-screen"), this._helperContainer = O2.createElement("div"), this._helperContainer.classList.add("xterm-helpers"), this.screenElement.appendChild(this._helperContainer), i3.appendChild(this.screenElement), this.textarea = O2.createElement("textarea"), this.textarea.classList.add("xterm-helper-textarea"), this.textarea.setAttribute("aria-label", o.promptLabel), k2.isChromeOS || this.textarea.setAttribute("aria-multiline", "false"), this.textarea.setAttribute("autocorrect", "off"), this.textarea.setAttribute("autocapitalize", "off"), this.textarea.setAttribute("spellcheck", "false"), this.textarea.tabIndex = 0, this._coreBrowserService = this._instantiationService.createInstance(v2.CoreBrowserService, this.textarea, null !== (t3 = this._document.defaultView) && void 0 !== t3 ? t3 : window), this._instantiationService.setService(S2.ICoreBrowserService, this._coreBrowserService), this.register((0, r.addDisposableDomListener)(this.textarea, "focus", ((e4) => this._handleTextAreaFocus(e4)))), this.register((0, r.addDisposableDomListener)(this.textarea, "blur", (() => this._handleTextAreaBlur()))), this._helperContainer.appendChild(this.textarea), this._charSizeService = this._instantiationService.createInstance(u.CharSizeService, this._document, this._helperContainer), this._instantiationService.setService(S2.ICharSizeService, this._charSizeService), this._themeService = this._instantiationService.createInstance(C.ThemeService), this._instantiationService.setService(S2.IThemeService, this._themeService), this._characterJoinerService = this._instantiationService.createInstance(f.CharacterJoinerService), this._instantiationService.setService(S2.ICharacterJoinerService, this._characterJoinerService), this._renderService = this.register(this._instantiationService.createInstance(g2.RenderService, this.rows, this.screenElement)), this._instantiationService.setService(S2.IRenderService, this._renderService), this.register(this._renderService.onRenderedViewportChange(((e4) => this._onRender.fire(e4)))), this.onResize(((e4) => this._renderService.resize(e4.cols, e4.rows))), this._compositionView = O2.createElement("div"), this._compositionView.classList.add("composition-view"), this._compositionHelper = this._instantiationService.createInstance(d.CompositionHelper, this.textarea, this._compositionView), this._helperContainer.appendChild(this._compositionView), this.element.appendChild(i3);
             try {
               this._onWillOpen.fire(this.element);
             } catch (e4) {
             }
-            this._renderService.hasRenderer() || this._renderService.setRenderer(this._createRenderer()), this._mouseService = this._instantiationService.createInstance(p.MouseService), this._instantiationService.setService(S.IMouseService, this._mouseService), this.viewport = this._instantiationService.createInstance(h.Viewport, this._viewportElement, this._viewportScrollArea), this.viewport.onRequestScrollLines(((e4) => this.scrollLines(e4.amount, e4.suppressScrollEvent, 1))), this.register(this._inputHandler.onRequestSyncScrollBar((() => this.viewport.syncScrollArea()))), this.register(this.viewport), this.register(this.onCursorMove((() => {
+            this._renderService.hasRenderer() || this._renderService.setRenderer(this._createRenderer()), this._mouseService = this._instantiationService.createInstance(p.MouseService), this._instantiationService.setService(S2.IMouseService, this._mouseService), this.viewport = this._instantiationService.createInstance(h2.Viewport, this._viewportElement, this._viewportScrollArea), this.viewport.onRequestScrollLines(((e4) => this.scrollLines(e4.amount, e4.suppressScrollEvent, 1))), this.register(this._inputHandler.onRequestSyncScrollBar((() => this.viewport.syncScrollArea()))), this.register(this.viewport), this.register(this.onCursorMove((() => {
               this._renderService.handleCursorMove(), this._syncTextArea();
-            }))), this.register(this.onResize((() => this._renderService.handleResize(this.cols, this.rows)))), this.register(this.onBlur((() => this._renderService.handleBlur()))), this.register(this.onFocus((() => this._renderService.handleFocus()))), this.register(this._renderService.onDimensionsChange((() => this.viewport.syncScrollArea()))), this._selectionService = this.register(this._instantiationService.createInstance(m.SelectionService, this.element, this.screenElement, this.linkifier2)), this._instantiationService.setService(S.ISelectionService, this._selectionService), this.register(this._selectionService.onRequestScrollLines(((e4) => this.scrollLines(e4.amount, e4.suppressScrollEvent)))), this.register(this._selectionService.onSelectionChange((() => this._onSelectionChange.fire()))), this.register(this._selectionService.onRequestRedraw(((e4) => this._renderService.handleSelectionChanged(e4.start, e4.end, e4.columnSelectMode)))), this.register(this._selectionService.onLinuxMouseSelection(((e4) => {
+            }))), this.register(this.onResize((() => this._renderService.handleResize(this.cols, this.rows)))), this.register(this.onBlur((() => this._renderService.handleBlur()))), this.register(this.onFocus((() => this._renderService.handleFocus()))), this.register(this._renderService.onDimensionsChange((() => this.viewport.syncScrollArea()))), this._selectionService = this.register(this._instantiationService.createInstance(m2.SelectionService, this.element, this.screenElement, this.linkifier2)), this._instantiationService.setService(S2.ISelectionService, this._selectionService), this.register(this._selectionService.onRequestScrollLines(((e4) => this.scrollLines(e4.amount, e4.suppressScrollEvent)))), this.register(this._selectionService.onSelectionChange((() => this._onSelectionChange.fire()))), this.register(this._selectionService.onRequestRedraw(((e4) => this._renderService.handleSelectionChanged(e4.start, e4.end, e4.columnSelectMode)))), this.register(this._selectionService.onLinuxMouseSelection(((e4) => {
               this.textarea.value = e4, this.textarea.focus(), this.textarea.select();
             }))), this.register(this._onScroll.event(((e4) => {
               this.viewport.syncScrollArea(), this._selectionService.refresh();
-            }))), this.register((0, r.addDisposableDomListener)(this._viewportElement, "scroll", (() => this._selectionService.refresh()))), this.linkifier2.attachToDom(this.screenElement, this._mouseService, this._renderService), this.register(this._instantiationService.createInstance(c.BufferDecorationRenderer, this.screenElement)), this.register((0, r.addDisposableDomListener)(this.element, "mousedown", ((e4) => this._selectionService.handleMouseDown(e4)))), this.coreMouseService.areMouseEventsActive ? (this._selectionService.disable(), this.element.classList.add("enable-mouse-events")) : this._selectionService.enable(), this.options.screenReaderMode && (this._accessibilityManager.value = this._instantiationService.createInstance(M.AccessibilityManager, this)), this.register(this.optionsService.onSpecificOptionChange("screenReaderMode", ((e4) => this._handleScreenReaderModeOptionChange(e4)))), this.options.overviewRulerWidth && (this._overviewRulerRenderer = this.register(this._instantiationService.createInstance(l.OverviewRulerRenderer, this._viewportElement, this.screenElement))), this.optionsService.onSpecificOptionChange("overviewRulerWidth", ((e4) => {
+            }))), this.register((0, r.addDisposableDomListener)(this._viewportElement, "scroll", (() => this._selectionService.refresh()))), this.linkifier2.attachToDom(this.screenElement, this._mouseService, this._renderService), this.register(this._instantiationService.createInstance(c.BufferDecorationRenderer, this.screenElement)), this.register((0, r.addDisposableDomListener)(this.element, "mousedown", ((e4) => this._selectionService.handleMouseDown(e4)))), this.coreMouseService.areMouseEventsActive ? (this._selectionService.disable(), this.element.classList.add("enable-mouse-events")) : this._selectionService.enable(), this.options.screenReaderMode && (this._accessibilityManager.value = this._instantiationService.createInstance(M2.AccessibilityManager, this)), this.register(this.optionsService.onSpecificOptionChange("screenReaderMode", ((e4) => this._handleScreenReaderModeOptionChange(e4)))), this.options.overviewRulerWidth && (this._overviewRulerRenderer = this.register(this._instantiationService.createInstance(l.OverviewRulerRenderer, this._viewportElement, this.screenElement))), this.optionsService.onSpecificOptionChange("overviewRulerWidth", ((e4) => {
               !this._overviewRulerRenderer && e4 && this._viewportElement && this.screenElement && (this._overviewRulerRenderer = this.register(this._instantiationService.createInstance(l.OverviewRulerRenderer, this._viewportElement, this.screenElement)));
             })), this._charSizeService.measure(), this.refresh(0, this.rows - 1), this._initGlobal(), this.bindMouse();
           }
@@ -620,7 +620,7 @@ WARNING: This link could potentially be dangerous`)) {
                 if (!this.buffer.hasScrollback) {
                   const t4 = this.viewport.getLinesScrolled(e4);
                   if (0 === t4) return;
-                  const i4 = D.C0.ESC + (this.coreService.decPrivateModes.applicationCursorKeys ? "O" : "[") + (e4.deltaY < 0 ? "A" : "B");
+                  const i4 = D2.C0.ESC + (this.coreService.decPrivateModes.applicationCursorKeys ? "O" : "[") + (e4.deltaY < 0 ? "A" : "B");
                   let s4 = "";
                   for (let e5 = 0; e5 < Math.abs(t4); e5++) s4 += i4;
                   return this.coreService.triggerDataEvent(s4, true), this.cancel(e4, true);
@@ -709,7 +709,7 @@ WARNING: This link could potentially be dangerous`)) {
               const t4 = this.rows - 1;
               return this.scrollLines(2 === i3.type ? -t4 : t4), this.cancel(e3, true);
             }
-            return 1 === i3.type && this.selectAll(), !!this._isThirdLevelShift(this.browser, e3) || (i3.cancel && this.cancel(e3, true), !i3.key || !!(e3.key && !e3.ctrlKey && !e3.altKey && !e3.metaKey && 1 === e3.key.length && e3.key.charCodeAt(0) >= 65 && e3.key.charCodeAt(0) <= 90) || (this._unprocessedDeadKey ? (this._unprocessedDeadKey = false, true) : (i3.key !== D.C0.ETX && i3.key !== D.C0.CR || (this.textarea.value = ""), this._onKey.fire({ key: i3.key, domEvent: e3 }), this._showCursor(), this.coreService.triggerDataEvent(i3.key, true), !this.optionsService.rawOptions.screenReaderMode || e3.altKey || e3.ctrlKey ? this.cancel(e3, true) : void (this._keyDownHandled = true))));
+            return 1 === i3.type && this.selectAll(), !!this._isThirdLevelShift(this.browser, e3) || (i3.cancel && this.cancel(e3, true), !i3.key || !!(e3.key && !e3.ctrlKey && !e3.altKey && !e3.metaKey && 1 === e3.key.length && e3.key.charCodeAt(0) >= 65 && e3.key.charCodeAt(0) <= 90) || (this._unprocessedDeadKey ? (this._unprocessedDeadKey = false, true) : (i3.key !== D2.C0.ETX && i3.key !== D2.C0.CR || (this.textarea.value = ""), this._onKey.fire({ key: i3.key, domEvent: e3 }), this._showCursor(), this.coreService.triggerDataEvent(i3.key, true), !this.optionsService.rawOptions.screenReaderMode || e3.altKey || e3.ctrlKey ? this.cancel(e3, true) : void (this._keyDownHandled = true))));
           }
           _isThirdLevelShift(e3, t3) {
             const i3 = e3.isMac && !this.options.macOptionIsMeta && t3.altKey && !t3.ctrlKey && !t3.metaKey || e3.isWindows && t3.altKey && t3.ctrlKey && !t3.metaKey || e3.isWindows && t3.getModifierState("AltGraph");
@@ -768,24 +768,24 @@ WARNING: This link could potentially be dangerous`)) {
           }
           _reportFocus() {
             var e3;
-            (null === (e3 = this.element) || void 0 === e3 ? void 0 : e3.classList.contains("focus")) ? this.coreService.triggerDataEvent(D.C0.ESC + "[I") : this.coreService.triggerDataEvent(D.C0.ESC + "[O");
+            (null === (e3 = this.element) || void 0 === e3 ? void 0 : e3.classList.contains("focus")) ? this.coreService.triggerDataEvent(D2.C0.ESC + "[I") : this.coreService.triggerDataEvent(D2.C0.ESC + "[O");
           }
           _reportWindowsOptions(e3) {
             if (this._renderService) switch (e3) {
               case T.WindowsOptionsReportType.GET_WIN_SIZE_PIXELS:
                 const e4 = this._renderService.dimensions.css.canvas.width.toFixed(0), t3 = this._renderService.dimensions.css.canvas.height.toFixed(0);
-                this.coreService.triggerDataEvent(`${D.C0.ESC}[4;${t3};${e4}t`);
+                this.coreService.triggerDataEvent(`${D2.C0.ESC}[4;${t3};${e4}t`);
                 break;
               case T.WindowsOptionsReportType.GET_CELL_SIZE_PIXELS:
                 const i3 = this._renderService.dimensions.css.cell.width.toFixed(0), s3 = this._renderService.dimensions.css.cell.height.toFixed(0);
-                this.coreService.triggerDataEvent(`${D.C0.ESC}[6;${s3};${i3}t`);
+                this.coreService.triggerDataEvent(`${D2.C0.ESC}[6;${s3};${i3}t`);
             }
           }
           cancel(e3, t3) {
             if (this.options.cancelEvents || t3) return e3.preventDefault(), e3.stopPropagation(), false;
           }
         }
-        t2.Terminal = P;
+        t2.Terminal = P2;
       }, 9924: (e2, t2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.TimeBasedDebouncer = void 0, t2.TimeBasedDebouncer = class {
           constructor(e3, t3 = 1e3) {
@@ -823,10 +823,10 @@ WARNING: This link could potentially be dangerous`)) {
           };
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.Viewport = void 0;
-        const n = i2(3656), o = i2(4725), a = i2(8460), h = i2(844), c = i2(2585);
-        let l = t2.Viewport = class extends h.Disposable {
-          constructor(e3, t3, i3, s3, r2, o2, h2, c2) {
-            super(), this._viewportElement = e3, this._scrollArea = t3, this._bufferService = i3, this._optionsService = s3, this._charSizeService = r2, this._renderService = o2, this._coreBrowserService = h2, this.scrollBarWidth = 0, this._currentRowHeight = 0, this._currentDeviceCellHeight = 0, this._lastRecordedBufferLength = 0, this._lastRecordedViewportHeight = 0, this._lastRecordedBufferHeight = 0, this._lastTouchY = 0, this._lastScrollTop = 0, this._wheelPartialScroll = 0, this._refreshAnimationFrame = null, this._ignoreNextScrollEvent = false, this._smoothScrollState = { startTime: 0, origin: -1, target: -1 }, this._onRequestScrollLines = this.register(new a.EventEmitter()), this.onRequestScrollLines = this._onRequestScrollLines.event, this.scrollBarWidth = this._viewportElement.offsetWidth - this._scrollArea.offsetWidth || 15, this.register((0, n.addDisposableDomListener)(this._viewportElement, "scroll", this._handleScroll.bind(this))), this._activeBuffer = this._bufferService.buffer, this.register(this._bufferService.buffers.onBufferActivate(((e4) => this._activeBuffer = e4.activeBuffer))), this._renderDimensions = this._renderService.dimensions, this.register(this._renderService.onDimensionsChange(((e4) => this._renderDimensions = e4))), this._handleThemeChange(c2.colors), this.register(c2.onChangeColors(((e4) => this._handleThemeChange(e4)))), this.register(this._optionsService.onSpecificOptionChange("scrollback", (() => this.syncScrollArea()))), setTimeout((() => this.syncScrollArea()));
+        const n = i2(3656), o = i2(4725), a = i2(8460), h2 = i2(844), c = i2(2585);
+        let l = t2.Viewport = class extends h2.Disposable {
+          constructor(e3, t3, i3, s3, r2, o2, h3, c2) {
+            super(), this._viewportElement = e3, this._scrollArea = t3, this._bufferService = i3, this._optionsService = s3, this._charSizeService = r2, this._renderService = o2, this._coreBrowserService = h3, this.scrollBarWidth = 0, this._currentRowHeight = 0, this._currentDeviceCellHeight = 0, this._lastRecordedBufferLength = 0, this._lastRecordedViewportHeight = 0, this._lastRecordedBufferHeight = 0, this._lastTouchY = 0, this._lastScrollTop = 0, this._wheelPartialScroll = 0, this._refreshAnimationFrame = null, this._ignoreNextScrollEvent = false, this._smoothScrollState = { startTime: 0, origin: -1, target: -1 }, this._onRequestScrollLines = this.register(new a.EventEmitter()), this.onRequestScrollLines = this._onRequestScrollLines.event, this.scrollBarWidth = this._viewportElement.offsetWidth - this._scrollArea.offsetWidth || 15, this.register((0, n.addDisposableDomListener)(this._viewportElement, "scroll", this._handleScroll.bind(this))), this._activeBuffer = this._bufferService.buffer, this.register(this._bufferService.buffers.onBufferActivate(((e4) => this._activeBuffer = e4.activeBuffer))), this._renderDimensions = this._renderService.dimensions, this.register(this._renderService.onDimensionsChange(((e4) => this._renderDimensions = e4))), this._handleThemeChange(c2.colors), this.register(c2.onChangeColors(((e4) => this._handleThemeChange(e4)))), this.register(this._optionsService.onSpecificOptionChange("scrollback", (() => this.syncScrollArea()))), setTimeout((() => this.syncScrollArea()));
           }
           _handleThemeChange(e3) {
             this._viewportElement.style.backgroundColor = e3.background.css;
@@ -932,7 +932,7 @@ WARNING: This link could potentially be dangerous`)) {
           };
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.BufferDecorationRenderer = void 0;
-        const n = i2(3656), o = i2(4725), a = i2(844), h = i2(2585);
+        const n = i2(3656), o = i2(4725), a = i2(844), h2 = i2(2585);
         let c = t2.BufferDecorationRenderer = class extends a.Disposable {
           constructor(e3, t3, i3, s3) {
             super(), this._screenElement = e3, this._bufferService = t3, this._decorationService = i3, this._renderService = s3, this._decorationElements = /* @__PURE__ */ new Map(), this._altBufferIsActive = false, this._dimensionsChanged = false, this._container = document.createElement("div"), this._container.classList.add("xterm-decoration-container"), this._screenElement.appendChild(this._container), this.register(this._renderService.onRenderedViewportChange((() => this._doRefreshDecorations()))), this.register(this._renderService.onDimensionsChange((() => {
@@ -983,7 +983,7 @@ WARNING: This link could potentially be dangerous`)) {
             null === (t3 = this._decorationElements.get(e3)) || void 0 === t3 || t3.remove(), this._decorationElements.delete(e3), e3.dispose();
           }
         };
-        t2.BufferDecorationRenderer = c = s2([r(1, h.IBufferService), r(2, h.IDecorationService), r(3, o.IRenderService)], c);
+        t2.BufferDecorationRenderer = c = s2([r(1, h2.IBufferService), r(2, h2.IDecorationService), r(3, o.IRenderService)], c);
       }, 5871: (e2, t2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.ColorZoneStore = void 0, t2.ColorZoneStore = class {
           constructor() {
@@ -1030,8 +1030,8 @@ WARNING: This link could potentially be dangerous`)) {
           };
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.OverviewRulerRenderer = void 0;
-        const n = i2(5871), o = i2(3656), a = i2(4725), h = i2(844), c = i2(2585), l = { full: 0, left: 0, center: 0, right: 0 }, d = { full: 0, left: 0, center: 0, right: 0 }, _ = { full: 0, left: 0, center: 0, right: 0 };
-        let u = t2.OverviewRulerRenderer = class extends h.Disposable {
+        const n = i2(5871), o = i2(3656), a = i2(4725), h2 = i2(844), c = i2(2585), l = { full: 0, left: 0, center: 0, right: 0 }, d = { full: 0, left: 0, center: 0, right: 0 }, _ = { full: 0, left: 0, center: 0, right: 0 };
+        let u = t2.OverviewRulerRenderer = class extends h2.Disposable {
           get _width() {
             return this._optionsService.options.overviewRulerWidth || 0;
           }
@@ -1040,7 +1040,7 @@ WARNING: This link could potentially be dangerous`)) {
             super(), this._viewportElement = e3, this._screenElement = t3, this._bufferService = i3, this._decorationService = s3, this._renderService = r2, this._optionsService = o2, this._coreBrowseService = a2, this._colorZoneStore = new n.ColorZoneStore(), this._shouldUpdateDimensions = true, this._shouldUpdateAnchor = true, this._lastKnownBufferLength = 0, this._canvas = document.createElement("canvas"), this._canvas.classList.add("xterm-decoration-overview-ruler"), this._refreshCanvasDimensions(), null === (c2 = this._viewportElement.parentElement) || void 0 === c2 || c2.insertBefore(this._canvas, this._viewportElement);
             const l2 = this._canvas.getContext("2d");
             if (!l2) throw new Error("Ctx cannot be null");
-            this._ctx = l2, this._registerDecorationListeners(), this._registerBufferChangeListeners(), this._registerDimensionChangeListeners(), this.register((0, h.toDisposable)((() => {
+            this._ctx = l2, this._registerDecorationListeners(), this._registerBufferChangeListeners(), this._registerDimensionChangeListeners(), this.register((0, h2.toDisposable)((() => {
               var e4;
               null === (e4 = this._canvas) || void 0 === e4 || e4.remove();
             })));
@@ -1107,7 +1107,7 @@ WARNING: This link could potentially be dangerous`)) {
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.CompositionHelper = void 0;
         const n = i2(4725), o = i2(2585), a = i2(2584);
-        let h = t2.CompositionHelper = class {
+        let h2 = t2.CompositionHelper = class {
           get isComposing() {
             return this._isComposing;
           }
@@ -1169,16 +1169,16 @@ WARNING: This link could potentially be dangerous`)) {
             }
           }
         };
-        t2.CompositionHelper = h = s2([r(2, o.IBufferService), r(3, o.IOptionsService), r(4, o.ICoreService), r(5, n.IRenderService)], h);
+        t2.CompositionHelper = h2 = s2([r(2, o.IBufferService), r(3, o.IOptionsService), r(4, o.ICoreService), r(5, n.IRenderService)], h2);
       }, 9806: (e2, t2) => {
         function i2(e3, t3, i3) {
           const s2 = i3.getBoundingClientRect(), r = e3.getComputedStyle(i3), n = parseInt(r.getPropertyValue("padding-left")), o = parseInt(r.getPropertyValue("padding-top"));
           return [t3.clientX - s2.left - n, t3.clientY - s2.top - o];
         }
-        Object.defineProperty(t2, "__esModule", { value: true }), t2.getCoords = t2.getCoordsRelativeToElement = void 0, t2.getCoordsRelativeToElement = i2, t2.getCoords = function(e3, t3, s2, r, n, o, a, h, c) {
+        Object.defineProperty(t2, "__esModule", { value: true }), t2.getCoords = t2.getCoordsRelativeToElement = void 0, t2.getCoordsRelativeToElement = i2, t2.getCoords = function(e3, t3, s2, r, n, o, a, h2, c) {
           if (!o) return;
           const l = i2(e3, t3, s2);
-          return l ? (l[0] = Math.ceil((l[0] + (c ? a / 2 : 0)) / a), l[1] = Math.ceil(l[1] / h), l[0] = Math.min(Math.max(l[0], 1), r + (c ? 1 : 0)), l[1] = Math.min(Math.max(l[1], 1), n), l) : void 0;
+          return l ? (l[0] = Math.ceil((l[0] + (c ? a / 2 : 0)) / a), l[1] = Math.ceil(l[1] / h2), l[0] = Math.min(Math.max(l[0], 1), r + (c ? 1 : 0)), l[1] = Math.min(Math.max(l[1], 1), n), l) : void 0;
         };
       }, 9504: (e2, t2, i2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.moveToCellSequence = void 0;
@@ -1188,12 +1188,12 @@ WARNING: This link could potentially be dangerous`)) {
             let s4 = 0;
             const r3 = e4 - n(e4, i4), a3 = t4 - n(t4, i4);
             for (let n2 = 0; n2 < Math.abs(r3 - a3); n2++) {
-              const a4 = "A" === o(e4, t4) ? -1 : 1, h2 = i4.buffer.lines.get(r3 + a4 * n2);
-              (null == h2 ? void 0 : h2.isWrapped) && s4++;
+              const a4 = "A" === o(e4, t4) ? -1 : 1, h3 = i4.buffer.lines.get(r3 + a4 * n2);
+              (null == h3 ? void 0 : h3.isWrapped) && s4++;
             }
             return s4;
           })(e3, t3, i3);
-          return c(l, h(o(e3, t3), s3));
+          return c(l, h2(o(e3, t3), s3));
         }
         function n(e3, t3) {
           let i3 = 0, s3 = t3.buffer.lines.get(e3), r2 = null == s3 ? void 0 : s3.isWrapped;
@@ -1204,11 +1204,11 @@ WARNING: This link could potentially be dangerous`)) {
           return e3 > t3 ? "A" : "B";
         }
         function a(e3, t3, i3, s3, r2, n2) {
-          let o2 = e3, a2 = t3, h2 = "";
-          for (; o2 !== i3 || a2 !== s3; ) o2 += r2 ? 1 : -1, r2 && o2 > n2.cols - 1 ? (h2 += n2.buffer.translateBufferLineToString(a2, false, e3, o2), o2 = 0, e3 = 0, a2++) : !r2 && o2 < 0 && (h2 += n2.buffer.translateBufferLineToString(a2, false, 0, e3 + 1), o2 = n2.cols - 1, e3 = o2, a2--);
-          return h2 + n2.buffer.translateBufferLineToString(a2, false, e3, o2);
+          let o2 = e3, a2 = t3, h3 = "";
+          for (; o2 !== i3 || a2 !== s3; ) o2 += r2 ? 1 : -1, r2 && o2 > n2.cols - 1 ? (h3 += n2.buffer.translateBufferLineToString(a2, false, e3, o2), o2 = 0, e3 = 0, a2++) : !r2 && o2 < 0 && (h3 += n2.buffer.translateBufferLineToString(a2, false, 0, e3 + 1), o2 = n2.cols - 1, e3 = o2, a2--);
+          return h3 + n2.buffer.translateBufferLineToString(a2, false, e3, o2);
         }
-        function h(e3, t3) {
+        function h2(e3, t3) {
           const i3 = t3 ? "O" : "[";
           return s2.C0.ESC + i3 + e3;
         }
@@ -1221,23 +1221,23 @@ WARNING: This link could potentially be dangerous`)) {
         t2.moveToCellSequence = function(e3, t3, i3, s3) {
           const o2 = i3.buffer.x, l = i3.buffer.y;
           if (!i3.buffer.hasScrollback) return (function(e4, t4, i4, s4, o3, l2) {
-            return 0 === r(t4, s4, o3, l2).length ? "" : c(a(e4, t4, e4, t4 - n(t4, o3), false, o3).length, h("D", l2));
+            return 0 === r(t4, s4, o3, l2).length ? "" : c(a(e4, t4, e4, t4 - n(t4, o3), false, o3).length, h2("D", l2));
           })(o2, l, 0, t3, i3, s3) + r(l, t3, i3, s3) + (function(e4, t4, i4, s4, o3, l2) {
             let d2;
             d2 = r(t4, s4, o3, l2).length > 0 ? s4 - n(s4, o3) : t4;
             const _2 = s4, u = (function(e5, t5, i5, s5, o4, a2) {
-              let h2;
-              return h2 = r(i5, s5, o4, a2).length > 0 ? s5 - n(s5, o4) : t5, e5 < i5 && h2 <= s5 || e5 >= i5 && h2 < s5 ? "C" : "D";
+              let h3;
+              return h3 = r(i5, s5, o4, a2).length > 0 ? s5 - n(s5, o4) : t5, e5 < i5 && h3 <= s5 || e5 >= i5 && h3 < s5 ? "C" : "D";
             })(e4, t4, i4, s4, o3, l2);
-            return c(a(e4, d2, i4, _2, "C" === u, o3).length, h(u, l2));
+            return c(a(e4, d2, i4, _2, "C" === u, o3).length, h2(u, l2));
           })(o2, l, e3, t3, i3, s3);
           let d;
-          if (l === t3) return d = o2 > e3 ? "D" : "C", c(Math.abs(o2 - e3), h(d, s3));
+          if (l === t3) return d = o2 > e3 ? "D" : "C", c(Math.abs(o2 - e3), h2(d, s3));
           d = l > t3 ? "D" : "C";
           const _ = Math.abs(l - t3);
           return c((function(e4, t4) {
             return t4.cols - e4;
-          })(l > t3 ? e3 : o2, i3) + (_ - 1) * i3.cols + 1 + ((l > t3 ? o2 : e3) - 1), h(d, s3));
+          })(l > t3 ? e3 : o2, i3) + (_ - 1) * i3.cols + 1 + ((l > t3 ? o2 : e3) - 1), h2(d, s3));
         };
       }, 1296: function(e2, t2, i2) {
         var s2 = this && this.__decorate || function(e3, t3, i3, s3) {
@@ -1251,10 +1251,10 @@ WARNING: This link could potentially be dangerous`)) {
           };
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.DomRenderer = void 0;
-        const n = i2(3787), o = i2(2550), a = i2(2223), h = i2(6171), c = i2(4725), l = i2(8055), d = i2(8460), _ = i2(844), u = i2(2585), f = "xterm-dom-renderer-owner-", v = "xterm-rows", p = "xterm-fg-", g = "xterm-bg-", m = "xterm-focus", S = "xterm-selection";
+        const n = i2(3787), o = i2(2550), a = i2(2223), h2 = i2(6171), c = i2(4725), l = i2(8055), d = i2(8460), _ = i2(844), u = i2(2585), f = "xterm-dom-renderer-owner-", v2 = "xterm-rows", p = "xterm-fg-", g2 = "xterm-bg-", m2 = "xterm-focus", S2 = "xterm-selection";
         let C = 1, b = t2.DomRenderer = class extends _.Disposable {
           constructor(e3, t3, i3, s3, r2, a2, c2, l2, u2, p2) {
-            super(), this._element = e3, this._screenElement = t3, this._viewportElement = i3, this._linkifier2 = s3, this._charSizeService = a2, this._optionsService = c2, this._bufferService = l2, this._coreBrowserService = u2, this._themeService = p2, this._terminalClass = C++, this._rowElements = [], this.onRequestRedraw = this.register(new d.EventEmitter()).event, this._rowContainer = document.createElement("div"), this._rowContainer.classList.add(v), this._rowContainer.style.lineHeight = "normal", this._rowContainer.setAttribute("aria-hidden", "true"), this._refreshRowElements(this._bufferService.cols, this._bufferService.rows), this._selectionContainer = document.createElement("div"), this._selectionContainer.classList.add(S), this._selectionContainer.setAttribute("aria-hidden", "true"), this.dimensions = (0, h.createRenderDimensions)(), this._updateDimensions(), this.register(this._optionsService.onOptionChange((() => this._handleOptionsChanged()))), this.register(this._themeService.onChangeColors(((e4) => this._injectCss(e4)))), this._injectCss(this._themeService.colors), this._rowFactory = r2.createInstance(n.DomRendererRowFactory, document), this._element.classList.add(f + this._terminalClass), this._screenElement.appendChild(this._rowContainer), this._screenElement.appendChild(this._selectionContainer), this.register(this._linkifier2.onShowLinkUnderline(((e4) => this._handleLinkHover(e4)))), this.register(this._linkifier2.onHideLinkUnderline(((e4) => this._handleLinkLeave(e4)))), this.register((0, _.toDisposable)((() => {
+            super(), this._element = e3, this._screenElement = t3, this._viewportElement = i3, this._linkifier2 = s3, this._charSizeService = a2, this._optionsService = c2, this._bufferService = l2, this._coreBrowserService = u2, this._themeService = p2, this._terminalClass = C++, this._rowElements = [], this.onRequestRedraw = this.register(new d.EventEmitter()).event, this._rowContainer = document.createElement("div"), this._rowContainer.classList.add(v2), this._rowContainer.style.lineHeight = "normal", this._rowContainer.setAttribute("aria-hidden", "true"), this._refreshRowElements(this._bufferService.cols, this._bufferService.rows), this._selectionContainer = document.createElement("div"), this._selectionContainer.classList.add(S2), this._selectionContainer.setAttribute("aria-hidden", "true"), this.dimensions = (0, h2.createRenderDimensions)(), this._updateDimensions(), this.register(this._optionsService.onOptionChange((() => this._handleOptionsChanged()))), this.register(this._themeService.onChangeColors(((e4) => this._injectCss(e4)))), this._injectCss(this._themeService.colors), this._rowFactory = r2.createInstance(n.DomRendererRowFactory, document), this._element.classList.add(f + this._terminalClass), this._screenElement.appendChild(this._rowContainer), this._screenElement.appendChild(this._selectionContainer), this.register(this._linkifier2.onShowLinkUnderline(((e4) => this._handleLinkHover(e4)))), this.register(this._linkifier2.onHideLinkUnderline(((e4) => this._handleLinkLeave(e4)))), this.register((0, _.toDisposable)((() => {
               this._element.classList.remove(f + this._terminalClass), this._rowContainer.remove(), this._selectionContainer.remove(), this._widthCache.dispose(), this._themeStyleElement.remove(), this._dimensionsStyleElement.remove();
             }))), this._widthCache = new o.WidthCache(document), this._widthCache.setFont(this._optionsService.rawOptions.fontFamily, this._optionsService.rawOptions.fontSize, this._optionsService.rawOptions.fontWeight, this._optionsService.rawOptions.fontWeightBold), this._setDefaultSpacing();
           }
@@ -1263,15 +1263,15 @@ WARNING: This link could potentially be dangerous`)) {
             this.dimensions.device.char.width = this._charSizeService.width * e3, this.dimensions.device.char.height = Math.ceil(this._charSizeService.height * e3), this.dimensions.device.cell.width = this.dimensions.device.char.width + Math.round(this._optionsService.rawOptions.letterSpacing), this.dimensions.device.cell.height = Math.floor(this.dimensions.device.char.height * this._optionsService.rawOptions.lineHeight), this.dimensions.device.char.left = 0, this.dimensions.device.char.top = 0, this.dimensions.device.canvas.width = this.dimensions.device.cell.width * this._bufferService.cols, this.dimensions.device.canvas.height = this.dimensions.device.cell.height * this._bufferService.rows, this.dimensions.css.canvas.width = Math.round(this.dimensions.device.canvas.width / e3), this.dimensions.css.canvas.height = Math.round(this.dimensions.device.canvas.height / e3), this.dimensions.css.cell.width = this.dimensions.css.canvas.width / this._bufferService.cols, this.dimensions.css.cell.height = this.dimensions.css.canvas.height / this._bufferService.rows;
             for (const e4 of this._rowElements) e4.style.width = `${this.dimensions.css.canvas.width}px`, e4.style.height = `${this.dimensions.css.cell.height}px`, e4.style.lineHeight = `${this.dimensions.css.cell.height}px`, e4.style.overflow = "hidden";
             this._dimensionsStyleElement || (this._dimensionsStyleElement = document.createElement("style"), this._screenElement.appendChild(this._dimensionsStyleElement));
-            const t3 = `${this._terminalSelector} .${v} span { display: inline-block; height: 100%; vertical-align: top;}`;
+            const t3 = `${this._terminalSelector} .${v2} span { display: inline-block; height: 100%; vertical-align: top;}`;
             this._dimensionsStyleElement.textContent = t3, this._selectionContainer.style.height = this._viewportElement.style.height, this._screenElement.style.width = `${this.dimensions.css.canvas.width}px`, this._screenElement.style.height = `${this.dimensions.css.canvas.height}px`;
           }
           _injectCss(e3) {
             this._themeStyleElement || (this._themeStyleElement = document.createElement("style"), this._screenElement.appendChild(this._themeStyleElement));
-            let t3 = `${this._terminalSelector} .${v} { color: ${e3.foreground.css}; font-family: ${this._optionsService.rawOptions.fontFamily}; font-size: ${this._optionsService.rawOptions.fontSize}px; font-kerning: none; white-space: pre}`;
-            t3 += `${this._terminalSelector} .${v} .xterm-dim { color: ${l.color.multiplyOpacity(e3.foreground, 0.5).css};}`, t3 += `${this._terminalSelector} span:not(.xterm-bold) { font-weight: ${this._optionsService.rawOptions.fontWeight};}${this._terminalSelector} span.xterm-bold { font-weight: ${this._optionsService.rawOptions.fontWeightBold};}${this._terminalSelector} span.xterm-italic { font-style: italic;}`, t3 += "@keyframes blink_box_shadow_" + this._terminalClass + " { 50% {  border-bottom-style: hidden; }}", t3 += "@keyframes blink_block_" + this._terminalClass + ` { 0% {  background-color: ${e3.cursor.css};  color: ${e3.cursorAccent.css}; } 50% {  background-color: inherit;  color: ${e3.cursor.css}; }}`, t3 += `${this._terminalSelector} .${v}.${m} .xterm-cursor.xterm-cursor-blink:not(.xterm-cursor-block) { animation: blink_box_shadow_` + this._terminalClass + ` 1s step-end infinite;}${this._terminalSelector} .${v}.${m} .xterm-cursor.xterm-cursor-blink.xterm-cursor-block { animation: blink_block_` + this._terminalClass + ` 1s step-end infinite;}${this._terminalSelector} .${v} .xterm-cursor.xterm-cursor-block { background-color: ${e3.cursor.css}; color: ${e3.cursorAccent.css};}${this._terminalSelector} .${v} .xterm-cursor.xterm-cursor-outline { outline: 1px solid ${e3.cursor.css}; outline-offset: -1px;}${this._terminalSelector} .${v} .xterm-cursor.xterm-cursor-bar { box-shadow: ${this._optionsService.rawOptions.cursorWidth}px 0 0 ${e3.cursor.css} inset;}${this._terminalSelector} .${v} .xterm-cursor.xterm-cursor-underline { border-bottom: 1px ${e3.cursor.css}; border-bottom-style: solid; height: calc(100% - 1px);}`, t3 += `${this._terminalSelector} .${S} { position: absolute; top: 0; left: 0; z-index: 1; pointer-events: none;}${this._terminalSelector}.focus .${S} div { position: absolute; background-color: ${e3.selectionBackgroundOpaque.css};}${this._terminalSelector} .${S} div { position: absolute; background-color: ${e3.selectionInactiveBackgroundOpaque.css};}`;
-            for (const [i3, s3] of e3.ansi.entries()) t3 += `${this._terminalSelector} .${p}${i3} { color: ${s3.css}; }${this._terminalSelector} .${p}${i3}.xterm-dim { color: ${l.color.multiplyOpacity(s3, 0.5).css}; }${this._terminalSelector} .${g}${i3} { background-color: ${s3.css}; }`;
-            t3 += `${this._terminalSelector} .${p}${a.INVERTED_DEFAULT_COLOR} { color: ${l.color.opaque(e3.background).css}; }${this._terminalSelector} .${p}${a.INVERTED_DEFAULT_COLOR}.xterm-dim { color: ${l.color.multiplyOpacity(l.color.opaque(e3.background), 0.5).css}; }${this._terminalSelector} .${g}${a.INVERTED_DEFAULT_COLOR} { background-color: ${e3.foreground.css}; }`, this._themeStyleElement.textContent = t3;
+            let t3 = `${this._terminalSelector} .${v2} { color: ${e3.foreground.css}; font-family: ${this._optionsService.rawOptions.fontFamily}; font-size: ${this._optionsService.rawOptions.fontSize}px; font-kerning: none; white-space: pre}`;
+            t3 += `${this._terminalSelector} .${v2} .xterm-dim { color: ${l.color.multiplyOpacity(e3.foreground, 0.5).css};}`, t3 += `${this._terminalSelector} span:not(.xterm-bold) { font-weight: ${this._optionsService.rawOptions.fontWeight};}${this._terminalSelector} span.xterm-bold { font-weight: ${this._optionsService.rawOptions.fontWeightBold};}${this._terminalSelector} span.xterm-italic { font-style: italic;}`, t3 += "@keyframes blink_box_shadow_" + this._terminalClass + " { 50% {  border-bottom-style: hidden; }}", t3 += "@keyframes blink_block_" + this._terminalClass + ` { 0% {  background-color: ${e3.cursor.css};  color: ${e3.cursorAccent.css}; } 50% {  background-color: inherit;  color: ${e3.cursor.css}; }}`, t3 += `${this._terminalSelector} .${v2}.${m2} .xterm-cursor.xterm-cursor-blink:not(.xterm-cursor-block) { animation: blink_box_shadow_` + this._terminalClass + ` 1s step-end infinite;}${this._terminalSelector} .${v2}.${m2} .xterm-cursor.xterm-cursor-blink.xterm-cursor-block { animation: blink_block_` + this._terminalClass + ` 1s step-end infinite;}${this._terminalSelector} .${v2} .xterm-cursor.xterm-cursor-block { background-color: ${e3.cursor.css}; color: ${e3.cursorAccent.css};}${this._terminalSelector} .${v2} .xterm-cursor.xterm-cursor-outline { outline: 1px solid ${e3.cursor.css}; outline-offset: -1px;}${this._terminalSelector} .${v2} .xterm-cursor.xterm-cursor-bar { box-shadow: ${this._optionsService.rawOptions.cursorWidth}px 0 0 ${e3.cursor.css} inset;}${this._terminalSelector} .${v2} .xterm-cursor.xterm-cursor-underline { border-bottom: 1px ${e3.cursor.css}; border-bottom-style: solid; height: calc(100% - 1px);}`, t3 += `${this._terminalSelector} .${S2} { position: absolute; top: 0; left: 0; z-index: 1; pointer-events: none;}${this._terminalSelector}.focus .${S2} div { position: absolute; background-color: ${e3.selectionBackgroundOpaque.css};}${this._terminalSelector} .${S2} div { position: absolute; background-color: ${e3.selectionInactiveBackgroundOpaque.css};}`;
+            for (const [i3, s3] of e3.ansi.entries()) t3 += `${this._terminalSelector} .${p}${i3} { color: ${s3.css}; }${this._terminalSelector} .${p}${i3}.xterm-dim { color: ${l.color.multiplyOpacity(s3, 0.5).css}; }${this._terminalSelector} .${g2}${i3} { background-color: ${s3.css}; }`;
+            t3 += `${this._terminalSelector} .${p}${a.INVERTED_DEFAULT_COLOR} { color: ${l.color.opaque(e3.background).css}; }${this._terminalSelector} .${p}${a.INVERTED_DEFAULT_COLOR}.xterm-dim { color: ${l.color.multiplyOpacity(l.color.opaque(e3.background), 0.5).css}; }${this._terminalSelector} .${g2}${a.INVERTED_DEFAULT_COLOR} { background-color: ${e3.foreground.css}; }`, this._themeStyleElement.textContent = t3;
           }
           _setDefaultSpacing() {
             const e3 = this.dimensions.css.cell.width - this._widthCache.get("W", false, false);
@@ -1294,10 +1294,10 @@ WARNING: This link could potentially be dangerous`)) {
             this._updateDimensions(), this._widthCache.clear(), this._setDefaultSpacing();
           }
           handleBlur() {
-            this._rowContainer.classList.remove(m);
+            this._rowContainer.classList.remove(m2);
           }
           handleFocus() {
-            this._rowContainer.classList.add(m), this.renderRows(this._bufferService.buffer.y, this._bufferService.buffer.y);
+            this._rowContainer.classList.add(m2), this.renderRows(this._bufferService.buffer.y, this._bufferService.buffer.y);
           }
           handleSelectionChanged(e3, t3, i3) {
             if (this._selectionContainer.replaceChildren(), this._rowFactory.handleSelectionChanged(e3, t3, i3), this.renderRows(0, this._bufferService.rows - 1), !e3 || !t3) return;
@@ -1308,8 +1308,8 @@ WARNING: This link could potentially be dangerous`)) {
               const i4 = e3[0] > t3[0];
               a2.appendChild(this._createSelectionElement(n2, i4 ? t3[0] : e3[0], i4 ? e3[0] : t3[0], o2 - n2 + 1));
             } else {
-              const i4 = s3 === n2 ? e3[0] : 0, h2 = n2 === r2 ? t3[0] : this._bufferService.cols;
-              a2.appendChild(this._createSelectionElement(n2, i4, h2));
+              const i4 = s3 === n2 ? e3[0] : 0, h3 = n2 === r2 ? t3[0] : this._bufferService.cols;
+              a2.appendChild(this._createSelectionElement(n2, i4, h3));
               const c2 = o2 - n2 - 1;
               if (a2.appendChild(this._createSelectionElement(n2 + 1, 0, this._bufferService.cols, c2)), n2 !== o2) {
                 const e4 = r2 === o2 ? t3[0] : this._bufferService.cols;
@@ -1332,8 +1332,8 @@ WARNING: This link could potentially be dangerous`)) {
           }
           renderRows(e3, t3) {
             const i3 = this._bufferService.buffer, s3 = i3.ybase + i3.y, r2 = Math.min(i3.x, this._bufferService.cols - 1), n2 = this._optionsService.rawOptions.cursorBlink, o2 = this._optionsService.rawOptions.cursorStyle, a2 = this._optionsService.rawOptions.cursorInactiveStyle;
-            for (let h2 = e3; h2 <= t3; h2++) {
-              const e4 = h2 + i3.ydisp, t4 = this._rowElements[h2], c2 = i3.lines.get(e4);
+            for (let h3 = e3; h3 <= t3; h3++) {
+              const e4 = h3 + i3.ydisp, t4 = this._rowElements[h3], c2 = i3.lines.get(e4);
               if (!t4 || !c2) break;
               t4.replaceChildren(...this._rowFactory.createRow(c2, e4, e4 === s3, o2, a2, r2, n2, this.dimensions.css.cell.width, this._widthCache, -1, -1));
             }
@@ -1351,11 +1351,11 @@ WARNING: This link could potentially be dangerous`)) {
             i3 < 0 && (e3 = 0), s3 < 0 && (t3 = 0);
             const o2 = this._bufferService.rows - 1;
             i3 = Math.max(Math.min(i3, o2), 0), s3 = Math.max(Math.min(s3, o2), 0), r2 = Math.min(r2, this._bufferService.cols);
-            const a2 = this._bufferService.buffer, h2 = a2.ybase + a2.y, c2 = Math.min(a2.x, r2 - 1), l2 = this._optionsService.rawOptions.cursorBlink, d2 = this._optionsService.rawOptions.cursorStyle, _2 = this._optionsService.rawOptions.cursorInactiveStyle;
+            const a2 = this._bufferService.buffer, h3 = a2.ybase + a2.y, c2 = Math.min(a2.x, r2 - 1), l2 = this._optionsService.rawOptions.cursorBlink, d2 = this._optionsService.rawOptions.cursorStyle, _2 = this._optionsService.rawOptions.cursorInactiveStyle;
             for (let o3 = i3; o3 <= s3; ++o3) {
-              const u2 = o3 + a2.ydisp, f2 = this._rowElements[o3], v2 = a2.lines.get(u2);
-              if (!f2 || !v2) break;
-              f2.replaceChildren(...this._rowFactory.createRow(v2, u2, u2 === h2, d2, _2, c2, l2, this.dimensions.css.cell.width, this._widthCache, n2 ? o3 === i3 ? e3 : 0 : -1, n2 ? (o3 === s3 ? t3 : r2) - 1 : -1));
+              const u2 = o3 + a2.ydisp, f2 = this._rowElements[o3], v3 = a2.lines.get(u2);
+              if (!f2 || !v3) break;
+              f2.replaceChildren(...this._rowFactory.createRow(v3, u2, u2 === h3, d2, _2, c2, l2, this.dimensions.css.cell.width, this._widthCache, n2 ? o3 === i3 ? e3 : 0 : -1, n2 ? (o3 === s3 ? t3 : r2) - 1 : -1));
             }
           }
         };
@@ -1372,7 +1372,7 @@ WARNING: This link could potentially be dangerous`)) {
           };
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.DomRendererRowFactory = void 0;
-        const n = i2(2223), o = i2(643), a = i2(511), h = i2(2585), c = i2(8055), l = i2(4725), d = i2(4269), _ = i2(6171), u = i2(3734);
+        const n = i2(2223), o = i2(643), a = i2(511), h2 = i2(2585), c = i2(8055), l = i2(4725), d = i2(4269), _ = i2(6171), u = i2(3734);
         let f = t2.DomRendererRowFactory = class {
           constructor(e3, t3, i3, s3, r2, n2, o2) {
             this._document = e3, this._characterJoinerService = t3, this._optionsService = i3, this._coreBrowserService = s3, this._coreService = r2, this._decorationService = n2, this._themeService = o2, this._workCell = new a.CellData(), this._columnSelectMode = false, this.defaultSpacing = 0;
@@ -1380,94 +1380,94 @@ WARNING: This link could potentially be dangerous`)) {
           handleSelectionChanged(e3, t3, i3) {
             this._selectionStart = e3, this._selectionEnd = t3, this._columnSelectMode = i3;
           }
-          createRow(e3, t3, i3, s3, r2, a2, h2, l2, _2, f2, p) {
-            const g = [], m = this._characterJoinerService.getJoinedCharacters(t3), S = this._themeService.colors;
+          createRow(e3, t3, i3, s3, r2, a2, h3, l2, _2, f2, p) {
+            const g2 = [], m2 = this._characterJoinerService.getJoinedCharacters(t3), S2 = this._themeService.colors;
             let C, b = e3.getNoBgTrimmedLength();
             i3 && b < a2 + 1 && (b = a2 + 1);
-            let y = 0, w = "", E = 0, k = 0, L = 0, D = false, R = 0, x = false, A = 0;
-            const B = [], T = -1 !== f2 && -1 !== p;
-            for (let M = 0; M < b; M++) {
-              e3.loadCell(M, this._workCell);
+            let y2 = 0, w2 = "", E = 0, k2 = 0, L = 0, D2 = false, R = 0, x2 = false, A = 0;
+            const B2 = [], T = -1 !== f2 && -1 !== p;
+            for (let M2 = 0; M2 < b; M2++) {
+              e3.loadCell(M2, this._workCell);
               let b2 = this._workCell.getWidth();
               if (0 === b2) continue;
-              let O = false, P = M, I = this._workCell;
-              if (m.length > 0 && M === m[0][0]) {
-                O = true;
-                const t4 = m.shift();
-                I = new d.JoinedCellData(this._workCell, e3.translateToString(true, t4[0], t4[1]), t4[1] - t4[0]), P = t4[1] - 1, b2 = I.getWidth();
+              let O2 = false, P2 = M2, I2 = this._workCell;
+              if (m2.length > 0 && M2 === m2[0][0]) {
+                O2 = true;
+                const t4 = m2.shift();
+                I2 = new d.JoinedCellData(this._workCell, e3.translateToString(true, t4[0], t4[1]), t4[1] - t4[0]), P2 = t4[1] - 1, b2 = I2.getWidth();
               }
-              const H = this._isCellInSelection(M, t3), F = i3 && M === a2, W = T && M >= f2 && M <= p;
-              let U = false;
-              this._decorationService.forEachDecorationAtCell(M, t3, void 0, ((e4) => {
-                U = true;
+              const H = this._isCellInSelection(M2, t3), F = i3 && M2 === a2, W2 = T && M2 >= f2 && M2 <= p;
+              let U2 = false;
+              this._decorationService.forEachDecorationAtCell(M2, t3, void 0, ((e4) => {
+                U2 = true;
               }));
-              let N = I.getChars() || o.WHITESPACE_CELL_CHAR;
-              if (" " === N && (I.isUnderline() || I.isOverline()) && (N = "\xA0"), A = b2 * l2 - _2.get(N, I.isBold(), I.isItalic()), C) {
-                if (y && (H && x || !H && !x && I.bg === E) && (H && x && S.selectionForeground || I.fg === k) && I.extended.ext === L && W === D && A === R && !F && !O && !U) {
-                  w += N, y++;
+              let N = I2.getChars() || o.WHITESPACE_CELL_CHAR;
+              if (" " === N && (I2.isUnderline() || I2.isOverline()) && (N = "\xA0"), A = b2 * l2 - _2.get(N, I2.isBold(), I2.isItalic()), C) {
+                if (y2 && (H && x2 || !H && !x2 && I2.bg === E) && (H && x2 && S2.selectionForeground || I2.fg === k2) && I2.extended.ext === L && W2 === D2 && A === R && !F && !O2 && !U2) {
+                  w2 += N, y2++;
                   continue;
                 }
-                y && (C.textContent = w), C = this._document.createElement("span"), y = 0, w = "";
+                y2 && (C.textContent = w2), C = this._document.createElement("span"), y2 = 0, w2 = "";
               } else C = this._document.createElement("span");
-              if (E = I.bg, k = I.fg, L = I.extended.ext, D = W, R = A, x = H, O && a2 >= M && a2 <= P && (a2 = M), !this._coreService.isCursorHidden && F) {
-                if (B.push("xterm-cursor"), this._coreBrowserService.isFocused) h2 && B.push("xterm-cursor-blink"), B.push("bar" === s3 ? "xterm-cursor-bar" : "underline" === s3 ? "xterm-cursor-underline" : "xterm-cursor-block");
+              if (E = I2.bg, k2 = I2.fg, L = I2.extended.ext, D2 = W2, R = A, x2 = H, O2 && a2 >= M2 && a2 <= P2 && (a2 = M2), !this._coreService.isCursorHidden && F) {
+                if (B2.push("xterm-cursor"), this._coreBrowserService.isFocused) h3 && B2.push("xterm-cursor-blink"), B2.push("bar" === s3 ? "xterm-cursor-bar" : "underline" === s3 ? "xterm-cursor-underline" : "xterm-cursor-block");
                 else if (r2) switch (r2) {
                   case "outline":
-                    B.push("xterm-cursor-outline");
+                    B2.push("xterm-cursor-outline");
                     break;
                   case "block":
-                    B.push("xterm-cursor-block");
+                    B2.push("xterm-cursor-block");
                     break;
                   case "bar":
-                    B.push("xterm-cursor-bar");
+                    B2.push("xterm-cursor-bar");
                     break;
                   case "underline":
-                    B.push("xterm-cursor-underline");
+                    B2.push("xterm-cursor-underline");
                 }
               }
-              if (I.isBold() && B.push("xterm-bold"), I.isItalic() && B.push("xterm-italic"), I.isDim() && B.push("xterm-dim"), w = I.isInvisible() ? o.WHITESPACE_CELL_CHAR : I.getChars() || o.WHITESPACE_CELL_CHAR, I.isUnderline() && (B.push(`xterm-underline-${I.extended.underlineStyle}`), " " === w && (w = "\xA0"), !I.isUnderlineColorDefault())) if (I.isUnderlineColorRGB()) C.style.textDecorationColor = `rgb(${u.AttributeData.toColorRGB(I.getUnderlineColor()).join(",")})`;
+              if (I2.isBold() && B2.push("xterm-bold"), I2.isItalic() && B2.push("xterm-italic"), I2.isDim() && B2.push("xterm-dim"), w2 = I2.isInvisible() ? o.WHITESPACE_CELL_CHAR : I2.getChars() || o.WHITESPACE_CELL_CHAR, I2.isUnderline() && (B2.push(`xterm-underline-${I2.extended.underlineStyle}`), " " === w2 && (w2 = "\xA0"), !I2.isUnderlineColorDefault())) if (I2.isUnderlineColorRGB()) C.style.textDecorationColor = `rgb(${u.AttributeData.toColorRGB(I2.getUnderlineColor()).join(",")})`;
               else {
-                let e4 = I.getUnderlineColor();
-                this._optionsService.rawOptions.drawBoldTextInBrightColors && I.isBold() && e4 < 8 && (e4 += 8), C.style.textDecorationColor = S.ansi[e4].css;
+                let e4 = I2.getUnderlineColor();
+                this._optionsService.rawOptions.drawBoldTextInBrightColors && I2.isBold() && e4 < 8 && (e4 += 8), C.style.textDecorationColor = S2.ansi[e4].css;
               }
-              I.isOverline() && (B.push("xterm-overline"), " " === w && (w = "\xA0")), I.isStrikethrough() && B.push("xterm-strikethrough"), W && (C.style.textDecoration = "underline");
-              let $ = I.getFgColor(), j = I.getFgColorMode(), z = I.getBgColor(), K = I.getBgColorMode();
-              const q = !!I.isInverse();
-              if (q) {
-                const e4 = $;
-                $ = z, z = e4;
-                const t4 = j;
-                j = K, K = t4;
+              I2.isOverline() && (B2.push("xterm-overline"), " " === w2 && (w2 = "\xA0")), I2.isStrikethrough() && B2.push("xterm-strikethrough"), W2 && (C.style.textDecoration = "underline");
+              let $2 = I2.getFgColor(), j2 = I2.getFgColorMode(), z2 = I2.getBgColor(), K2 = I2.getBgColorMode();
+              const q2 = !!I2.isInverse();
+              if (q2) {
+                const e4 = $2;
+                $2 = z2, z2 = e4;
+                const t4 = j2;
+                j2 = K2, K2 = t4;
               }
-              let V, G, X, J = false;
-              switch (this._decorationService.forEachDecorationAtCell(M, t3, void 0, ((e4) => {
-                "top" !== e4.options.layer && J || (e4.backgroundColorRGB && (K = 50331648, z = e4.backgroundColorRGB.rgba >> 8 & 16777215, V = e4.backgroundColorRGB), e4.foregroundColorRGB && (j = 50331648, $ = e4.foregroundColorRGB.rgba >> 8 & 16777215, G = e4.foregroundColorRGB), J = "top" === e4.options.layer);
-              })), !J && H && (V = this._coreBrowserService.isFocused ? S.selectionBackgroundOpaque : S.selectionInactiveBackgroundOpaque, z = V.rgba >> 8 & 16777215, K = 50331648, J = true, S.selectionForeground && (j = 50331648, $ = S.selectionForeground.rgba >> 8 & 16777215, G = S.selectionForeground)), J && B.push("xterm-decoration-top"), K) {
+              let V2, G2, X2, J2 = false;
+              switch (this._decorationService.forEachDecorationAtCell(M2, t3, void 0, ((e4) => {
+                "top" !== e4.options.layer && J2 || (e4.backgroundColorRGB && (K2 = 50331648, z2 = e4.backgroundColorRGB.rgba >> 8 & 16777215, V2 = e4.backgroundColorRGB), e4.foregroundColorRGB && (j2 = 50331648, $2 = e4.foregroundColorRGB.rgba >> 8 & 16777215, G2 = e4.foregroundColorRGB), J2 = "top" === e4.options.layer);
+              })), !J2 && H && (V2 = this._coreBrowserService.isFocused ? S2.selectionBackgroundOpaque : S2.selectionInactiveBackgroundOpaque, z2 = V2.rgba >> 8 & 16777215, K2 = 50331648, J2 = true, S2.selectionForeground && (j2 = 50331648, $2 = S2.selectionForeground.rgba >> 8 & 16777215, G2 = S2.selectionForeground)), J2 && B2.push("xterm-decoration-top"), K2) {
                 case 16777216:
                 case 33554432:
-                  X = S.ansi[z], B.push(`xterm-bg-${z}`);
+                  X2 = S2.ansi[z2], B2.push(`xterm-bg-${z2}`);
                   break;
                 case 50331648:
-                  X = c.rgba.toColor(z >> 16, z >> 8 & 255, 255 & z), this._addStyle(C, `background-color:#${v((z >>> 0).toString(16), "0", 6)}`);
+                  X2 = c.rgba.toColor(z2 >> 16, z2 >> 8 & 255, 255 & z2), this._addStyle(C, `background-color:#${v2((z2 >>> 0).toString(16), "0", 6)}`);
                   break;
                 default:
-                  q ? (X = S.foreground, B.push(`xterm-bg-${n.INVERTED_DEFAULT_COLOR}`)) : X = S.background;
+                  q2 ? (X2 = S2.foreground, B2.push(`xterm-bg-${n.INVERTED_DEFAULT_COLOR}`)) : X2 = S2.background;
               }
-              switch (V || I.isDim() && (V = c.color.multiplyOpacity(X, 0.5)), j) {
+              switch (V2 || I2.isDim() && (V2 = c.color.multiplyOpacity(X2, 0.5)), j2) {
                 case 16777216:
                 case 33554432:
-                  I.isBold() && $ < 8 && this._optionsService.rawOptions.drawBoldTextInBrightColors && ($ += 8), this._applyMinimumContrast(C, X, S.ansi[$], I, V, void 0) || B.push(`xterm-fg-${$}`);
+                  I2.isBold() && $2 < 8 && this._optionsService.rawOptions.drawBoldTextInBrightColors && ($2 += 8), this._applyMinimumContrast(C, X2, S2.ansi[$2], I2, V2, void 0) || B2.push(`xterm-fg-${$2}`);
                   break;
                 case 50331648:
-                  const e4 = c.rgba.toColor($ >> 16 & 255, $ >> 8 & 255, 255 & $);
-                  this._applyMinimumContrast(C, X, e4, I, V, G) || this._addStyle(C, `color:#${v($.toString(16), "0", 6)}`);
+                  const e4 = c.rgba.toColor($2 >> 16 & 255, $2 >> 8 & 255, 255 & $2);
+                  this._applyMinimumContrast(C, X2, e4, I2, V2, G2) || this._addStyle(C, `color:#${v2($2.toString(16), "0", 6)}`);
                   break;
                 default:
-                  this._applyMinimumContrast(C, X, S.foreground, I, V, void 0) || q && B.push(`xterm-fg-${n.INVERTED_DEFAULT_COLOR}`);
+                  this._applyMinimumContrast(C, X2, S2.foreground, I2, V2, void 0) || q2 && B2.push(`xterm-fg-${n.INVERTED_DEFAULT_COLOR}`);
               }
-              B.length && (C.className = B.join(" "), B.length = 0), F || O || U ? C.textContent = w : y++, A !== this.defaultSpacing && (C.style.letterSpacing = `${A}px`), g.push(C), M = P;
+              B2.length && (C.className = B2.join(" "), B2.length = 0), F || O2 || U2 ? C.textContent = w2 : y2++, A !== this.defaultSpacing && (C.style.letterSpacing = `${A}px`), g2.push(C), M2 = P2;
             }
-            return C && y && (C.textContent = w), g;
+            return C && y2 && (C.textContent = w2), g2;
           }
           _applyMinimumContrast(e3, t3, i3, s3, r2, n2) {
             if (1 === this._optionsService.rawOptions.minimumContrastRatio || (0, _.excludeFromContrastRatioDemands)(s3.getCode())) return false;
@@ -1490,11 +1490,11 @@ WARNING: This link could potentially be dangerous`)) {
             return !(!i3 || !s3) && (this._columnSelectMode ? i3[0] <= s3[0] ? e3 >= i3[0] && t3 >= i3[1] && e3 < s3[0] && t3 <= s3[1] : e3 < i3[0] && t3 >= i3[1] && e3 >= s3[0] && t3 <= s3[1] : t3 > i3[1] && t3 < s3[1] || i3[1] === s3[1] && t3 === i3[1] && e3 >= i3[0] && e3 < s3[0] || i3[1] < s3[1] && t3 === s3[1] && e3 < s3[0] || i3[1] < s3[1] && t3 === i3[1] && e3 >= i3[0]);
           }
         };
-        function v(e3, t3, i3) {
+        function v2(e3, t3, i3) {
           for (; e3.length < i3; ) e3 = t3 + e3;
           return e3;
         }
-        t2.DomRendererRowFactory = f = s2([r(1, l.ICharacterJoinerService), r(2, h.IOptionsService), r(3, l.ICoreBrowserService), r(4, h.ICoreService), r(5, h.IDecorationService), r(6, l.IThemeService)], f);
+        t2.DomRendererRowFactory = f = s2([r(1, l.ICharacterJoinerService), r(2, h2.IOptionsService), r(3, l.ICoreBrowserService), r(4, h2.ICoreService), r(5, h2.IDecorationService), r(6, l.IThemeService)], f);
       }, 2550: (e2, t2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.WidthCache = void 0, t2.WidthCache = class {
           constructor(e3) {
@@ -1598,7 +1598,7 @@ WARNING: This link could potentially be dangerous`)) {
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.CharSizeService = void 0;
         const n = i2(2585), o = i2(8460), a = i2(844);
-        let h = t2.CharSizeService = class extends a.Disposable {
+        let h2 = t2.CharSizeService = class extends a.Disposable {
           get hasValidSize() {
             return this.width > 0 && this.height > 0;
           }
@@ -1610,7 +1610,7 @@ WARNING: This link could potentially be dangerous`)) {
             e3.width === this.width && e3.height === this.height || (this.width = e3.width, this.height = e3.height, this._onCharSizeChange.fire());
           }
         };
-        t2.CharSizeService = h = s2([r(2, n.IOptionsService)], h);
+        t2.CharSizeService = h2 = s2([r(2, n.IOptionsService)], h2);
         class c {
           constructor(e3, t3, i3) {
             this._document = e3, this._parentElement = t3, this._optionsService = i3, this._result = { width: 0, height: 0 }, this._measureElement = this._document.createElement("span"), this._measureElement.classList.add("xterm-char-measure-element"), this._measureElement.textContent = "W".repeat(32), this._measureElement.setAttribute("aria-hidden", "true"), this._measureElement.style.whiteSpace = "pre", this._measureElement.style.fontKerning = "none", this._parentElement.appendChild(this._measureElement);
@@ -1633,7 +1633,7 @@ WARNING: This link could potentially be dangerous`)) {
           };
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.CharacterJoinerService = t2.JoinedCellData = void 0;
-        const n = i2(3734), o = i2(643), a = i2(511), h = i2(2585);
+        const n = i2(3734), o = i2(643), a = i2(511), h2 = i2(2585);
         class c extends n.AttributeData {
           constructor(e3, t3, i3) {
             super(), this.content = 0, this.combinedData = "", this.fg = e3.fg, this.bg = e3.bg, this.combinedData = t3, this._width = i3;
@@ -1675,14 +1675,14 @@ WARNING: This link could potentially be dangerous`)) {
             const t3 = this._bufferService.buffer.lines.get(e4);
             if (!t3 || 0 === t3.length) return [];
             const i3 = [], s3 = t3.translateToString(true);
-            let r2 = 0, n2 = 0, a2 = 0, h2 = t3.getFg(0), c2 = t3.getBg(0);
+            let r2 = 0, n2 = 0, a2 = 0, h3 = t3.getFg(0), c2 = t3.getBg(0);
             for (let e5 = 0; e5 < t3.getTrimmedLength(); e5++) if (t3.loadCell(e5, this._workCell), 0 !== this._workCell.getWidth()) {
-              if (this._workCell.fg !== h2 || this._workCell.bg !== c2) {
+              if (this._workCell.fg !== h3 || this._workCell.bg !== c2) {
                 if (e5 - r2 > 1) {
                   const e6 = this._getJoinedRanges(s3, a2, n2, t3, r2);
                   for (let t4 = 0; t4 < e6.length; t4++) i3.push(e6[t4]);
                 }
-                r2 = e5, a2 = n2, h2 = this._workCell.fg, c2 = this._workCell.bg;
+                r2 = e5, a2 = n2, h3 = this._workCell.fg, c2 = this._workCell.bg;
               }
               n2 += this._workCell.getChars().length || o.WHITESPACE_CELL_CHAR.length;
             }
@@ -1711,12 +1711,12 @@ WARNING: This link could potentially be dangerous`)) {
           _stringRangesToCellRanges(e4, t3, i3) {
             let s3 = 0, r2 = false, n2 = 0, a2 = e4[s3];
             if (a2) {
-              for (let h2 = i3; h2 < this._bufferService.cols; h2++) {
-                const i4 = t3.getWidth(h2), c2 = t3.getString(h2).length || o.WHITESPACE_CELL_CHAR.length;
+              for (let h3 = i3; h3 < this._bufferService.cols; h3++) {
+                const i4 = t3.getWidth(h3), c2 = t3.getString(h3).length || o.WHITESPACE_CELL_CHAR.length;
                 if (0 !== i4) {
-                  if (!r2 && a2[0] <= n2 && (a2[0] = h2, r2 = true), a2[1] <= n2) {
-                    if (a2[1] = h2, a2 = e4[++s3], !a2) break;
-                    a2[0] <= n2 ? (a2[0] = h2, r2 = true) : r2 = false;
+                  if (!r2 && a2[0] <= n2 && (a2[0] = h3, r2 = true), a2[1] <= n2) {
+                    if (a2[1] = h3, a2 = e4[++s3], !a2) break;
+                    a2[0] <= n2 ? (a2[0] = h3, r2 = true) : r2 = false;
                   }
                   n2 += c2;
                 }
@@ -1741,7 +1741,7 @@ WARNING: This link could potentially be dangerous`)) {
             return i3 ? e4[e4.length - 1][1] = t3[1] : e4.push(t3), e4;
           }
         };
-        t2.CharacterJoinerService = l = s2([r(0, h.IBufferService)], l);
+        t2.CharacterJoinerService = l = s2([r(0, h2.IBufferService)], l);
       }, 5114: (e2, t2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.CoreBrowserService = void 0, t2.CoreBrowserService = class {
           constructor(e3, t3) {
@@ -1792,18 +1792,18 @@ WARNING: This link could potentially be dangerous`)) {
           };
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.RenderService = void 0;
-        const n = i2(3656), o = i2(6193), a = i2(5596), h = i2(4725), c = i2(8460), l = i2(844), d = i2(7226), _ = i2(2585);
+        const n = i2(3656), o = i2(6193), a = i2(5596), h2 = i2(4725), c = i2(8460), l = i2(844), d = i2(7226), _ = i2(2585);
         let u = t2.RenderService = class extends l.Disposable {
           get dimensions() {
             return this._renderer.value.dimensions;
           }
-          constructor(e3, t3, i3, s3, r2, h2, _2, u2) {
-            if (super(), this._rowCount = e3, this._charSizeService = s3, this._renderer = this.register(new l.MutableDisposable()), this._pausedResizeTask = new d.DebouncedIdleTask(), this._isPaused = false, this._needsFullRefresh = false, this._isNextRenderRedrawOnly = true, this._needsSelectionRefresh = false, this._canvasWidth = 0, this._canvasHeight = 0, this._selectionState = { start: void 0, end: void 0, columnSelectMode: false }, this._onDimensionsChange = this.register(new c.EventEmitter()), this.onDimensionsChange = this._onDimensionsChange.event, this._onRenderedViewportChange = this.register(new c.EventEmitter()), this.onRenderedViewportChange = this._onRenderedViewportChange.event, this._onRender = this.register(new c.EventEmitter()), this.onRender = this._onRender.event, this._onRefreshRequest = this.register(new c.EventEmitter()), this.onRefreshRequest = this._onRefreshRequest.event, this._renderDebouncer = new o.RenderDebouncer(_2.window, ((e4, t4) => this._renderRows(e4, t4))), this.register(this._renderDebouncer), this._screenDprMonitor = new a.ScreenDprMonitor(_2.window), this._screenDprMonitor.setListener((() => this.handleDevicePixelRatioChange())), this.register(this._screenDprMonitor), this.register(h2.onResize((() => this._fullRefresh()))), this.register(h2.buffers.onBufferActivate((() => {
+          constructor(e3, t3, i3, s3, r2, h3, _2, u2) {
+            if (super(), this._rowCount = e3, this._charSizeService = s3, this._renderer = this.register(new l.MutableDisposable()), this._pausedResizeTask = new d.DebouncedIdleTask(), this._isPaused = false, this._needsFullRefresh = false, this._isNextRenderRedrawOnly = true, this._needsSelectionRefresh = false, this._canvasWidth = 0, this._canvasHeight = 0, this._selectionState = { start: void 0, end: void 0, columnSelectMode: false }, this._onDimensionsChange = this.register(new c.EventEmitter()), this.onDimensionsChange = this._onDimensionsChange.event, this._onRenderedViewportChange = this.register(new c.EventEmitter()), this.onRenderedViewportChange = this._onRenderedViewportChange.event, this._onRender = this.register(new c.EventEmitter()), this.onRender = this._onRender.event, this._onRefreshRequest = this.register(new c.EventEmitter()), this.onRefreshRequest = this._onRefreshRequest.event, this._renderDebouncer = new o.RenderDebouncer(_2.window, ((e4, t4) => this._renderRows(e4, t4))), this.register(this._renderDebouncer), this._screenDprMonitor = new a.ScreenDprMonitor(_2.window), this._screenDprMonitor.setListener((() => this.handleDevicePixelRatioChange())), this.register(this._screenDprMonitor), this.register(h3.onResize((() => this._fullRefresh()))), this.register(h3.buffers.onBufferActivate((() => {
               var e4;
               return null === (e4 = this._renderer.value) || void 0 === e4 ? void 0 : e4.clear();
             }))), this.register(i3.onOptionChange((() => this._handleOptionsChanged()))), this.register(this._charSizeService.onCharSizeChange((() => this.handleCharSizeChanged()))), this.register(r2.onDecorationRegistered((() => this._fullRefresh()))), this.register(r2.onDecorationRemoved((() => this._fullRefresh()))), this.register(i3.onMultipleOptionChange(["customGlyphs", "drawBoldTextInBrightColors", "letterSpacing", "lineHeight", "fontFamily", "fontSize", "fontWeight", "fontWeightBold", "minimumContrastRatio"], (() => {
-              this.clear(), this.handleResize(h2.cols, h2.rows), this._fullRefresh();
-            }))), this.register(i3.onMultipleOptionChange(["cursorBlink", "cursorStyle"], (() => this.refreshRows(h2.buffer.y, h2.buffer.y, true)))), this.register((0, n.addDisposableDomListener)(_2.window, "resize", (() => this.handleDevicePixelRatioChange()))), this.register(u2.onChangeColors((() => this._fullRefresh()))), "IntersectionObserver" in _2.window) {
+              this.clear(), this.handleResize(h3.cols, h3.rows), this._fullRefresh();
+            }))), this.register(i3.onMultipleOptionChange(["cursorBlink", "cursorStyle"], (() => this.refreshRows(h3.buffer.y, h3.buffer.y, true)))), this.register((0, n.addDisposableDomListener)(_2.window, "resize", (() => this.handleDevicePixelRatioChange()))), this.register(u2.onChangeColors((() => this._fullRefresh()))), "IntersectionObserver" in _2.window) {
               const e4 = new _2.window.IntersectionObserver(((e5) => this._handleIntersectionChange(e5[e5.length - 1])), { threshold: 0 });
               e4.observe(t3), this.register({ dispose: () => e4.disconnect() });
             }
@@ -1873,7 +1873,7 @@ WARNING: This link could potentially be dangerous`)) {
             null === (e3 = this._renderer.value) || void 0 === e3 || e3.clear();
           }
         };
-        t2.RenderService = u = s2([r(2, _.IOptionsService), r(3, h.ICharSizeService), r(4, _.IDecorationService), r(5, _.IBufferService), r(6, h.ICoreBrowserService), r(7, h.IThemeService)], u);
+        t2.RenderService = u = s2([r(2, _.IOptionsService), r(3, h2.ICharSizeService), r(4, _.IDecorationService), r(5, _.IBufferService), r(6, h2.ICoreBrowserService), r(7, h2.IThemeService)], u);
       }, 9312: function(e2, t2, i2) {
         var s2 = this && this.__decorate || function(e3, t3, i3, s3) {
           var r2, n2 = arguments.length, o2 = n2 < 3 ? t3 : null === s3 ? s3 = Object.getOwnPropertyDescriptor(t3, i3) : s3;
@@ -1886,10 +1886,10 @@ WARNING: This link could potentially be dangerous`)) {
           };
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.SelectionService = void 0;
-        const n = i2(9806), o = i2(9504), a = i2(456), h = i2(4725), c = i2(8460), l = i2(844), d = i2(6114), _ = i2(4841), u = i2(511), f = i2(2585), v = String.fromCharCode(160), p = new RegExp(v, "g");
-        let g = t2.SelectionService = class extends l.Disposable {
-          constructor(e3, t3, i3, s3, r2, n2, o2, h2, d2) {
-            super(), this._element = e3, this._screenElement = t3, this._linkifier = i3, this._bufferService = s3, this._coreService = r2, this._mouseService = n2, this._optionsService = o2, this._renderService = h2, this._coreBrowserService = d2, this._dragScrollAmount = 0, this._enabled = true, this._workCell = new u.CellData(), this._mouseDownTimeStamp = 0, this._oldHasSelection = false, this._oldSelectionStart = void 0, this._oldSelectionEnd = void 0, this._onLinuxMouseSelection = this.register(new c.EventEmitter()), this.onLinuxMouseSelection = this._onLinuxMouseSelection.event, this._onRedrawRequest = this.register(new c.EventEmitter()), this.onRequestRedraw = this._onRedrawRequest.event, this._onSelectionChange = this.register(new c.EventEmitter()), this.onSelectionChange = this._onSelectionChange.event, this._onRequestScrollLines = this.register(new c.EventEmitter()), this.onRequestScrollLines = this._onRequestScrollLines.event, this._mouseMoveListener = (e4) => this._handleMouseMove(e4), this._mouseUpListener = (e4) => this._handleMouseUp(e4), this._coreService.onUserInput((() => {
+        const n = i2(9806), o = i2(9504), a = i2(456), h2 = i2(4725), c = i2(8460), l = i2(844), d = i2(6114), _ = i2(4841), u = i2(511), f = i2(2585), v2 = String.fromCharCode(160), p = new RegExp(v2, "g");
+        let g2 = t2.SelectionService = class extends l.Disposable {
+          constructor(e3, t3, i3, s3, r2, n2, o2, h3, d2) {
+            super(), this._element = e3, this._screenElement = t3, this._linkifier = i3, this._bufferService = s3, this._coreService = r2, this._mouseService = n2, this._optionsService = o2, this._renderService = h3, this._coreBrowserService = d2, this._dragScrollAmount = 0, this._enabled = true, this._workCell = new u.CellData(), this._mouseDownTimeStamp = 0, this._oldHasSelection = false, this._oldSelectionStart = void 0, this._oldSelectionEnd = void 0, this._onLinuxMouseSelection = this.register(new c.EventEmitter()), this.onLinuxMouseSelection = this._onLinuxMouseSelection.event, this._onRedrawRequest = this.register(new c.EventEmitter()), this.onRequestRedraw = this._onRedrawRequest.event, this._onSelectionChange = this.register(new c.EventEmitter()), this.onSelectionChange = this._onSelectionChange.event, this._onRequestScrollLines = this.register(new c.EventEmitter()), this.onRequestScrollLines = this._onRequestScrollLines.event, this._mouseMoveListener = (e4) => this._handleMouseMove(e4), this._mouseUpListener = (e4) => this._handleMouseUp(e4), this._coreService.onUserInput((() => {
               this.hasSelection && this.clearSelection();
             })), this._trimListener = this._bufferService.buffer.lines.onTrim(((e4) => this._handleTrim(e4))), this.register(this._bufferService.buffers.onBufferActivate(((e4) => this._handleBufferActivate(e4)))), this.enable(), this._model = new a.SelectionModel(this._bufferService), this._activeSelectionMode = 0, this.register((0, l.toDisposable)((() => {
               this._removeMouseDownListeners();
@@ -2081,48 +2081,48 @@ WARNING: This link could potentially be dangerous`)) {
             const r2 = this._bufferService.buffer, n2 = r2.lines.get(e3[1]);
             if (!n2) return;
             const o2 = r2.translateBufferLineToString(e3[1], false);
-            let a2 = this._convertViewportColToCharacterIndex(n2, e3[0]), h2 = a2;
+            let a2 = this._convertViewportColToCharacterIndex(n2, e3[0]), h3 = a2;
             const c2 = e3[0] - a2;
             let l2 = 0, d2 = 0, _2 = 0, u2 = 0;
             if (" " === o2.charAt(a2)) {
               for (; a2 > 0 && " " === o2.charAt(a2 - 1); ) a2--;
-              for (; h2 < o2.length && " " === o2.charAt(h2 + 1); ) h2++;
+              for (; h3 < o2.length && " " === o2.charAt(h3 + 1); ) h3++;
             } else {
               let t4 = e3[0], i4 = e3[0];
               0 === n2.getWidth(t4) && (l2++, t4--), 2 === n2.getWidth(i4) && (d2++, i4++);
               const s4 = n2.getString(i4).length;
-              for (s4 > 1 && (u2 += s4 - 1, h2 += s4 - 1); t4 > 0 && a2 > 0 && !this._isCharWordSeparator(n2.loadCell(t4 - 1, this._workCell)); ) {
+              for (s4 > 1 && (u2 += s4 - 1, h3 += s4 - 1); t4 > 0 && a2 > 0 && !this._isCharWordSeparator(n2.loadCell(t4 - 1, this._workCell)); ) {
                 n2.loadCell(t4 - 1, this._workCell);
                 const e4 = this._workCell.getChars().length;
                 0 === this._workCell.getWidth() ? (l2++, t4--) : e4 > 1 && (_2 += e4 - 1, a2 -= e4 - 1), a2--, t4--;
               }
-              for (; i4 < n2.length && h2 + 1 < o2.length && !this._isCharWordSeparator(n2.loadCell(i4 + 1, this._workCell)); ) {
+              for (; i4 < n2.length && h3 + 1 < o2.length && !this._isCharWordSeparator(n2.loadCell(i4 + 1, this._workCell)); ) {
                 n2.loadCell(i4 + 1, this._workCell);
                 const e4 = this._workCell.getChars().length;
-                2 === this._workCell.getWidth() ? (d2++, i4++) : e4 > 1 && (u2 += e4 - 1, h2 += e4 - 1), h2++, i4++;
+                2 === this._workCell.getWidth() ? (d2++, i4++) : e4 > 1 && (u2 += e4 - 1, h3 += e4 - 1), h3++, i4++;
               }
             }
-            h2++;
-            let f2 = a2 + c2 - l2 + _2, v2 = Math.min(this._bufferService.cols, h2 - a2 + l2 + d2 - _2 - u2);
-            if (t3 || "" !== o2.slice(a2, h2).trim()) {
+            h3++;
+            let f2 = a2 + c2 - l2 + _2, v3 = Math.min(this._bufferService.cols, h3 - a2 + l2 + d2 - _2 - u2);
+            if (t3 || "" !== o2.slice(a2, h3).trim()) {
               if (i3 && 0 === f2 && 32 !== n2.getCodePoint(0)) {
                 const t4 = r2.lines.get(e3[1] - 1);
                 if (t4 && n2.isWrapped && 32 !== t4.getCodePoint(this._bufferService.cols - 1)) {
                   const t5 = this._getWordAt([this._bufferService.cols - 1, e3[1] - 1], false, true, false);
                   if (t5) {
                     const e4 = this._bufferService.cols - t5.start;
-                    f2 -= e4, v2 += e4;
+                    f2 -= e4, v3 += e4;
                   }
                 }
               }
-              if (s3 && f2 + v2 === this._bufferService.cols && 32 !== n2.getCodePoint(this._bufferService.cols - 1)) {
+              if (s3 && f2 + v3 === this._bufferService.cols && 32 !== n2.getCodePoint(this._bufferService.cols - 1)) {
                 const t4 = r2.lines.get(e3[1] + 1);
                 if ((null == t4 ? void 0 : t4.isWrapped) && 32 !== t4.getCodePoint(0)) {
                   const t5 = this._getWordAt([0, e3[1] + 1], false, false, true);
-                  t5 && (v2 += t5.length);
+                  t5 && (v3 += t5.length);
                 }
               }
-              return { start: f2, length: v2 };
+              return { start: f2, length: v3 };
             }
           }
           _selectWordAt(e3, t3) {
@@ -2149,7 +2149,7 @@ WARNING: This link could potentially be dangerous`)) {
             this._model.selectionStart = [0, t3.first], this._model.selectionEnd = void 0, this._model.selectionStartLength = (0, _.getRangeLength)(i3, this._bufferService.cols);
           }
         };
-        t2.SelectionService = g = s2([r(3, f.IBufferService), r(4, f.ICoreService), r(5, h.IMouseService), r(6, f.IOptionsService), r(7, h.IRenderService), r(8, h.ICoreBrowserService)], g);
+        t2.SelectionService = g2 = s2([r(3, f.IBufferService), r(4, f.ICoreService), r(5, h2.IMouseService), r(6, f.IOptionsService), r(7, h2.IRenderService), r(8, h2.ICoreBrowserService)], g2);
       }, 4725: (e2, t2, i2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.IThemeService = t2.ICharacterJoinerService = t2.ISelectionService = t2.IRenderService = t2.IMouseService = t2.ICoreBrowserService = t2.ICharSizeService = void 0;
         const s2 = i2(8343);
@@ -2166,7 +2166,7 @@ WARNING: This link could potentially be dangerous`)) {
           };
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.ThemeService = t2.DEFAULT_ANSI_COLORS = void 0;
-        const n = i2(7239), o = i2(8055), a = i2(8460), h = i2(844), c = i2(2585), l = o.css.toColor("#ffffff"), d = o.css.toColor("#000000"), _ = o.css.toColor("#ffffff"), u = o.css.toColor("#000000"), f = { css: "rgba(255, 255, 255, 0.3)", rgba: 4294967117 };
+        const n = i2(7239), o = i2(8055), a = i2(8460), h2 = i2(844), c = i2(2585), l = o.css.toColor("#ffffff"), d = o.css.toColor("#000000"), _ = o.css.toColor("#ffffff"), u = o.css.toColor("#000000"), f = { css: "rgba(255, 255, 255, 0.3)", rgba: 4294967117 };
         t2.DEFAULT_ANSI_COLORS = Object.freeze((() => {
           const e3 = [o.css.toColor("#2e3436"), o.css.toColor("#cc0000"), o.css.toColor("#4e9a06"), o.css.toColor("#c4a000"), o.css.toColor("#3465a4"), o.css.toColor("#75507b"), o.css.toColor("#06989a"), o.css.toColor("#d3d7cf"), o.css.toColor("#555753"), o.css.toColor("#ef2929"), o.css.toColor("#8ae234"), o.css.toColor("#fce94f"), o.css.toColor("#729fcf"), o.css.toColor("#ad7fa8"), o.css.toColor("#34e2e2"), o.css.toColor("#eeeeec")], t3 = [0, 95, 135, 175, 215, 255];
           for (let i3 = 0; i3 < 216; i3++) {
@@ -2179,7 +2179,7 @@ WARNING: This link could potentially be dangerous`)) {
           }
           return e3;
         })());
-        let v = t2.ThemeService = class extends h.Disposable {
+        let v2 = t2.ThemeService = class extends h2.Disposable {
           get colors() {
             return this._colors;
           }
@@ -2235,7 +2235,7 @@ WARNING: This link could potentially be dangerous`)) {
           }
           return t3;
         }
-        t2.ThemeService = v = s2([r(0, c.IOptionsService)], v);
+        t2.ThemeService = v2 = s2([r(0, c.IOptionsService)], v2);
       }, 6349: (e2, t2, i2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.CircularList = void 0;
         const s2 = i2(8460), r = i2(844);
@@ -2320,7 +2320,7 @@ WARNING: This link could potentially be dangerous`)) {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.contrastRatio = t2.toPaddedHex = t2.rgba = t2.rgb = t2.css = t2.color = t2.channels = t2.NULL_COLOR = void 0;
         const s2 = i2(6114);
         let r = 0, n = 0, o = 0, a = 0;
-        var h, c, l, d, _;
+        var h2, c, l, d, _;
         function u(e3) {
           const t3 = e3.toString(16);
           return t3.length < 2 ? "0" + t3 : t3;
@@ -2334,14 +2334,14 @@ WARNING: This link could potentially be dangerous`)) {
           }, e3.toRgba = function(e4, t3, i3, s3 = 255) {
             return (e4 << 24 | t3 << 16 | i3 << 8 | s3) >>> 0;
           };
-        })(h || (t2.channels = h = {})), (function(e3) {
+        })(h2 || (t2.channels = h2 = {})), (function(e3) {
           function t3(e4, t4) {
-            return a = Math.round(255 * t4), [r, n, o] = _.toChannels(e4.rgba), { css: h.toCss(r, n, o, a), rgba: h.toRgba(r, n, o, a) };
+            return a = Math.round(255 * t4), [r, n, o] = _.toChannels(e4.rgba), { css: h2.toCss(r, n, o, a), rgba: h2.toRgba(r, n, o, a) };
           }
           e3.blend = function(e4, t4) {
             if (a = (255 & t4.rgba) / 255, 1 === a) return { css: t4.css, rgba: t4.rgba };
             const i3 = t4.rgba >> 24 & 255, s3 = t4.rgba >> 16 & 255, c2 = t4.rgba >> 8 & 255, l2 = e4.rgba >> 24 & 255, d2 = e4.rgba >> 16 & 255, _2 = e4.rgba >> 8 & 255;
-            return r = l2 + Math.round((i3 - l2) * a), n = d2 + Math.round((s3 - d2) * a), o = _2 + Math.round((c2 - _2) * a), { css: h.toCss(r, n, o), rgba: h.toRgba(r, n, o) };
+            return r = l2 + Math.round((i3 - l2) * a), n = d2 + Math.round((s3 - d2) * a), o = _2 + Math.round((c2 - _2) * a), { css: h2.toCss(r, n, o), rgba: h2.toRgba(r, n, o) };
           }, e3.isOpaque = function(e4) {
             return 255 == (255 & e4.rgba);
           }, e3.ensureContrastRatio = function(e4, t4, i3) {
@@ -2349,7 +2349,7 @@ WARNING: This link could potentially be dangerous`)) {
             if (s3) return _.toColor(s3 >> 24 & 255, s3 >> 16 & 255, s3 >> 8 & 255);
           }, e3.opaque = function(e4) {
             const t4 = (255 | e4.rgba) >>> 0;
-            return [r, n, o] = _.toChannels(t4), { css: h.toCss(r, n, o), rgba: t4 };
+            return [r, n, o] = _.toChannels(t4), { css: h2.toCss(r, n, o), rgba: t4 };
           }, e3.opacity = t3, e3.multiplyOpacity = function(e4, i3) {
             return a = 255 & e4.rgba, t3(e4, a * i3 / 255);
           }, e3.toColorRGB = function(e4) {
@@ -2379,7 +2379,7 @@ WARNING: This link could potentially be dangerous`)) {
             if (!t3 || !i3) throw new Error("css.toColor: Unsupported css format");
             if (t3.fillStyle = i3, t3.fillStyle = e4, "string" != typeof t3.fillStyle) throw new Error("css.toColor: Unsupported css format");
             if (t3.fillRect(0, 0, 1, 1), [r, n, o, a] = t3.getImageData(0, 0, 1, 1).data, 255 !== a) throw new Error("css.toColor: Unsupported css format");
-            return { rgba: h.toRgba(r, n, o, a), css: e4 };
+            return { rgba: h2.toRgba(r, n, o, a), css: e4 };
           };
         })(l || (t2.css = l = {})), (function(e3) {
           function t3(e4, t4, i3) {
@@ -2392,15 +2392,15 @@ WARNING: This link could potentially be dangerous`)) {
         })(d || (t2.rgb = d = {})), (function(e3) {
           function t3(e4, t4, i4) {
             const s3 = e4 >> 24 & 255, r2 = e4 >> 16 & 255, n2 = e4 >> 8 & 255;
-            let o2 = t4 >> 24 & 255, a2 = t4 >> 16 & 255, h2 = t4 >> 8 & 255, c2 = f(d.relativeLuminance2(o2, a2, h2), d.relativeLuminance2(s3, r2, n2));
-            for (; c2 < i4 && (o2 > 0 || a2 > 0 || h2 > 0); ) o2 -= Math.max(0, Math.ceil(0.1 * o2)), a2 -= Math.max(0, Math.ceil(0.1 * a2)), h2 -= Math.max(0, Math.ceil(0.1 * h2)), c2 = f(d.relativeLuminance2(o2, a2, h2), d.relativeLuminance2(s3, r2, n2));
-            return (o2 << 24 | a2 << 16 | h2 << 8 | 255) >>> 0;
+            let o2 = t4 >> 24 & 255, a2 = t4 >> 16 & 255, h3 = t4 >> 8 & 255, c2 = f(d.relativeLuminance2(o2, a2, h3), d.relativeLuminance2(s3, r2, n2));
+            for (; c2 < i4 && (o2 > 0 || a2 > 0 || h3 > 0); ) o2 -= Math.max(0, Math.ceil(0.1 * o2)), a2 -= Math.max(0, Math.ceil(0.1 * a2)), h3 -= Math.max(0, Math.ceil(0.1 * h3)), c2 = f(d.relativeLuminance2(o2, a2, h3), d.relativeLuminance2(s3, r2, n2));
+            return (o2 << 24 | a2 << 16 | h3 << 8 | 255) >>> 0;
           }
           function i3(e4, t4, i4) {
             const s3 = e4 >> 24 & 255, r2 = e4 >> 16 & 255, n2 = e4 >> 8 & 255;
-            let o2 = t4 >> 24 & 255, a2 = t4 >> 16 & 255, h2 = t4 >> 8 & 255, c2 = f(d.relativeLuminance2(o2, a2, h2), d.relativeLuminance2(s3, r2, n2));
-            for (; c2 < i4 && (o2 < 255 || a2 < 255 || h2 < 255); ) o2 = Math.min(255, o2 + Math.ceil(0.1 * (255 - o2))), a2 = Math.min(255, a2 + Math.ceil(0.1 * (255 - a2))), h2 = Math.min(255, h2 + Math.ceil(0.1 * (255 - h2))), c2 = f(d.relativeLuminance2(o2, a2, h2), d.relativeLuminance2(s3, r2, n2));
-            return (o2 << 24 | a2 << 16 | h2 << 8 | 255) >>> 0;
+            let o2 = t4 >> 24 & 255, a2 = t4 >> 16 & 255, h3 = t4 >> 8 & 255, c2 = f(d.relativeLuminance2(o2, a2, h3), d.relativeLuminance2(s3, r2, n2));
+            for (; c2 < i4 && (o2 < 255 || a2 < 255 || h3 < 255); ) o2 = Math.min(255, o2 + Math.ceil(0.1 * (255 - o2))), a2 = Math.min(255, a2 + Math.ceil(0.1 * (255 - a2))), h3 = Math.min(255, h3 + Math.ceil(0.1 * (255 - h3))), c2 = f(d.relativeLuminance2(o2, a2, h3), d.relativeLuminance2(s3, r2, n2));
+            return (o2 << 24 | a2 << 16 | h3 << 8 | 255) >>> 0;
           }
           e3.ensureContrastRatio = function(e4, s3, r2) {
             const n2 = d.relativeLuminance(e4 >> 8), o2 = d.relativeLuminance(s3 >> 8);
@@ -2413,24 +2413,24 @@ WARNING: This link could potentially be dangerous`)) {
                 }
                 return o3;
               }
-              const a2 = i3(e4, s3, r2), h2 = f(n2, d.relativeLuminance(a2 >> 8));
-              if (h2 < r2) {
+              const a2 = i3(e4, s3, r2), h3 = f(n2, d.relativeLuminance(a2 >> 8));
+              if (h3 < r2) {
                 const i4 = t3(e4, s3, r2);
-                return h2 > f(n2, d.relativeLuminance(i4 >> 8)) ? a2 : i4;
+                return h3 > f(n2, d.relativeLuminance(i4 >> 8)) ? a2 : i4;
               }
               return a2;
             }
           }, e3.reduceLuminance = t3, e3.increaseLuminance = i3, e3.toChannels = function(e4) {
             return [e4 >> 24 & 255, e4 >> 16 & 255, e4 >> 8 & 255, 255 & e4];
           }, e3.toColor = function(e4, t4, i4, s3) {
-            return { css: h.toCss(e4, t4, i4, s3), rgba: h.toRgba(e4, t4, i4, s3) };
+            return { css: h2.toCss(e4, t4, i4, s3), rgba: h2.toRgba(e4, t4, i4, s3) };
           };
         })(_ || (t2.rgba = _ = {})), t2.toPaddedHex = u, t2.contrastRatio = f;
       }, 8969: (e2, t2, i2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.CoreTerminal = void 0;
-        const s2 = i2(844), r = i2(2585), n = i2(4348), o = i2(7866), a = i2(744), h = i2(7302), c = i2(6975), l = i2(8460), d = i2(1753), _ = i2(1480), u = i2(7994), f = i2(9282), v = i2(5435), p = i2(5981), g = i2(2660);
-        let m = false;
-        class S extends s2.Disposable {
+        const s2 = i2(844), r = i2(2585), n = i2(4348), o = i2(7866), a = i2(744), h2 = i2(7302), c = i2(6975), l = i2(8460), d = i2(1753), _ = i2(1480), u = i2(7994), f = i2(9282), v2 = i2(5435), p = i2(5981), g2 = i2(2660);
+        let m2 = false;
+        class S2 extends s2.Disposable {
           get onScroll() {
             return this._onScrollApi || (this._onScrollApi = this.register(new l.EventEmitter()), this._onScroll.event(((e3) => {
               var t3;
@@ -2453,7 +2453,7 @@ WARNING: This link could potentially be dangerous`)) {
             for (const t3 in e3) this.optionsService.options[t3] = e3[t3];
           }
           constructor(e3) {
-            super(), this._windowsWrappingHeuristics = this.register(new s2.MutableDisposable()), this._onBinary = this.register(new l.EventEmitter()), this.onBinary = this._onBinary.event, this._onData = this.register(new l.EventEmitter()), this.onData = this._onData.event, this._onLineFeed = this.register(new l.EventEmitter()), this.onLineFeed = this._onLineFeed.event, this._onResize = this.register(new l.EventEmitter()), this.onResize = this._onResize.event, this._onWriteParsed = this.register(new l.EventEmitter()), this.onWriteParsed = this._onWriteParsed.event, this._onScroll = this.register(new l.EventEmitter()), this._instantiationService = new n.InstantiationService(), this.optionsService = this.register(new h.OptionsService(e3)), this._instantiationService.setService(r.IOptionsService, this.optionsService), this._bufferService = this.register(this._instantiationService.createInstance(a.BufferService)), this._instantiationService.setService(r.IBufferService, this._bufferService), this._logService = this.register(this._instantiationService.createInstance(o.LogService)), this._instantiationService.setService(r.ILogService, this._logService), this.coreService = this.register(this._instantiationService.createInstance(c.CoreService)), this._instantiationService.setService(r.ICoreService, this.coreService), this.coreMouseService = this.register(this._instantiationService.createInstance(d.CoreMouseService)), this._instantiationService.setService(r.ICoreMouseService, this.coreMouseService), this.unicodeService = this.register(this._instantiationService.createInstance(_.UnicodeService)), this._instantiationService.setService(r.IUnicodeService, this.unicodeService), this._charsetService = this._instantiationService.createInstance(u.CharsetService), this._instantiationService.setService(r.ICharsetService, this._charsetService), this._oscLinkService = this._instantiationService.createInstance(g.OscLinkService), this._instantiationService.setService(r.IOscLinkService, this._oscLinkService), this._inputHandler = this.register(new v.InputHandler(this._bufferService, this._charsetService, this.coreService, this._logService, this.optionsService, this._oscLinkService, this.coreMouseService, this.unicodeService)), this.register((0, l.forwardEvent)(this._inputHandler.onLineFeed, this._onLineFeed)), this.register(this._inputHandler), this.register((0, l.forwardEvent)(this._bufferService.onResize, this._onResize)), this.register((0, l.forwardEvent)(this.coreService.onData, this._onData)), this.register((0, l.forwardEvent)(this.coreService.onBinary, this._onBinary)), this.register(this.coreService.onRequestScrollToBottom((() => this.scrollToBottom()))), this.register(this.coreService.onUserInput((() => this._writeBuffer.handleUserInput()))), this.register(this.optionsService.onMultipleOptionChange(["windowsMode", "windowsPty"], (() => this._handleWindowsPtyOptionChange()))), this.register(this._bufferService.onScroll(((e4) => {
+            super(), this._windowsWrappingHeuristics = this.register(new s2.MutableDisposable()), this._onBinary = this.register(new l.EventEmitter()), this.onBinary = this._onBinary.event, this._onData = this.register(new l.EventEmitter()), this.onData = this._onData.event, this._onLineFeed = this.register(new l.EventEmitter()), this.onLineFeed = this._onLineFeed.event, this._onResize = this.register(new l.EventEmitter()), this.onResize = this._onResize.event, this._onWriteParsed = this.register(new l.EventEmitter()), this.onWriteParsed = this._onWriteParsed.event, this._onScroll = this.register(new l.EventEmitter()), this._instantiationService = new n.InstantiationService(), this.optionsService = this.register(new h2.OptionsService(e3)), this._instantiationService.setService(r.IOptionsService, this.optionsService), this._bufferService = this.register(this._instantiationService.createInstance(a.BufferService)), this._instantiationService.setService(r.IBufferService, this._bufferService), this._logService = this.register(this._instantiationService.createInstance(o.LogService)), this._instantiationService.setService(r.ILogService, this._logService), this.coreService = this.register(this._instantiationService.createInstance(c.CoreService)), this._instantiationService.setService(r.ICoreService, this.coreService), this.coreMouseService = this.register(this._instantiationService.createInstance(d.CoreMouseService)), this._instantiationService.setService(r.ICoreMouseService, this.coreMouseService), this.unicodeService = this.register(this._instantiationService.createInstance(_.UnicodeService)), this._instantiationService.setService(r.IUnicodeService, this.unicodeService), this._charsetService = this._instantiationService.createInstance(u.CharsetService), this._instantiationService.setService(r.ICharsetService, this._charsetService), this._oscLinkService = this._instantiationService.createInstance(g2.OscLinkService), this._instantiationService.setService(r.IOscLinkService, this._oscLinkService), this._inputHandler = this.register(new v2.InputHandler(this._bufferService, this._charsetService, this.coreService, this._logService, this.optionsService, this._oscLinkService, this.coreMouseService, this.unicodeService)), this.register((0, l.forwardEvent)(this._inputHandler.onLineFeed, this._onLineFeed)), this.register(this._inputHandler), this.register((0, l.forwardEvent)(this._bufferService.onResize, this._onResize)), this.register((0, l.forwardEvent)(this.coreService.onData, this._onData)), this.register((0, l.forwardEvent)(this.coreService.onBinary, this._onBinary)), this.register(this.coreService.onRequestScrollToBottom((() => this.scrollToBottom()))), this.register(this.coreService.onUserInput((() => this._writeBuffer.handleUserInput()))), this.register(this.optionsService.onMultipleOptionChange(["windowsMode", "windowsPty"], (() => this._handleWindowsPtyOptionChange()))), this.register(this._bufferService.onScroll(((e4) => {
               this._onScroll.fire({ position: this._bufferService.buffer.ydisp, source: 0 }), this._inputHandler.markRangeDirty(this._bufferService.buffer.scrollTop, this._bufferService.buffer.scrollBottom);
             }))), this.register(this._inputHandler.onScroll(((e4) => {
               this._onScroll.fire({ position: this._bufferService.buffer.ydisp, source: 0 }), this._inputHandler.markRangeDirty(this._bufferService.buffer.scrollTop, this._bufferService.buffer.scrollBottom);
@@ -2463,7 +2463,7 @@ WARNING: This link could potentially be dangerous`)) {
             this._writeBuffer.write(e3, t3);
           }
           writeSync(e3, t3) {
-            this._logService.logLevel <= r.LogLevelEnum.WARN && !m && (this._logService.warn("writeSync is unreliable and will be removed soon."), m = true), this._writeBuffer.writeSync(e3, t3);
+            this._logService.logLevel <= r.LogLevelEnum.WARN && !m2 && (this._logService.warn("writeSync is unreliable and will be removed soon."), m2 = true), this._writeBuffer.writeSync(e3, t3);
           }
           resize(e3, t3) {
             isNaN(e3) || isNaN(t3) || (e3 = Math.max(e3, a.MINIMUM_COLS), t3 = Math.max(t3, a.MINIMUM_ROWS), this._bufferService.resize(e3, t3));
@@ -2519,7 +2519,7 @@ WARNING: This link could potentially be dangerous`)) {
             }
           }
         }
-        t2.CoreTerminal = S;
+        t2.CoreTerminal = S2;
       }, 8460: (e2, t2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.forwardEvent = t2.EventEmitter = void 0, t2.EventEmitter = class {
           constructor() {
@@ -2558,7 +2558,7 @@ WARNING: This link could potentially be dangerous`)) {
           };
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.InputHandler = t2.WindowsOptionsReportType = void 0;
-        const n = i2(2584), o = i2(7116), a = i2(2015), h = i2(844), c = i2(482), l = i2(8437), d = i2(8460), _ = i2(643), u = i2(511), f = i2(3734), v = i2(2585), p = i2(6242), g = i2(6351), m = i2(5941), S = { "(": 0, ")": 1, "*": 2, "+": 3, "-": 1, ".": 2 }, C = 131072;
+        const n = i2(2584), o = i2(7116), a = i2(2015), h2 = i2(844), c = i2(482), l = i2(8437), d = i2(8460), _ = i2(643), u = i2(511), f = i2(3734), v2 = i2(2585), p = i2(6242), g2 = i2(6351), m2 = i2(5941), S2 = { "(": 0, ")": 1, "*": 2, "+": 3, "-": 1, ".": 2 }, C = 131072;
         function b(e3, t3) {
           if (e3 > 24) return t3.setWinLines || false;
           switch (e3) {
@@ -2609,17 +2609,17 @@ WARNING: This link could potentially be dangerous`)) {
           }
           return false;
         }
-        var y;
+        var y2;
         !(function(e3) {
           e3[e3.GET_WIN_SIZE_PIXELS = 0] = "GET_WIN_SIZE_PIXELS", e3[e3.GET_CELL_SIZE_PIXELS = 1] = "GET_CELL_SIZE_PIXELS";
-        })(y || (t2.WindowsOptionsReportType = y = {}));
-        let w = 0;
-        class E extends h.Disposable {
+        })(y2 || (t2.WindowsOptionsReportType = y2 = {}));
+        let w2 = 0;
+        class E extends h2.Disposable {
           getAttrData() {
             return this._curAttrData;
           }
-          constructor(e3, t3, i3, s3, r2, h2, _2, f2, v2 = new a.EscapeSequenceParser()) {
-            super(), this._bufferService = e3, this._charsetService = t3, this._coreService = i3, this._logService = s3, this._optionsService = r2, this._oscLinkService = h2, this._coreMouseService = _2, this._unicodeService = f2, this._parser = v2, this._parseBuffer = new Uint32Array(4096), this._stringDecoder = new c.StringToUtf32(), this._utf8Decoder = new c.Utf8ToUtf32(), this._workCell = new u.CellData(), this._windowTitle = "", this._iconName = "", this._windowTitleStack = [], this._iconNameStack = [], this._curAttrData = l.DEFAULT_ATTR_DATA.clone(), this._eraseAttrDataInternal = l.DEFAULT_ATTR_DATA.clone(), this._onRequestBell = this.register(new d.EventEmitter()), this.onRequestBell = this._onRequestBell.event, this._onRequestRefreshRows = this.register(new d.EventEmitter()), this.onRequestRefreshRows = this._onRequestRefreshRows.event, this._onRequestReset = this.register(new d.EventEmitter()), this.onRequestReset = this._onRequestReset.event, this._onRequestSendFocus = this.register(new d.EventEmitter()), this.onRequestSendFocus = this._onRequestSendFocus.event, this._onRequestSyncScrollBar = this.register(new d.EventEmitter()), this.onRequestSyncScrollBar = this._onRequestSyncScrollBar.event, this._onRequestWindowsOptionsReport = this.register(new d.EventEmitter()), this.onRequestWindowsOptionsReport = this._onRequestWindowsOptionsReport.event, this._onA11yChar = this.register(new d.EventEmitter()), this.onA11yChar = this._onA11yChar.event, this._onA11yTab = this.register(new d.EventEmitter()), this.onA11yTab = this._onA11yTab.event, this._onCursorMove = this.register(new d.EventEmitter()), this.onCursorMove = this._onCursorMove.event, this._onLineFeed = this.register(new d.EventEmitter()), this.onLineFeed = this._onLineFeed.event, this._onScroll = this.register(new d.EventEmitter()), this.onScroll = this._onScroll.event, this._onTitleChange = this.register(new d.EventEmitter()), this.onTitleChange = this._onTitleChange.event, this._onColor = this.register(new d.EventEmitter()), this.onColor = this._onColor.event, this._parseStack = { paused: false, cursorStartX: 0, cursorStartY: 0, decodedLength: 0, position: 0 }, this._specialColors = [256, 257, 258], this.register(this._parser), this._dirtyRowTracker = new k(this._bufferService), this._activeBuffer = this._bufferService.buffer, this.register(this._bufferService.buffers.onBufferActivate(((e4) => this._activeBuffer = e4.activeBuffer))), this._parser.setCsiHandlerFallback(((e4, t4) => {
+          constructor(e3, t3, i3, s3, r2, h3, _2, f2, v3 = new a.EscapeSequenceParser()) {
+            super(), this._bufferService = e3, this._charsetService = t3, this._coreService = i3, this._logService = s3, this._optionsService = r2, this._oscLinkService = h3, this._coreMouseService = _2, this._unicodeService = f2, this._parser = v3, this._parseBuffer = new Uint32Array(4096), this._stringDecoder = new c.StringToUtf32(), this._utf8Decoder = new c.Utf8ToUtf32(), this._workCell = new u.CellData(), this._windowTitle = "", this._iconName = "", this._windowTitleStack = [], this._iconNameStack = [], this._curAttrData = l.DEFAULT_ATTR_DATA.clone(), this._eraseAttrDataInternal = l.DEFAULT_ATTR_DATA.clone(), this._onRequestBell = this.register(new d.EventEmitter()), this.onRequestBell = this._onRequestBell.event, this._onRequestRefreshRows = this.register(new d.EventEmitter()), this.onRequestRefreshRows = this._onRequestRefreshRows.event, this._onRequestReset = this.register(new d.EventEmitter()), this.onRequestReset = this._onRequestReset.event, this._onRequestSendFocus = this.register(new d.EventEmitter()), this.onRequestSendFocus = this._onRequestSendFocus.event, this._onRequestSyncScrollBar = this.register(new d.EventEmitter()), this.onRequestSyncScrollBar = this._onRequestSyncScrollBar.event, this._onRequestWindowsOptionsReport = this.register(new d.EventEmitter()), this.onRequestWindowsOptionsReport = this._onRequestWindowsOptionsReport.event, this._onA11yChar = this.register(new d.EventEmitter()), this.onA11yChar = this._onA11yChar.event, this._onA11yTab = this.register(new d.EventEmitter()), this.onA11yTab = this._onA11yTab.event, this._onCursorMove = this.register(new d.EventEmitter()), this.onCursorMove = this._onCursorMove.event, this._onLineFeed = this.register(new d.EventEmitter()), this.onLineFeed = this._onLineFeed.event, this._onScroll = this.register(new d.EventEmitter()), this.onScroll = this._onScroll.event, this._onTitleChange = this.register(new d.EventEmitter()), this.onTitleChange = this._onTitleChange.event, this._onColor = this.register(new d.EventEmitter()), this.onColor = this._onColor.event, this._parseStack = { paused: false, cursorStartX: 0, cursorStartY: 0, decodedLength: 0, position: 0 }, this._specialColors = [256, 257, 258], this.register(this._parser), this._dirtyRowTracker = new k2(this._bufferService), this._activeBuffer = this._bufferService.buffer, this.register(this._bufferService.buffers.onBufferActivate(((e4) => this._activeBuffer = e4.activeBuffer))), this._parser.setCsiHandlerFallback(((e4, t4) => {
               this._logService.debug("Unknown CSI code: ", { identifier: this._parser.identToString(e4), params: t4.toArray() });
             })), this._parser.setEscHandlerFallback(((e4) => {
               this._logService.debug("Unknown ESC code: ", { identifier: this._parser.identToString(e4) });
@@ -2631,13 +2631,13 @@ WARNING: This link could potentially be dangerous`)) {
               "HOOK" === t4 && (i4 = i4.toArray()), this._logService.debug("Unknown DCS code: ", { identifier: this._parser.identToString(e4), action: t4, payload: i4 });
             })), this._parser.setPrintHandler(((e4, t4, i4) => this.print(e4, t4, i4))), this._parser.registerCsiHandler({ final: "@" }, ((e4) => this.insertChars(e4))), this._parser.registerCsiHandler({ intermediates: " ", final: "@" }, ((e4) => this.scrollLeft(e4))), this._parser.registerCsiHandler({ final: "A" }, ((e4) => this.cursorUp(e4))), this._parser.registerCsiHandler({ intermediates: " ", final: "A" }, ((e4) => this.scrollRight(e4))), this._parser.registerCsiHandler({ final: "B" }, ((e4) => this.cursorDown(e4))), this._parser.registerCsiHandler({ final: "C" }, ((e4) => this.cursorForward(e4))), this._parser.registerCsiHandler({ final: "D" }, ((e4) => this.cursorBackward(e4))), this._parser.registerCsiHandler({ final: "E" }, ((e4) => this.cursorNextLine(e4))), this._parser.registerCsiHandler({ final: "F" }, ((e4) => this.cursorPrecedingLine(e4))), this._parser.registerCsiHandler({ final: "G" }, ((e4) => this.cursorCharAbsolute(e4))), this._parser.registerCsiHandler({ final: "H" }, ((e4) => this.cursorPosition(e4))), this._parser.registerCsiHandler({ final: "I" }, ((e4) => this.cursorForwardTab(e4))), this._parser.registerCsiHandler({ final: "J" }, ((e4) => this.eraseInDisplay(e4, false))), this._parser.registerCsiHandler({ prefix: "?", final: "J" }, ((e4) => this.eraseInDisplay(e4, true))), this._parser.registerCsiHandler({ final: "K" }, ((e4) => this.eraseInLine(e4, false))), this._parser.registerCsiHandler({ prefix: "?", final: "K" }, ((e4) => this.eraseInLine(e4, true))), this._parser.registerCsiHandler({ final: "L" }, ((e4) => this.insertLines(e4))), this._parser.registerCsiHandler({ final: "M" }, ((e4) => this.deleteLines(e4))), this._parser.registerCsiHandler({ final: "P" }, ((e4) => this.deleteChars(e4))), this._parser.registerCsiHandler({ final: "S" }, ((e4) => this.scrollUp(e4))), this._parser.registerCsiHandler({ final: "T" }, ((e4) => this.scrollDown(e4))), this._parser.registerCsiHandler({ final: "X" }, ((e4) => this.eraseChars(e4))), this._parser.registerCsiHandler({ final: "Z" }, ((e4) => this.cursorBackwardTab(e4))), this._parser.registerCsiHandler({ final: "`" }, ((e4) => this.charPosAbsolute(e4))), this._parser.registerCsiHandler({ final: "a" }, ((e4) => this.hPositionRelative(e4))), this._parser.registerCsiHandler({ final: "b" }, ((e4) => this.repeatPrecedingCharacter(e4))), this._parser.registerCsiHandler({ final: "c" }, ((e4) => this.sendDeviceAttributesPrimary(e4))), this._parser.registerCsiHandler({ prefix: ">", final: "c" }, ((e4) => this.sendDeviceAttributesSecondary(e4))), this._parser.registerCsiHandler({ final: "d" }, ((e4) => this.linePosAbsolute(e4))), this._parser.registerCsiHandler({ final: "e" }, ((e4) => this.vPositionRelative(e4))), this._parser.registerCsiHandler({ final: "f" }, ((e4) => this.hVPosition(e4))), this._parser.registerCsiHandler({ final: "g" }, ((e4) => this.tabClear(e4))), this._parser.registerCsiHandler({ final: "h" }, ((e4) => this.setMode(e4))), this._parser.registerCsiHandler({ prefix: "?", final: "h" }, ((e4) => this.setModePrivate(e4))), this._parser.registerCsiHandler({ final: "l" }, ((e4) => this.resetMode(e4))), this._parser.registerCsiHandler({ prefix: "?", final: "l" }, ((e4) => this.resetModePrivate(e4))), this._parser.registerCsiHandler({ final: "m" }, ((e4) => this.charAttributes(e4))), this._parser.registerCsiHandler({ final: "n" }, ((e4) => this.deviceStatus(e4))), this._parser.registerCsiHandler({ prefix: "?", final: "n" }, ((e4) => this.deviceStatusPrivate(e4))), this._parser.registerCsiHandler({ intermediates: "!", final: "p" }, ((e4) => this.softReset(e4))), this._parser.registerCsiHandler({ intermediates: " ", final: "q" }, ((e4) => this.setCursorStyle(e4))), this._parser.registerCsiHandler({ final: "r" }, ((e4) => this.setScrollRegion(e4))), this._parser.registerCsiHandler({ final: "s" }, ((e4) => this.saveCursor(e4))), this._parser.registerCsiHandler({ final: "t" }, ((e4) => this.windowOptions(e4))), this._parser.registerCsiHandler({ final: "u" }, ((e4) => this.restoreCursor(e4))), this._parser.registerCsiHandler({ intermediates: "'", final: "}" }, ((e4) => this.insertColumns(e4))), this._parser.registerCsiHandler({ intermediates: "'", final: "~" }, ((e4) => this.deleteColumns(e4))), this._parser.registerCsiHandler({ intermediates: '"', final: "q" }, ((e4) => this.selectProtected(e4))), this._parser.registerCsiHandler({ intermediates: "$", final: "p" }, ((e4) => this.requestMode(e4, true))), this._parser.registerCsiHandler({ prefix: "?", intermediates: "$", final: "p" }, ((e4) => this.requestMode(e4, false))), this._parser.setExecuteHandler(n.C0.BEL, (() => this.bell())), this._parser.setExecuteHandler(n.C0.LF, (() => this.lineFeed())), this._parser.setExecuteHandler(n.C0.VT, (() => this.lineFeed())), this._parser.setExecuteHandler(n.C0.FF, (() => this.lineFeed())), this._parser.setExecuteHandler(n.C0.CR, (() => this.carriageReturn())), this._parser.setExecuteHandler(n.C0.BS, (() => this.backspace())), this._parser.setExecuteHandler(n.C0.HT, (() => this.tab())), this._parser.setExecuteHandler(n.C0.SO, (() => this.shiftOut())), this._parser.setExecuteHandler(n.C0.SI, (() => this.shiftIn())), this._parser.setExecuteHandler(n.C1.IND, (() => this.index())), this._parser.setExecuteHandler(n.C1.NEL, (() => this.nextLine())), this._parser.setExecuteHandler(n.C1.HTS, (() => this.tabSet())), this._parser.registerOscHandler(0, new p.OscHandler(((e4) => (this.setTitle(e4), this.setIconName(e4), true)))), this._parser.registerOscHandler(1, new p.OscHandler(((e4) => this.setIconName(e4)))), this._parser.registerOscHandler(2, new p.OscHandler(((e4) => this.setTitle(e4)))), this._parser.registerOscHandler(4, new p.OscHandler(((e4) => this.setOrReportIndexedColor(e4)))), this._parser.registerOscHandler(8, new p.OscHandler(((e4) => this.setHyperlink(e4)))), this._parser.registerOscHandler(10, new p.OscHandler(((e4) => this.setOrReportFgColor(e4)))), this._parser.registerOscHandler(11, new p.OscHandler(((e4) => this.setOrReportBgColor(e4)))), this._parser.registerOscHandler(12, new p.OscHandler(((e4) => this.setOrReportCursorColor(e4)))), this._parser.registerOscHandler(104, new p.OscHandler(((e4) => this.restoreIndexedColor(e4)))), this._parser.registerOscHandler(110, new p.OscHandler(((e4) => this.restoreFgColor(e4)))), this._parser.registerOscHandler(111, new p.OscHandler(((e4) => this.restoreBgColor(e4)))), this._parser.registerOscHandler(112, new p.OscHandler(((e4) => this.restoreCursorColor(e4)))), this._parser.registerEscHandler({ final: "7" }, (() => this.saveCursor())), this._parser.registerEscHandler({ final: "8" }, (() => this.restoreCursor())), this._parser.registerEscHandler({ final: "D" }, (() => this.index())), this._parser.registerEscHandler({ final: "E" }, (() => this.nextLine())), this._parser.registerEscHandler({ final: "H" }, (() => this.tabSet())), this._parser.registerEscHandler({ final: "M" }, (() => this.reverseIndex())), this._parser.registerEscHandler({ final: "=" }, (() => this.keypadApplicationMode())), this._parser.registerEscHandler({ final: ">" }, (() => this.keypadNumericMode())), this._parser.registerEscHandler({ final: "c" }, (() => this.fullReset())), this._parser.registerEscHandler({ final: "n" }, (() => this.setgLevel(2))), this._parser.registerEscHandler({ final: "o" }, (() => this.setgLevel(3))), this._parser.registerEscHandler({ final: "|" }, (() => this.setgLevel(3))), this._parser.registerEscHandler({ final: "}" }, (() => this.setgLevel(2))), this._parser.registerEscHandler({ final: "~" }, (() => this.setgLevel(1))), this._parser.registerEscHandler({ intermediates: "%", final: "@" }, (() => this.selectDefaultCharset())), this._parser.registerEscHandler({ intermediates: "%", final: "G" }, (() => this.selectDefaultCharset()));
             for (const e4 in o.CHARSETS) this._parser.registerEscHandler({ intermediates: "(", final: e4 }, (() => this.selectCharset("(" + e4))), this._parser.registerEscHandler({ intermediates: ")", final: e4 }, (() => this.selectCharset(")" + e4))), this._parser.registerEscHandler({ intermediates: "*", final: e4 }, (() => this.selectCharset("*" + e4))), this._parser.registerEscHandler({ intermediates: "+", final: e4 }, (() => this.selectCharset("+" + e4))), this._parser.registerEscHandler({ intermediates: "-", final: e4 }, (() => this.selectCharset("-" + e4))), this._parser.registerEscHandler({ intermediates: ".", final: e4 }, (() => this.selectCharset("." + e4))), this._parser.registerEscHandler({ intermediates: "/", final: e4 }, (() => this.selectCharset("/" + e4)));
-            this._parser.registerEscHandler({ intermediates: "#", final: "8" }, (() => this.screenAlignmentPattern())), this._parser.setErrorHandler(((e4) => (this._logService.error("Parsing error: ", e4), e4))), this._parser.registerDcsHandler({ intermediates: "$", final: "q" }, new g.DcsHandler(((e4, t4) => this.requestStatusString(e4, t4))));
+            this._parser.registerEscHandler({ intermediates: "#", final: "8" }, (() => this.screenAlignmentPattern())), this._parser.setErrorHandler(((e4) => (this._logService.error("Parsing error: ", e4), e4))), this._parser.registerDcsHandler({ intermediates: "$", final: "q" }, new g2.DcsHandler(((e4, t4) => this.requestStatusString(e4, t4))));
           }
           _preserveStack(e3, t3, i3, s3) {
             this._parseStack.paused = true, this._parseStack.cursorStartX = e3, this._parseStack.cursorStartY = t3, this._parseStack.decodedLength = i3, this._parseStack.position = s3;
           }
           _logSlowResolvingAsync(e3) {
-            this._logService.logLevel <= v.LogLevelEnum.WARN && Promise.race([e3, new Promise(((e4, t3) => setTimeout((() => t3("#SLOW_TIMEOUT")), 5e3)))]).catch(((e4) => {
+            this._logService.logLevel <= v2.LogLevelEnum.WARN && Promise.race([e3, new Promise(((e4, t3) => setTimeout((() => t3("#SLOW_TIMEOUT")), 5e3)))]).catch(((e4) => {
               if ("#SLOW_TIMEOUT" !== e4) throw e4;
               console.warn("async parser handler taking longer than 5000 ms");
             }));
@@ -2652,7 +2652,7 @@ WARNING: This link could potentially be dangerous`)) {
               if (i3 = this._parser.parse(this._parseBuffer, this._parseStack.decodedLength, t3)) return this._logSlowResolvingAsync(i3), i3;
               s3 = this._parseStack.cursorStartX, r2 = this._parseStack.cursorStartY, this._parseStack.paused = false, e3.length > C && (n2 = this._parseStack.position + C);
             }
-            if (this._logService.logLevel <= v.LogLevelEnum.DEBUG && this._logService.debug("parsing data" + ("string" == typeof e3 ? ` "${e3}"` : ` "${Array.prototype.map.call(e3, ((e4) => String.fromCharCode(e4))).join("")}"`), "string" == typeof e3 ? e3.split("").map(((e4) => e4.charCodeAt(0))) : e3), this._parseBuffer.length < e3.length && this._parseBuffer.length < C && (this._parseBuffer = new Uint32Array(Math.min(e3.length, C))), o2 || this._dirtyRowTracker.clearRange(), e3.length > C) for (let t4 = n2; t4 < e3.length; t4 += C) {
+            if (this._logService.logLevel <= v2.LogLevelEnum.DEBUG && this._logService.debug("parsing data" + ("string" == typeof e3 ? ` "${e3}"` : ` "${Array.prototype.map.call(e3, ((e4) => String.fromCharCode(e4))).join("")}"`), "string" == typeof e3 ? e3.split("").map(((e4) => e4.charCodeAt(0))) : e3), this._parseBuffer.length < e3.length && this._parseBuffer.length < C && (this._parseBuffer = new Uint32Array(Math.min(e3.length, C))), o2 || this._dirtyRowTracker.clearRange(), e3.length > C) for (let t4 = n2; t4 < e3.length; t4 += C) {
               const n3 = t4 + C < e3.length ? t4 + C : e3.length, o3 = "string" == typeof e3 ? this._stringDecoder.decode(e3.substring(t4, n3), this._parseBuffer) : this._utf8Decoder.decode(e3.subarray(t4, n3), this._parseBuffer);
               if (i3 = this._parser.parse(this._parseBuffer, o3)) return this._preserveStack(s3, r2, o3, t4), this._logSlowResolvingAsync(i3), i3;
             }
@@ -2664,7 +2664,7 @@ WARNING: This link could potentially be dangerous`)) {
           }
           print(e3, t3, i3) {
             let s3, r2;
-            const n2 = this._charsetService.charset, o2 = this._optionsService.rawOptions.screenReaderMode, a2 = this._bufferService.cols, h2 = this._coreService.decPrivateModes.wraparound, l2 = this._coreService.modes.insertMode, d2 = this._curAttrData;
+            const n2 = this._charsetService.charset, o2 = this._optionsService.rawOptions.screenReaderMode, a2 = this._bufferService.cols, h3 = this._coreService.decPrivateModes.wraparound, l2 = this._coreService.modes.insertMode, d2 = this._curAttrData;
             let u2 = this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y);
             this._dirtyRowTracker.markDirty(this._activeBuffer.y), this._activeBuffer.x && i3 - t3 > 0 && 2 === u2.getWidth(this._activeBuffer.x - 1) && u2.setCellFromCodePoint(this._activeBuffer.x - 1, 0, 1, d2.fg, d2.bg, d2.extended);
             for (let f2 = t3; f2 < i3; ++f2) {
@@ -2674,7 +2674,7 @@ WARNING: This link could potentially be dangerous`)) {
               }
               if (o2 && this._onA11yChar.fire((0, c.stringFromCodePoint)(s3)), this._getCurrentLinkId() && this._oscLinkService.addLineToLink(this._getCurrentLinkId(), this._activeBuffer.ybase + this._activeBuffer.y), r2 || !this._activeBuffer.x) {
                 if (this._activeBuffer.x + r2 - 1 >= a2) {
-                  if (h2) {
+                  if (h3) {
                     for (; this._activeBuffer.x < a2; ) u2.setCellFromCodePoint(this._activeBuffer.x++, 0, 1, d2.fg, d2.bg, d2.extended);
                     this._activeBuffer.x = 0, this._activeBuffer.y++, this._activeBuffer.y === this._activeBuffer.scrollBottom + 1 ? (this._activeBuffer.y--, this._bufferService.scroll(this._eraseAttrData(), true)) : (this._activeBuffer.y >= this._bufferService.rows && (this._activeBuffer.y = this._bufferService.rows - 1), this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y).isWrapped = true), u2 = this._activeBuffer.lines.get(this._activeBuffer.ybase + this._activeBuffer.y);
                   } else if (this._activeBuffer.x = a2 - 1, 2 === r2) continue;
@@ -2688,7 +2688,7 @@ WARNING: This link could potentially be dangerous`)) {
             return "t" !== e3.final || e3.prefix || e3.intermediates ? this._parser.registerCsiHandler(e3, t3) : this._parser.registerCsiHandler(e3, ((e4) => !b(e4.params[0], this._optionsService.rawOptions.windowOptions) || t3(e4)));
           }
           registerDcsHandler(e3, t3) {
-            return this._parser.registerDcsHandler(e3, new g.DcsHandler(t3));
+            return this._parser.registerDcsHandler(e3, new g2.DcsHandler(t3));
           }
           registerEscHandler(e3, t3) {
             return this._parser.registerEscHandler(e3, t3);
@@ -3081,9 +3081,9 @@ WARNING: This link could potentially be dangerous`)) {
             return true;
           }
           requestMode(e3, t3) {
-            const i3 = this._coreService.decPrivateModes, { activeProtocol: s3, activeEncoding: r2 } = this._coreMouseService, o2 = this._coreService, { buffers: a2, cols: h2 } = this._bufferService, { active: c2, alt: l2 } = a2, d2 = this._optionsService.rawOptions, _2 = (e4) => e4 ? 1 : 2, u2 = e3.params[0];
-            return f2 = u2, v2 = t3 ? 2 === u2 ? 4 : 4 === u2 ? _2(o2.modes.insertMode) : 12 === u2 ? 3 : 20 === u2 ? _2(d2.convertEol) : 0 : 1 === u2 ? _2(i3.applicationCursorKeys) : 3 === u2 ? d2.windowOptions.setWinLines ? 80 === h2 ? 2 : 132 === h2 ? 1 : 0 : 0 : 6 === u2 ? _2(i3.origin) : 7 === u2 ? _2(i3.wraparound) : 8 === u2 ? 3 : 9 === u2 ? _2("X10" === s3) : 12 === u2 ? _2(d2.cursorBlink) : 25 === u2 ? _2(!o2.isCursorHidden) : 45 === u2 ? _2(i3.reverseWraparound) : 66 === u2 ? _2(i3.applicationKeypad) : 67 === u2 ? 4 : 1e3 === u2 ? _2("VT200" === s3) : 1002 === u2 ? _2("DRAG" === s3) : 1003 === u2 ? _2("ANY" === s3) : 1004 === u2 ? _2(i3.sendFocus) : 1005 === u2 ? 4 : 1006 === u2 ? _2("SGR" === r2) : 1015 === u2 ? 4 : 1016 === u2 ? _2("SGR_PIXELS" === r2) : 1048 === u2 ? 1 : 47 === u2 || 1047 === u2 || 1049 === u2 ? _2(c2 === l2) : 2004 === u2 ? _2(i3.bracketedPasteMode) : 0, o2.triggerDataEvent(`${n.C0.ESC}[${t3 ? "" : "?"}${f2};${v2}$y`), true;
-            var f2, v2;
+            const i3 = this._coreService.decPrivateModes, { activeProtocol: s3, activeEncoding: r2 } = this._coreMouseService, o2 = this._coreService, { buffers: a2, cols: h3 } = this._bufferService, { active: c2, alt: l2 } = a2, d2 = this._optionsService.rawOptions, _2 = (e4) => e4 ? 1 : 2, u2 = e3.params[0];
+            return f2 = u2, v3 = t3 ? 2 === u2 ? 4 : 4 === u2 ? _2(o2.modes.insertMode) : 12 === u2 ? 3 : 20 === u2 ? _2(d2.convertEol) : 0 : 1 === u2 ? _2(i3.applicationCursorKeys) : 3 === u2 ? d2.windowOptions.setWinLines ? 80 === h3 ? 2 : 132 === h3 ? 1 : 0 : 0 : 6 === u2 ? _2(i3.origin) : 7 === u2 ? _2(i3.wraparound) : 8 === u2 ? 3 : 9 === u2 ? _2("X10" === s3) : 12 === u2 ? _2(d2.cursorBlink) : 25 === u2 ? _2(!o2.isCursorHidden) : 45 === u2 ? _2(i3.reverseWraparound) : 66 === u2 ? _2(i3.applicationKeypad) : 67 === u2 ? 4 : 1e3 === u2 ? _2("VT200" === s3) : 1002 === u2 ? _2("DRAG" === s3) : 1003 === u2 ? _2("ANY" === s3) : 1004 === u2 ? _2(i3.sendFocus) : 1005 === u2 ? 4 : 1006 === u2 ? _2("SGR" === r2) : 1015 === u2 ? 4 : 1016 === u2 ? _2("SGR_PIXELS" === r2) : 1048 === u2 ? 1 : 47 === u2 || 1047 === u2 || 1049 === u2 ? _2(c2 === l2) : 2004 === u2 ? _2(i3.bracketedPasteMode) : 0, o2.triggerDataEvent(`${n.C0.ESC}[${t3 ? "" : "?"}${f2};${v3}$y`), true;
+            var f2, v3;
           }
           _updateAttrColor(e3, t3, i3, s3, r2) {
             return 2 === t3 ? (e3 |= 50331648, e3 &= -16777216, e3 |= f.AttributeData.fromColorRGB([i3, s3, r2])) : 5 === t3 && (e3 &= -50331904, e3 |= 33554432 | 255 & i3), e3;
@@ -3179,10 +3179,10 @@ WARNING: This link could potentially be dangerous`)) {
             const t3 = e3.length > 1 ? e3.params[1] : 0;
             switch (e3.params[0]) {
               case 14:
-                2 !== t3 && this._onRequestWindowsOptionsReport.fire(y.GET_WIN_SIZE_PIXELS);
+                2 !== t3 && this._onRequestWindowsOptionsReport.fire(y2.GET_WIN_SIZE_PIXELS);
                 break;
               case 16:
-                this._onRequestWindowsOptionsReport.fire(y.GET_CELL_SIZE_PIXELS);
+                this._onRequestWindowsOptionsReport.fire(y2.GET_CELL_SIZE_PIXELS);
                 break;
               case 18:
                 this._bufferService && this._coreService.triggerDataEvent(`${n.C0.ESC}[8;${this._bufferService.rows};${this._bufferService.cols}t`);
@@ -3215,7 +3215,7 @@ WARNING: This link could potentially be dangerous`)) {
                 const i4 = parseInt(e4);
                 if (L(i4)) if ("?" === s3) t3.push({ type: 0, index: i4 });
                 else {
-                  const e5 = (0, m.parseColor)(s3);
+                  const e5 = (0, m2.parseColor)(s3);
                   e5 && t3.push({ type: 1, index: i4, color: e5 });
                 }
               }
@@ -3240,7 +3240,7 @@ WARNING: This link could potentially be dangerous`)) {
             const i3 = e3.split(";");
             for (let e4 = 0; e4 < i3.length && !(t3 >= this._specialColors.length); ++e4, ++t3) if ("?" === i3[e4]) this._onColor.fire([{ type: 0, index: this._specialColors[t3] }]);
             else {
-              const s3 = (0, m.parseColor)(i3[e4]);
+              const s3 = (0, m2.parseColor)(i3[e4]);
               s3 && this._onColor.fire([{ type: 1, index: this._specialColors[t3], color: s3 }]);
             }
             return true;
@@ -3285,7 +3285,7 @@ WARNING: This link could potentially be dangerous`)) {
             return this._charsetService.setgLevel(0), this._charsetService.setgCharset(0, o.DEFAULT_CHARSET), true;
           }
           selectCharset(e3) {
-            return 2 !== e3.length ? (this.selectDefaultCharset(), true) : ("/" === e3[0] || this._charsetService.setgCharset(S[e3[0]], o.CHARSETS[e3[1]] || o.DEFAULT_CHARSET), true);
+            return 2 !== e3.length ? (this.selectDefaultCharset(), true) : ("/" === e3[0] || this._charsetService.setgCharset(S2[e3[0]], o.CHARSETS[e3[1]] || o.DEFAULT_CHARSET), true);
           }
           index() {
             return this._restrictCursor(), this._activeBuffer.y++, this._activeBuffer.y === this._activeBuffer.scrollBottom + 1 ? (this._activeBuffer.y--, this._bufferService.scroll(this._eraseAttrData())) : this._activeBuffer.y >= this._bufferService.rows && (this._activeBuffer.y = this._bufferService.rows - 1), this._restrictCursor(), true;
@@ -3330,7 +3330,7 @@ WARNING: This link could potentially be dangerous`)) {
           }
         }
         t2.InputHandler = E;
-        let k = class {
+        let k2 = class {
           constructor(e3) {
             this._bufferService = e3, this.clearRange();
           }
@@ -3341,7 +3341,7 @@ WARNING: This link could potentially be dangerous`)) {
             e3 < this.start ? this.start = e3 : e3 > this.end && (this.end = e3);
           }
           markRangeDirty(e3, t3) {
-            e3 > t3 && (w = e3, e3 = t3, t3 = w), e3 < this.start && (this.start = e3), t3 > this.end && (this.end = t3);
+            e3 > t3 && (w2 = e3, e3 = t3, t3 = w2), e3 < this.start && (this.start = e3), t3 > this.end && (this.end = t3);
           }
           markAllDirty() {
             this.markRangeDirty(0, this._bufferService.rows - 1);
@@ -3350,7 +3350,7 @@ WARNING: This link could potentially be dangerous`)) {
         function L(e3) {
           return 0 <= e3 && e3 < 256;
         }
-        k = s2([r(0, v.IBufferService)], k);
+        k2 = s2([r(0, v2.IBufferService)], k2);
       }, 844: (e2, t2) => {
         function i2(e3) {
           for (const t3 of e3) t3.dispose();
@@ -3723,10 +3723,10 @@ WARNING: This link could potentially be dangerous`)) {
         t2.ExtendedAttrs = s2;
       }, 9092: (e2, t2, i2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.Buffer = t2.MAX_BUFFER_SIZE = void 0;
-        const s2 = i2(6349), r = i2(7226), n = i2(3734), o = i2(8437), a = i2(4634), h = i2(511), c = i2(643), l = i2(4863), d = i2(7116);
+        const s2 = i2(6349), r = i2(7226), n = i2(3734), o = i2(8437), a = i2(4634), h2 = i2(511), c = i2(643), l = i2(4863), d = i2(7116);
         t2.MAX_BUFFER_SIZE = 4294967295, t2.Buffer = class {
           constructor(e3, t3, i3) {
-            this._hasScrollback = e3, this._optionsService = t3, this._bufferService = i3, this.ydisp = 0, this.ybase = 0, this.y = 0, this.x = 0, this.tabs = {}, this.savedY = 0, this.savedX = 0, this.savedCurAttrData = o.DEFAULT_ATTR_DATA.clone(), this.savedCharset = d.DEFAULT_CHARSET, this.markers = [], this._nullCell = h.CellData.fromCharData([0, c.NULL_CELL_CHAR, c.NULL_CELL_WIDTH, c.NULL_CELL_CODE]), this._whitespaceCell = h.CellData.fromCharData([0, c.WHITESPACE_CELL_CHAR, c.WHITESPACE_CELL_WIDTH, c.WHITESPACE_CELL_CODE]), this._isClearing = false, this._memoryCleanupQueue = new r.IdleTaskQueue(), this._memoryCleanupPosition = 0, this._cols = this._bufferService.cols, this._rows = this._bufferService.rows, this.lines = new s2.CircularList(this._getCorrectBufferLength(this._rows)), this.scrollTop = 0, this.scrollBottom = this._rows - 1, this.setupTabStops();
+            this._hasScrollback = e3, this._optionsService = t3, this._bufferService = i3, this.ydisp = 0, this.ybase = 0, this.y = 0, this.x = 0, this.tabs = {}, this.savedY = 0, this.savedX = 0, this.savedCurAttrData = o.DEFAULT_ATTR_DATA.clone(), this.savedCharset = d.DEFAULT_CHARSET, this.markers = [], this._nullCell = h2.CellData.fromCharData([0, c.NULL_CELL_CHAR, c.NULL_CELL_WIDTH, c.NULL_CELL_CODE]), this._whitespaceCell = h2.CellData.fromCharData([0, c.WHITESPACE_CELL_CHAR, c.WHITESPACE_CELL_WIDTH, c.WHITESPACE_CELL_CODE]), this._isClearing = false, this._memoryCleanupQueue = new r.IdleTaskQueue(), this._memoryCleanupPosition = 0, this._cols = this._bufferService.cols, this._rows = this._bufferService.rows, this.lines = new s2.CircularList(this._getCorrectBufferLength(this._rows)), this.scrollTop = 0, this.scrollBottom = this._rows - 1, this.setupTabStops();
           }
           getNullCell(e3) {
             return e3 ? (this._nullCell.fg = e3.fg, this._nullCell.bg = e3.bg, this._nullCell.extended = e3.extended) : (this._nullCell.fg = 0, this._nullCell.bg = 0, this._nullCell.extended = new n.ExtendedAttrs()), this._nullCell;
@@ -3808,31 +3808,31 @@ WARNING: This link could potentially be dangerous`)) {
             const i3 = this.getNullCell(o.DEFAULT_ATTR_DATA), s3 = [];
             let r2 = 0;
             for (let n2 = this.lines.length - 1; n2 >= 0; n2--) {
-              let h2 = this.lines.get(n2);
-              if (!h2 || !h2.isWrapped && h2.getTrimmedLength() <= e3) continue;
-              const c2 = [h2];
-              for (; h2.isWrapped && n2 > 0; ) h2 = this.lines.get(--n2), c2.unshift(h2);
+              let h3 = this.lines.get(n2);
+              if (!h3 || !h3.isWrapped && h3.getTrimmedLength() <= e3) continue;
+              const c2 = [h3];
+              for (; h3.isWrapped && n2 > 0; ) h3 = this.lines.get(--n2), c2.unshift(h3);
               const l2 = this.ybase + this.y;
               if (l2 >= n2 && l2 < n2 + c2.length) continue;
               const d2 = c2[c2.length - 1].getTrimmedLength(), _ = (0, a.reflowSmallerGetNewLineLengths)(c2, this._cols, e3), u = _.length - c2.length;
               let f;
               f = 0 === this.ybase && this.y !== this.lines.length - 1 ? Math.max(0, this.y - this.lines.maxLength + u) : Math.max(0, this.lines.length - this.lines.maxLength + u);
-              const v = [];
+              const v2 = [];
               for (let e4 = 0; e4 < u; e4++) {
                 const e5 = this.getBlankLine(o.DEFAULT_ATTR_DATA, true);
-                v.push(e5);
+                v2.push(e5);
               }
-              v.length > 0 && (s3.push({ start: n2 + c2.length + r2, newLines: v }), r2 += v.length), c2.push(...v);
-              let p = _.length - 1, g = _[p];
-              0 === g && (p--, g = _[p]);
-              let m = c2.length - u - 1, S = d2;
-              for (; m >= 0; ) {
-                const e4 = Math.min(S, g);
+              v2.length > 0 && (s3.push({ start: n2 + c2.length + r2, newLines: v2 }), r2 += v2.length), c2.push(...v2);
+              let p = _.length - 1, g2 = _[p];
+              0 === g2 && (p--, g2 = _[p]);
+              let m2 = c2.length - u - 1, S2 = d2;
+              for (; m2 >= 0; ) {
+                const e4 = Math.min(S2, g2);
                 if (void 0 === c2[p]) break;
-                if (c2[p].copyCellsFrom(c2[m], S - e4, g - e4, e4, true), g -= e4, 0 === g && (p--, g = _[p]), S -= e4, 0 === S) {
-                  m--;
-                  const e5 = Math.max(m, 0);
-                  S = (0, a.getWrappedLineTrimmedLength)(c2, e5, this._cols);
+                if (c2[p].copyCellsFrom(c2[m2], S2 - e4, g2 - e4, e4, true), g2 -= e4, 0 === g2 && (p--, g2 = _[p]), S2 -= e4, 0 === S2) {
+                  m2--;
+                  const e5 = Math.max(m2, 0);
+                  S2 = (0, a.getWrappedLineTrimmedLength)(c2, e5, this._cols);
                 }
               }
               for (let t4 = 0; t4 < c2.length; t4++) _[t4] < e3 && c2[t4].setCell(_[t4], i3);
@@ -3846,10 +3846,10 @@ WARNING: This link could potentially be dangerous`)) {
               const i4 = this.lines.length;
               let n2 = i4 - 1, o2 = 0, a2 = s3[o2];
               this.lines.length = Math.min(this.lines.maxLength, this.lines.length + r2);
-              let h2 = 0;
-              for (let c3 = Math.min(this.lines.maxLength - 1, i4 + r2 - 1); c3 >= 0; c3--) if (a2 && a2.start > n2 + h2) {
+              let h3 = 0;
+              for (let c3 = Math.min(this.lines.maxLength - 1, i4 + r2 - 1); c3 >= 0; c3--) if (a2 && a2.start > n2 + h3) {
                 for (let e5 = a2.newLines.length - 1; e5 >= 0; e5--) this.lines.set(c3--, a2.newLines[e5]);
-                c3++, e4.push({ index: n2 + 1, amount: a2.newLines.length }), h2 += a2.newLines.length, a2 = s3[++o2];
+                c3++, e4.push({ index: n2 + 1, amount: a2.newLines.length }), h3 += a2.newLines.length, a2 = s3[++o2];
               } else this.lines.set(c3, t4[n2--]);
               let c2 = 0;
               for (let t5 = e4.length - 1; t5 >= 0; t5--) e4[t5].index += c2, this.lines.onInsertEmitter.fire(e4[t5]), c2 += e4[t5].amount;
@@ -3907,7 +3907,7 @@ WARNING: This link could potentially be dangerous`)) {
         const s2 = i2(3734), r = i2(511), n = i2(643), o = i2(482);
         t2.DEFAULT_ATTR_DATA = Object.freeze(new s2.AttributeData());
         let a = 0;
-        class h {
+        class h2 {
           constructor(e3, t3, i3 = false) {
             this.isWrapped = i3, this._combined = {}, this._extendedAttrs = {}, this._data = new Uint32Array(3 * e3);
             const s3 = t3 || r.CellData.fromCharData([0, n.NULL_CELL_CHAR, n.NULL_CELL_WIDTH, n.NULL_CELL_CODE]);
@@ -4030,7 +4030,7 @@ WARNING: This link could potentially be dangerous`)) {
             this.isWrapped = e3.isWrapped;
           }
           clone() {
-            const e3 = new h(0);
+            const e3 = new h2(0);
             e3._data = new Uint32Array(this._data), e3.length = this.length;
             for (const t3 in this._combined) e3._combined[t3] = this._combined[t3];
             for (const t3 in this._extendedAttrs) e3._extendedAttrs[t3] = this._extendedAttrs[t3];
@@ -4070,7 +4070,7 @@ WARNING: This link could potentially be dangerous`)) {
             return s3;
           }
         }
-        t2.BufferLine = h;
+        t2.BufferLine = h2;
       }, 4841: (e2, t2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.getRangeLength = void 0, t2.getRangeLength = function(e3, t3) {
           if (e3.start.y > e3.end.y) throw new Error(`Buffer range end (${e3.end.x}, ${e3.end.y}) cannot be before start (${e3.start.x}, ${e3.start.y})`);
@@ -4085,11 +4085,11 @@ WARNING: This link could potentially be dangerous`)) {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.getWrappedLineTrimmedLength = t2.reflowSmallerGetNewLineLengths = t2.reflowLargerApplyNewLayout = t2.reflowLargerCreateNewLayout = t2.reflowLargerGetLinesToRemove = void 0, t2.reflowLargerGetLinesToRemove = function(e3, t3, s2, r, n) {
           const o = [];
           for (let a = 0; a < e3.length - 1; a++) {
-            let h = a, c = e3.get(++h);
+            let h2 = a, c = e3.get(++h2);
             if (!c.isWrapped) continue;
             const l = [e3.get(a)];
-            for (; h < e3.length && c.isWrapped; ) l.push(c), c = e3.get(++h);
-            if (r >= a && r < h) {
+            for (; h2 < e3.length && c.isWrapped; ) l.push(c), c = e3.get(++h2);
+            if (r >= a && r < h2) {
               a += l.length - 1;
               continue;
             }
@@ -4099,9 +4099,9 @@ WARNING: This link could potentially be dangerous`)) {
               l[d].copyCellsFrom(l[u], f, _, a2, false), _ += a2, _ === s2 && (d++, _ = 0), f += a2, f === e4 && (u++, f = 0), 0 === _ && 0 !== d && 2 === l[d - 1].getWidth(s2 - 1) && (l[d].copyCellsFrom(l[d - 1], s2 - 1, _++, 1, false), l[d - 1].setCell(s2 - 1, n));
             }
             l[d].replaceCells(_, s2, n);
-            let v = 0;
-            for (let e4 = l.length - 1; e4 > 0 && (e4 > d || 0 === l[e4].getTrimmedLength()); e4--) v++;
-            v > 0 && (o.push(a + l.length - v), o.push(v)), a += l.length - 1;
+            let v2 = 0;
+            for (let e4 = l.length - 1; e4 > 0 && (e4 > d || 0 === l[e4].getTrimmedLength()); e4--) v2++;
+            v2 > 0 && (o.push(a + l.length - v2), o.push(v2)), a += l.length - 1;
           }
           return o;
         }, t2.reflowLargerCreateNewLayout = function(e3, t3) {
@@ -4119,10 +4119,10 @@ WARNING: This link could potentially be dangerous`)) {
           e3.length = t3.length;
         }, t2.reflowSmallerGetNewLineLengths = function(e3, t3, s2) {
           const r = [], n = e3.map(((s3, r2) => i2(e3, r2, t3))).reduce(((e4, t4) => e4 + t4));
-          let o = 0, a = 0, h = 0;
-          for (; h < n; ) {
-            if (n - h < s2) {
-              r.push(n - h);
+          let o = 0, a = 0, h2 = 0;
+          for (; h2 < n; ) {
+            if (n - h2 < s2) {
+              r.push(n - h2);
               break;
             }
             o += s2;
@@ -4131,7 +4131,7 @@ WARNING: This link could potentially be dangerous`)) {
             const l = 2 === e3[a].getWidth(o - 1);
             l && o--;
             const d = l ? s2 - 1 : s2;
-            r.push(d), h += d;
+            r.push(d), h2 += d;
           }
           return r;
         }, t2.getWrappedLineTrimmedLength = i2;
@@ -4403,13 +4403,13 @@ WARNING: This link could potentially be dangerous`)) {
           decode(e3, t3) {
             const i2 = e3.length;
             if (!i2) return 0;
-            let s2, r, n, o, a = 0, h = 0, c = 0;
+            let s2, r, n, o, a = 0, h2 = 0, c = 0;
             if (this.interim[0]) {
               let s3 = false, r2 = this.interim[0];
               r2 &= 192 == (224 & r2) ? 31 : 224 == (240 & r2) ? 15 : 7;
               let n2, o2 = 0;
               for (; (n2 = 63 & this.interim[++o2]) && o2 < 4; ) r2 <<= 6, r2 |= n2;
-              const h2 = 192 == (224 & this.interim[0]) ? 2 : 224 == (240 & this.interim[0]) ? 3 : 4, l2 = h2 - o2;
+              const h3 = 192 == (224 & this.interim[0]) ? 2 : 224 == (240 & this.interim[0]) ? 3 : 4, l2 = h3 - o2;
               for (; c < l2; ) {
                 if (c >= i2) return 0;
                 if (n2 = e3[c++], 128 != (192 & n2)) {
@@ -4418,7 +4418,7 @@ WARNING: This link could potentially be dangerous`)) {
                 }
                 this.interim[o2++] = n2, r2 <<= 6, r2 |= 63 & n2;
               }
-              s3 || (2 === h2 ? r2 < 128 ? c-- : t3[a++] = r2 : 3 === h2 ? r2 < 2048 || r2 >= 55296 && r2 <= 57343 || 65279 === r2 || (t3[a++] = r2) : r2 < 65536 || r2 > 1114111 || (t3[a++] = r2)), this.interim.fill(0);
+              s3 || (2 === h3 ? r2 < 128 ? c-- : t3[a++] = r2 : 3 === h3 ? r2 < 2048 || r2 >= 55296 && r2 <= 57343 || 65279 === r2 || (t3[a++] = r2) : r2 < 65536 || r2 > 1114111 || (t3[a++] = r2)), this.interim.fill(0);
             }
             const l = i2 - 4;
             let d = c;
@@ -4431,11 +4431,11 @@ WARNING: This link could potentially be dangerous`)) {
                   d--;
                   continue;
                 }
-                if (h = (31 & s2) << 6 | 63 & r, h < 128) {
+                if (h2 = (31 & s2) << 6 | 63 & r, h2 < 128) {
                   d--;
                   continue;
                 }
-                t3[a++] = h;
+                t3[a++] = h2;
               } else if (224 == (240 & s2)) {
                 if (d >= i2) return this.interim[0] = s2, a;
                 if (r = e3[d++], 128 != (192 & r)) {
@@ -4447,8 +4447,8 @@ WARNING: This link could potentially be dangerous`)) {
                   d--;
                   continue;
                 }
-                if (h = (15 & s2) << 12 | (63 & r) << 6 | 63 & n, h < 2048 || h >= 55296 && h <= 57343 || 65279 === h) continue;
-                t3[a++] = h;
+                if (h2 = (15 & s2) << 12 | (63 & r) << 6 | 63 & n, h2 < 2048 || h2 >= 55296 && h2 <= 57343 || 65279 === h2) continue;
+                t3[a++] = h2;
               } else if (240 == (248 & s2)) {
                 if (d >= i2) return this.interim[0] = s2, a;
                 if (r = e3[d++], 128 != (192 & r)) {
@@ -4465,8 +4465,8 @@ WARNING: This link could potentially be dangerous`)) {
                   d--;
                   continue;
                 }
-                if (h = (7 & s2) << 18 | (63 & r) << 12 | (63 & n) << 6 | 63 & o, h < 65536 || h > 1114111) continue;
-                t3[a++] = h;
+                if (h2 = (7 & s2) << 18 | (63 & r) << 12 | (63 & n) << 6 | 63 & o, h2 < 65536 || h2 > 1114111) continue;
+                t3[a++] = h2;
               }
             }
             return a;
@@ -4668,14 +4668,14 @@ WARNING: This link could potentially be dangerous`)) {
           }
         }
         t2.TransitionTable = a;
-        const h = 160;
+        const h2 = 160;
         t2.VT500_TRANSITION_TABLE = (function() {
           const e3 = new a(4095), t3 = Array.apply(null, Array(256)).map(((e4, t4) => t4)), i3 = (e4, i4) => t3.slice(e4, i4), s3 = i3(32, 127), r2 = i3(0, 24);
           r2.push(25), r2.push.apply(r2, i3(28, 32));
           const n2 = i3(0, 14);
           let o2;
           for (o2 in e3.setDefault(1, 0), e3.addMany(s3, 0, 2, 0), n2) e3.addMany([24, 26, 153, 154], o2, 3, 0), e3.addMany(i3(128, 144), o2, 3, 0), e3.addMany(i3(144, 152), o2, 3, 0), e3.add(156, o2, 0, 0), e3.add(27, o2, 11, 1), e3.add(157, o2, 4, 8), e3.addMany([152, 158, 159], o2, 0, 7), e3.add(155, o2, 11, 3), e3.add(144, o2, 11, 9);
-          return e3.addMany(r2, 0, 3, 0), e3.addMany(r2, 1, 3, 1), e3.add(127, 1, 0, 1), e3.addMany(r2, 8, 0, 8), e3.addMany(r2, 3, 3, 3), e3.add(127, 3, 0, 3), e3.addMany(r2, 4, 3, 4), e3.add(127, 4, 0, 4), e3.addMany(r2, 6, 3, 6), e3.addMany(r2, 5, 3, 5), e3.add(127, 5, 0, 5), e3.addMany(r2, 2, 3, 2), e3.add(127, 2, 0, 2), e3.add(93, 1, 4, 8), e3.addMany(s3, 8, 5, 8), e3.add(127, 8, 5, 8), e3.addMany([156, 27, 24, 26, 7], 8, 6, 0), e3.addMany(i3(28, 32), 8, 0, 8), e3.addMany([88, 94, 95], 1, 0, 7), e3.addMany(s3, 7, 0, 7), e3.addMany(r2, 7, 0, 7), e3.add(156, 7, 0, 0), e3.add(127, 7, 0, 7), e3.add(91, 1, 11, 3), e3.addMany(i3(64, 127), 3, 7, 0), e3.addMany(i3(48, 60), 3, 8, 4), e3.addMany([60, 61, 62, 63], 3, 9, 4), e3.addMany(i3(48, 60), 4, 8, 4), e3.addMany(i3(64, 127), 4, 7, 0), e3.addMany([60, 61, 62, 63], 4, 0, 6), e3.addMany(i3(32, 64), 6, 0, 6), e3.add(127, 6, 0, 6), e3.addMany(i3(64, 127), 6, 0, 0), e3.addMany(i3(32, 48), 3, 9, 5), e3.addMany(i3(32, 48), 5, 9, 5), e3.addMany(i3(48, 64), 5, 0, 6), e3.addMany(i3(64, 127), 5, 7, 0), e3.addMany(i3(32, 48), 4, 9, 5), e3.addMany(i3(32, 48), 1, 9, 2), e3.addMany(i3(32, 48), 2, 9, 2), e3.addMany(i3(48, 127), 2, 10, 0), e3.addMany(i3(48, 80), 1, 10, 0), e3.addMany(i3(81, 88), 1, 10, 0), e3.addMany([89, 90, 92], 1, 10, 0), e3.addMany(i3(96, 127), 1, 10, 0), e3.add(80, 1, 11, 9), e3.addMany(r2, 9, 0, 9), e3.add(127, 9, 0, 9), e3.addMany(i3(28, 32), 9, 0, 9), e3.addMany(i3(32, 48), 9, 9, 12), e3.addMany(i3(48, 60), 9, 8, 10), e3.addMany([60, 61, 62, 63], 9, 9, 10), e3.addMany(r2, 11, 0, 11), e3.addMany(i3(32, 128), 11, 0, 11), e3.addMany(i3(28, 32), 11, 0, 11), e3.addMany(r2, 10, 0, 10), e3.add(127, 10, 0, 10), e3.addMany(i3(28, 32), 10, 0, 10), e3.addMany(i3(48, 60), 10, 8, 10), e3.addMany([60, 61, 62, 63], 10, 0, 11), e3.addMany(i3(32, 48), 10, 9, 12), e3.addMany(r2, 12, 0, 12), e3.add(127, 12, 0, 12), e3.addMany(i3(28, 32), 12, 0, 12), e3.addMany(i3(32, 48), 12, 9, 12), e3.addMany(i3(48, 64), 12, 0, 11), e3.addMany(i3(64, 127), 12, 12, 13), e3.addMany(i3(64, 127), 10, 12, 13), e3.addMany(i3(64, 127), 9, 12, 13), e3.addMany(r2, 13, 13, 13), e3.addMany(s3, 13, 13, 13), e3.add(127, 13, 0, 13), e3.addMany([27, 156, 24, 26], 13, 14, 0), e3.add(h, 0, 2, 0), e3.add(h, 8, 5, 8), e3.add(h, 6, 0, 6), e3.add(h, 11, 0, 11), e3.add(h, 13, 13, 13), e3;
+          return e3.addMany(r2, 0, 3, 0), e3.addMany(r2, 1, 3, 1), e3.add(127, 1, 0, 1), e3.addMany(r2, 8, 0, 8), e3.addMany(r2, 3, 3, 3), e3.add(127, 3, 0, 3), e3.addMany(r2, 4, 3, 4), e3.add(127, 4, 0, 4), e3.addMany(r2, 6, 3, 6), e3.addMany(r2, 5, 3, 5), e3.add(127, 5, 0, 5), e3.addMany(r2, 2, 3, 2), e3.add(127, 2, 0, 2), e3.add(93, 1, 4, 8), e3.addMany(s3, 8, 5, 8), e3.add(127, 8, 5, 8), e3.addMany([156, 27, 24, 26, 7], 8, 6, 0), e3.addMany(i3(28, 32), 8, 0, 8), e3.addMany([88, 94, 95], 1, 0, 7), e3.addMany(s3, 7, 0, 7), e3.addMany(r2, 7, 0, 7), e3.add(156, 7, 0, 0), e3.add(127, 7, 0, 7), e3.add(91, 1, 11, 3), e3.addMany(i3(64, 127), 3, 7, 0), e3.addMany(i3(48, 60), 3, 8, 4), e3.addMany([60, 61, 62, 63], 3, 9, 4), e3.addMany(i3(48, 60), 4, 8, 4), e3.addMany(i3(64, 127), 4, 7, 0), e3.addMany([60, 61, 62, 63], 4, 0, 6), e3.addMany(i3(32, 64), 6, 0, 6), e3.add(127, 6, 0, 6), e3.addMany(i3(64, 127), 6, 0, 0), e3.addMany(i3(32, 48), 3, 9, 5), e3.addMany(i3(32, 48), 5, 9, 5), e3.addMany(i3(48, 64), 5, 0, 6), e3.addMany(i3(64, 127), 5, 7, 0), e3.addMany(i3(32, 48), 4, 9, 5), e3.addMany(i3(32, 48), 1, 9, 2), e3.addMany(i3(32, 48), 2, 9, 2), e3.addMany(i3(48, 127), 2, 10, 0), e3.addMany(i3(48, 80), 1, 10, 0), e3.addMany(i3(81, 88), 1, 10, 0), e3.addMany([89, 90, 92], 1, 10, 0), e3.addMany(i3(96, 127), 1, 10, 0), e3.add(80, 1, 11, 9), e3.addMany(r2, 9, 0, 9), e3.add(127, 9, 0, 9), e3.addMany(i3(28, 32), 9, 0, 9), e3.addMany(i3(32, 48), 9, 9, 12), e3.addMany(i3(48, 60), 9, 8, 10), e3.addMany([60, 61, 62, 63], 9, 9, 10), e3.addMany(r2, 11, 0, 11), e3.addMany(i3(32, 128), 11, 0, 11), e3.addMany(i3(28, 32), 11, 0, 11), e3.addMany(r2, 10, 0, 10), e3.add(127, 10, 0, 10), e3.addMany(i3(28, 32), 10, 0, 10), e3.addMany(i3(48, 60), 10, 8, 10), e3.addMany([60, 61, 62, 63], 10, 0, 11), e3.addMany(i3(32, 48), 10, 9, 12), e3.addMany(r2, 12, 0, 12), e3.add(127, 12, 0, 12), e3.addMany(i3(28, 32), 12, 0, 12), e3.addMany(i3(32, 48), 12, 9, 12), e3.addMany(i3(48, 64), 12, 0, 11), e3.addMany(i3(64, 127), 12, 12, 13), e3.addMany(i3(64, 127), 10, 12, 13), e3.addMany(i3(64, 127), 9, 12, 13), e3.addMany(r2, 13, 13, 13), e3.addMany(s3, 13, 13, 13), e3.add(127, 13, 0, 13), e3.addMany([27, 156, 24, 26], 13, 14, 0), e3.add(h2, 0, 2, 0), e3.add(h2, 8, 5, 8), e3.add(h2, 6, 0, 6), e3.add(h2, 11, 0, 11), e3.add(h2, 13, 13, 13), e3;
         })();
         class c extends s2.Disposable {
           constructor(e3 = t2.VT500_TRANSITION_TABLE) {
@@ -4817,22 +4817,22 @@ WARNING: This link could potentially be dangerous`)) {
               this._parseStack.state = 0, o2 = this._parseStack.chunkPos + 1, this.precedingCodepoint = 0, this.currentState = 15 & this._parseStack.transition;
             }
             for (let i4 = o2; i4 < t3; ++i4) {
-              switch (r2 = e3[i4], n2 = this._transitions.table[this.currentState << 8 | (r2 < 160 ? r2 : h)], n2 >> 4) {
+              switch (r2 = e3[i4], n2 = this._transitions.table[this.currentState << 8 | (r2 < 160 ? r2 : h2)], n2 >> 4) {
                 case 2:
                   for (let s4 = i4 + 1; ; ++s4) {
-                    if (s4 >= t3 || (r2 = e3[s4]) < 32 || r2 > 126 && r2 < h) {
+                    if (s4 >= t3 || (r2 = e3[s4]) < 32 || r2 > 126 && r2 < h2) {
                       this._printHandler(e3, i4, s4), i4 = s4 - 1;
                       break;
                     }
-                    if (++s4 >= t3 || (r2 = e3[s4]) < 32 || r2 > 126 && r2 < h) {
+                    if (++s4 >= t3 || (r2 = e3[s4]) < 32 || r2 > 126 && r2 < h2) {
                       this._printHandler(e3, i4, s4), i4 = s4 - 1;
                       break;
                     }
-                    if (++s4 >= t3 || (r2 = e3[s4]) < 32 || r2 > 126 && r2 < h) {
+                    if (++s4 >= t3 || (r2 = e3[s4]) < 32 || r2 > 126 && r2 < h2) {
                       this._printHandler(e3, i4, s4), i4 = s4 - 1;
                       break;
                     }
-                    if (++s4 >= t3 || (r2 = e3[s4]) < 32 || r2 > 126 && r2 < h) {
+                    if (++s4 >= t3 || (r2 = e3[s4]) < 32 || r2 > 126 && r2 < h2) {
                       this._printHandler(e3, i4, s4), i4 = s4 - 1;
                       break;
                     }
@@ -4883,7 +4883,7 @@ WARNING: This link could potentially be dangerous`)) {
                   this._dcsParser.hook(this._collect << 8 | r2, this._params);
                   break;
                 case 13:
-                  for (let s4 = i4 + 1; ; ++s4) if (s4 >= t3 || 24 === (r2 = e3[s4]) || 26 === r2 || 27 === r2 || r2 > 127 && r2 < h) {
+                  for (let s4 = i4 + 1; ; ++s4) if (s4 >= t3 || 24 === (r2 = e3[s4]) || 26 === r2 || 27 === r2 || r2 > 127 && r2 < h2) {
                     this._dcsParser.put(e3, i4, s4), i4 = s4 - 1;
                     break;
                   }
@@ -4896,7 +4896,7 @@ WARNING: This link could potentially be dangerous`)) {
                   this._oscParser.start();
                   break;
                 case 5:
-                  for (let s4 = i4 + 1; ; s4++) if (s4 >= t3 || (r2 = e3[s4]) < 32 || r2 > 127 && r2 < h) {
+                  for (let s4 = i4 + 1; ; s4++) if (s4 >= t3 || (r2 = e3[s4]) < 32 || r2 > 127 && r2 < h2) {
                     this._oscParser.put(e3, i4, s4), i4 = s4 - 1;
                     break;
                   }
@@ -5222,7 +5222,7 @@ WARNING: This link could potentially be dangerous`)) {
           };
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.BufferService = t2.MINIMUM_ROWS = t2.MINIMUM_COLS = void 0;
-        const n = i2(8460), o = i2(844), a = i2(5295), h = i2(2585);
+        const n = i2(8460), o = i2(844), a = i2(5295), h2 = i2(2585);
         t2.MINIMUM_COLS = 2, t2.MINIMUM_ROWS = 1;
         let c = t2.BufferService = class extends o.Disposable {
           get buffer() {
@@ -5261,7 +5261,7 @@ WARNING: This link could potentially be dangerous`)) {
             s3.ydisp = Math.max(Math.min(s3.ydisp + e3, s3.ybase), 0), r2 !== s3.ydisp && (t3 || this._onScroll.fire(s3.ydisp));
           }
         };
-        t2.BufferService = c = s2([r(0, h.IOptionsService)], c);
+        t2.BufferService = c = s2([r(0, h2.IOptionsService)], c);
       }, 7994: (e2, t2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.CharsetService = void 0, t2.CharsetService = class {
           constructor() {
@@ -5289,7 +5289,7 @@ WARNING: This link could potentially be dangerous`)) {
           };
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.CoreMouseService = void 0;
-        const n = i2(2585), o = i2(8460), a = i2(844), h = { NONE: { events: 0, restrict: () => false }, X10: { events: 1, restrict: (e3) => 4 !== e3.button && 1 === e3.action && (e3.ctrl = false, e3.alt = false, e3.shift = false, true) }, VT200: { events: 19, restrict: (e3) => 32 !== e3.action }, DRAG: { events: 23, restrict: (e3) => 32 !== e3.action || 3 !== e3.button }, ANY: { events: 31, restrict: (e3) => true } };
+        const n = i2(2585), o = i2(8460), a = i2(844), h2 = { NONE: { events: 0, restrict: () => false }, X10: { events: 1, restrict: (e3) => 4 !== e3.button && 1 === e3.action && (e3.ctrl = false, e3.alt = false, e3.shift = false, true) }, VT200: { events: 19, restrict: (e3) => 32 !== e3.action }, DRAG: { events: 23, restrict: (e3) => 32 !== e3.action || 3 !== e3.button }, ANY: { events: 31, restrict: (e3) => true } };
         function c(e3, t3) {
           let i3 = (e3.ctrl ? 16 : 0) | (e3.shift ? 4 : 0) | (e3.alt ? 8 : 0);
           return 4 === e3.button ? (i3 |= 64, i3 |= e3.action) : (i3 |= 3 & e3.button, 4 & e3.button && (i3 |= 64), 8 & e3.button && (i3 |= 128), 32 === e3.action ? i3 |= 32 : 0 !== e3.action || t3 || (i3 |= 3)), i3;
@@ -5307,7 +5307,7 @@ WARNING: This link could potentially be dangerous`)) {
         let _ = t2.CoreMouseService = class extends a.Disposable {
           constructor(e3, t3) {
             super(), this._bufferService = e3, this._coreService = t3, this._protocols = {}, this._encodings = {}, this._activeProtocol = "", this._activeEncoding = "", this._lastEvent = null, this._onProtocolChange = this.register(new o.EventEmitter()), this.onProtocolChange = this._onProtocolChange.event;
-            for (const e4 of Object.keys(h)) this.addProtocol(e4, h[e4]);
+            for (const e4 of Object.keys(h2)) this.addProtocol(e4, h2[e4]);
             for (const e4 of Object.keys(d)) this.addEncoding(e4, d[e4]);
             this.reset();
           }
@@ -5374,7 +5374,7 @@ WARNING: This link could potentially be dangerous`)) {
           };
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.CoreService = void 0;
-        const n = i2(1439), o = i2(8460), a = i2(844), h = i2(2585), c = Object.freeze({ insertMode: false }), l = Object.freeze({ applicationCursorKeys: false, applicationKeypad: false, bracketedPasteMode: false, origin: false, reverseWraparound: false, sendFocus: false, wraparound: true });
+        const n = i2(1439), o = i2(8460), a = i2(844), h2 = i2(2585), c = Object.freeze({ insertMode: false }), l = Object.freeze({ applicationCursorKeys: false, applicationKeypad: false, bracketedPasteMode: false, origin: false, reverseWraparound: false, sendFocus: false, wraparound: true });
         let d = t2.CoreService = class extends a.Disposable {
           constructor(e3, t3, i3) {
             super(), this._bufferService = e3, this._logService = t3, this._optionsService = i3, this.isCursorInitialized = false, this.isCursorHidden = false, this._onData = this.register(new o.EventEmitter()), this.onData = this._onData.event, this._onUserInput = this.register(new o.EventEmitter()), this.onUserInput = this._onUserInput.event, this._onBinary = this.register(new o.EventEmitter()), this.onBinary = this._onBinary.event, this._onRequestScrollToBottom = this.register(new o.EventEmitter()), this.onRequestScrollToBottom = this._onRequestScrollToBottom.event, this.modes = (0, n.clone)(c), this.decPrivateModes = (0, n.clone)(l);
@@ -5391,11 +5391,11 @@ WARNING: This link could potentially be dangerous`)) {
             this._optionsService.rawOptions.disableStdin || (this._logService.debug(`sending binary "${e3}"`, (() => e3.split("").map(((e4) => e4.charCodeAt(0))))), this._onBinary.fire(e3));
           }
         };
-        t2.CoreService = d = s2([r(0, h.IBufferService), r(1, h.ILogService), r(2, h.IOptionsService)], d);
+        t2.CoreService = d = s2([r(0, h2.IBufferService), r(1, h2.ILogService), r(2, h2.IOptionsService)], d);
       }, 9074: (e2, t2, i2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.DecorationService = void 0;
         const s2 = i2(8055), r = i2(8460), n = i2(844), o = i2(6106);
-        let a = 0, h = 0;
+        let a = 0, h2 = 0;
         class c extends n.Disposable {
           get decorations() {
             return this._decorations.values();
@@ -5421,12 +5421,12 @@ WARNING: This link could potentially be dangerous`)) {
           *getDecorationsAtCell(e3, t3, i3) {
             var s3, r2, n2;
             let o2 = 0, a2 = 0;
-            for (const h2 of this._decorations.getKeyIterator(t3)) o2 = null !== (s3 = h2.options.x) && void 0 !== s3 ? s3 : 0, a2 = o2 + (null !== (r2 = h2.options.width) && void 0 !== r2 ? r2 : 1), e3 >= o2 && e3 < a2 && (!i3 || (null !== (n2 = h2.options.layer) && void 0 !== n2 ? n2 : "bottom") === i3) && (yield h2);
+            for (const h3 of this._decorations.getKeyIterator(t3)) o2 = null !== (s3 = h3.options.x) && void 0 !== s3 ? s3 : 0, a2 = o2 + (null !== (r2 = h3.options.width) && void 0 !== r2 ? r2 : 1), e3 >= o2 && e3 < a2 && (!i3 || (null !== (n2 = h3.options.layer) && void 0 !== n2 ? n2 : "bottom") === i3) && (yield h3);
           }
           forEachDecorationAtCell(e3, t3, i3, s3) {
             this._decorations.forEachByKey(t3, ((t4) => {
               var r2, n2, o2;
-              a = null !== (r2 = t4.options.x) && void 0 !== r2 ? r2 : 0, h = a + (null !== (n2 = t4.options.width) && void 0 !== n2 ? n2 : 1), e3 >= a && e3 < h && (!i3 || (null !== (o2 = t4.options.layer) && void 0 !== o2 ? o2 : "bottom") === i3) && s3(t4);
+              a = null !== (r2 = t4.options.x) && void 0 !== r2 ? r2 : 0, h2 = a + (null !== (n2 = t4.options.width) && void 0 !== n2 ? n2 : 1), e3 >= a && e3 < h2 && (!i3 || (null !== (o2 = t4.options.layer) && void 0 !== o2 ? o2 : "bottom") === i3) && s3(t4);
             }));
           }
         }
@@ -5505,12 +5505,12 @@ WARNING: This link could potentially be dangerous`)) {
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.traceCall = t2.setTraceLogger = t2.LogService = void 0;
         const n = i2(844), o = i2(2585), a = { trace: o.LogLevelEnum.TRACE, debug: o.LogLevelEnum.DEBUG, info: o.LogLevelEnum.INFO, warn: o.LogLevelEnum.WARN, error: o.LogLevelEnum.ERROR, off: o.LogLevelEnum.OFF };
-        let h, c = t2.LogService = class extends n.Disposable {
+        let h2, c = t2.LogService = class extends n.Disposable {
           get logLevel() {
             return this._logLevel;
           }
           constructor(e3) {
-            super(), this._optionsService = e3, this._logLevel = o.LogLevelEnum.OFF, this._updateLogLevel(), this.register(this._optionsService.onSpecificOptionChange("logLevel", (() => this._updateLogLevel()))), h = this;
+            super(), this._optionsService = e3, this._logLevel = o.LogLevelEnum.OFF, this._updateLogLevel(), this.register(this._optionsService.onSpecificOptionChange("logLevel", (() => this._updateLogLevel()))), h2 = this;
           }
           _updateLogLevel() {
             this._logLevel = a[this._optionsService.rawOptions.logLevel];
@@ -5543,15 +5543,15 @@ WARNING: This link could potentially be dangerous`)) {
           }
         };
         t2.LogService = c = s2([r(0, o.IOptionsService)], c), t2.setTraceLogger = function(e3) {
-          h = e3;
+          h2 = e3;
         }, t2.traceCall = function(e3, t3, i3) {
           if ("function" != typeof i3.value) throw new Error("not supported");
           const s3 = i3.value;
           i3.value = function(...e4) {
-            if (h.logLevel !== o.LogLevelEnum.TRACE) return s3.apply(this, e4);
-            h.trace(`GlyphRenderer#${s3.name}(${e4.map(((e5) => JSON.stringify(e5))).join(", ")})`);
+            if (h2.logLevel !== o.LogLevelEnum.TRACE) return s3.apply(this, e4);
+            h2.trace(`GlyphRenderer#${s3.name}(${e4.map(((e5) => JSON.stringify(e5))).join(", ")})`);
             const t4 = s3.apply(this, e4);
-            return h.trace(`GlyphRenderer#${s3.name} return`, t4), t4;
+            return h2.trace(`GlyphRenderer#${s3.name} return`, t4), t4;
           };
         };
       }, 7302: (e2, t2, i2) => {
@@ -5760,7 +5760,7 @@ WARNING: This link could potentially be dangerous`)) {
       return (() => {
         var e2 = s;
         Object.defineProperty(e2, "__esModule", { value: true }), e2.Terminal = void 0;
-        const t2 = i(9042), r = i(3236), n = i(844), o = i(5741), a = i(8285), h = i(7975), c = i(7090), l = ["cols", "rows"];
+        const t2 = i(9042), r = i(3236), n = i(844), o = i(5741), a = i(8285), h2 = i(7975), c = i(7090), l = ["cols", "rows"];
         class d extends n.Disposable {
           constructor(e3) {
             super(), this._core = this.register(new r.Terminal(e3)), this._addonManager = this.register(new o.AddonManager()), this._publicOptions = Object.assign({}, this._core.options);
@@ -5818,7 +5818,7 @@ WARNING: This link could potentially be dangerous`)) {
             return this._core.element;
           }
           get parser() {
-            return this._parser || (this._parser = new h.ParserApi(this._core)), this._parser;
+            return this._parser || (this._parser = new h2.ParserApi(this._core)), this._parser;
           }
           get unicode() {
             return this._checkProposedApi(), new c.UnicodeApi(this._core);
@@ -6143,8 +6143,8 @@ var require_xterm_addon_webgl = __commonJS({
           return o2 > 3 && n2 && Object.defineProperty(t3, i3, n2), n2;
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.GlyphRenderer = void 0;
-        const r = i2(374), o = i2(509), n = i2(855), a = i2(859), h = i2(776), l = i2(381), c = 11, d = c * Float32Array.BYTES_PER_ELEMENT;
-        let _, u = 0, g = 0, v = 0;
+        const r = i2(374), o = i2(509), n = i2(855), a = i2(859), h2 = i2(776), l = i2(381), c = 11, d = c * Float32Array.BYTES_PER_ELEMENT;
+        let _, u = 0, g2 = 0, v2 = 0;
         class f extends a.Disposable {
           constructor(e3, t3, i3) {
             super(), this._terminal = e3, this._gl = t3, this._dimensions = i3, this._activeBuffer = 0, this._vertices = { count: 0, attributes: new Float32Array(0), attributesBuffers: [new Float32Array(0), new Float32Array(0)] };
@@ -6168,8 +6168,8 @@ void main() {
   } ${t4}
 }`;
             })(o.TextureAtlas.maxAtlasPages))), this.register((0, a.toDisposable)((() => s3.deleteProgram(this._program)))), this._projectionLocation = (0, r.throwIfFalsy)(s3.getUniformLocation(this._program, "u_projection")), this._resolutionLocation = (0, r.throwIfFalsy)(s3.getUniformLocation(this._program, "u_resolution")), this._textureLocation = (0, r.throwIfFalsy)(s3.getUniformLocation(this._program, "u_texture")), this._vertexArrayObject = s3.createVertexArray(), s3.bindVertexArray(this._vertexArrayObject);
-            const n2 = new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), h2 = s3.createBuffer();
-            this.register((0, a.toDisposable)((() => s3.deleteBuffer(h2)))), s3.bindBuffer(s3.ARRAY_BUFFER, h2), s3.bufferData(s3.ARRAY_BUFFER, n2, s3.STATIC_DRAW), s3.enableVertexAttribArray(0), s3.vertexAttribPointer(0, 2, this._gl.FLOAT, false, 0, 0);
+            const n2 = new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), h3 = s3.createBuffer();
+            this.register((0, a.toDisposable)((() => s3.deleteBuffer(h3)))), s3.bindBuffer(s3.ARRAY_BUFFER, h3), s3.bufferData(s3.ARRAY_BUFFER, n2, s3.STATIC_DRAW), s3.enableVertexAttribArray(0), s3.vertexAttribPointer(0, 2, this._gl.FLOAT, false, 0, 0);
             const c2 = new Uint8Array([0, 1, 2, 3]), _2 = s3.createBuffer();
             this.register((0, a.toDisposable)((() => s3.deleteBuffer(_2)))), s3.bindBuffer(s3.ELEMENT_ARRAY_BUFFER, _2), s3.bufferData(s3.ELEMENT_ARRAY_BUFFER, c2, s3.STATIC_DRAW), this._attributesBuffer = (0, r.throwIfFalsy)(s3.createBuffer()), this.register((0, a.toDisposable)((() => s3.deleteBuffer(this._attributesBuffer)))), s3.bindBuffer(s3.ARRAY_BUFFER, this._attributesBuffer), s3.enableVertexAttribArray(2), s3.vertexAttribPointer(2, 2, s3.FLOAT, false, d, 0), s3.vertexAttribDivisor(2, 1), s3.enableVertexAttribArray(3), s3.vertexAttribPointer(3, 2, s3.FLOAT, false, d, 2 * Float32Array.BYTES_PER_ELEMENT), s3.vertexAttribDivisor(3, 1), s3.enableVertexAttribArray(4), s3.vertexAttribPointer(4, 1, s3.FLOAT, false, d, 4 * Float32Array.BYTES_PER_ELEMENT), s3.vertexAttribDivisor(4, 1), s3.enableVertexAttribArray(5), s3.vertexAttribPointer(5, 2, s3.FLOAT, false, d, 5 * Float32Array.BYTES_PER_ELEMENT), s3.vertexAttribDivisor(5, 1), s3.enableVertexAttribArray(6), s3.vertexAttribPointer(6, 2, s3.FLOAT, false, d, 7 * Float32Array.BYTES_PER_ELEMENT), s3.vertexAttribDivisor(6, 1), s3.enableVertexAttribArray(1), s3.vertexAttribPointer(1, 2, s3.FLOAT, false, d, 9 * Float32Array.BYTES_PER_ELEMENT), s3.vertexAttribDivisor(1, 1), s3.useProgram(this._program);
             const u2 = new Int32Array(o.TextureAtlas.maxAtlasPages);
@@ -6187,8 +6187,8 @@ void main() {
           updateCell(e3, t3, i3, s3, r2, o2, n2, a2) {
             this._updateCell(this._vertices.attributes, e3, t3, i3, s3, r2, o2, n2, a2);
           }
-          _updateCell(e3, t3, i3, s3, r2, o2, a2, h2, l2) {
-            u = (i3 * this._terminal.cols + t3) * c, s3 !== n.NULL_CELL_CODE && void 0 !== s3 ? this._atlas && (_ = h2 && h2.length > 1 ? this._atlas.getRasterizedGlyphCombinedChar(h2, r2, o2, a2, false) : this._atlas.getRasterizedGlyph(s3, r2, o2, a2, false), g = Math.floor((this._dimensions.device.cell.width - this._dimensions.device.char.width) / 2), r2 !== l2 && _.offset.x > g ? (v = _.offset.x - g, e3[u] = -(_.offset.x - v) + this._dimensions.device.char.left, e3[u + 1] = -_.offset.y + this._dimensions.device.char.top, e3[u + 2] = (_.size.x - v) / this._dimensions.device.canvas.width, e3[u + 3] = _.size.y / this._dimensions.device.canvas.height, e3[u + 4] = _.texturePage, e3[u + 5] = _.texturePositionClipSpace.x + v / this._atlas.pages[_.texturePage].canvas.width, e3[u + 6] = _.texturePositionClipSpace.y, e3[u + 7] = _.sizeClipSpace.x - v / this._atlas.pages[_.texturePage].canvas.width, e3[u + 8] = _.sizeClipSpace.y) : (e3[u] = -_.offset.x + this._dimensions.device.char.left, e3[u + 1] = -_.offset.y + this._dimensions.device.char.top, e3[u + 2] = _.size.x / this._dimensions.device.canvas.width, e3[u + 3] = _.size.y / this._dimensions.device.canvas.height, e3[u + 4] = _.texturePage, e3[u + 5] = _.texturePositionClipSpace.x, e3[u + 6] = _.texturePositionClipSpace.y, e3[u + 7] = _.sizeClipSpace.x, e3[u + 8] = _.sizeClipSpace.y)) : e3.fill(0, u, u + c - 1 - 2);
+          _updateCell(e3, t3, i3, s3, r2, o2, a2, h3, l2) {
+            u = (i3 * this._terminal.cols + t3) * c, s3 !== n.NULL_CELL_CODE && void 0 !== s3 ? this._atlas && (_ = h3 && h3.length > 1 ? this._atlas.getRasterizedGlyphCombinedChar(h3, r2, o2, a2, false) : this._atlas.getRasterizedGlyph(s3, r2, o2, a2, false), g2 = Math.floor((this._dimensions.device.cell.width - this._dimensions.device.char.width) / 2), r2 !== l2 && _.offset.x > g2 ? (v2 = _.offset.x - g2, e3[u] = -(_.offset.x - v2) + this._dimensions.device.char.left, e3[u + 1] = -_.offset.y + this._dimensions.device.char.top, e3[u + 2] = (_.size.x - v2) / this._dimensions.device.canvas.width, e3[u + 3] = _.size.y / this._dimensions.device.canvas.height, e3[u + 4] = _.texturePage, e3[u + 5] = _.texturePositionClipSpace.x + v2 / this._atlas.pages[_.texturePage].canvas.width, e3[u + 6] = _.texturePositionClipSpace.y, e3[u + 7] = _.sizeClipSpace.x - v2 / this._atlas.pages[_.texturePage].canvas.width, e3[u + 8] = _.sizeClipSpace.y) : (e3[u] = -_.offset.x + this._dimensions.device.char.left, e3[u + 1] = -_.offset.y + this._dimensions.device.char.top, e3[u + 2] = _.size.x / this._dimensions.device.canvas.width, e3[u + 3] = _.size.y / this._dimensions.device.canvas.height, e3[u + 4] = _.texturePage, e3[u + 5] = _.texturePositionClipSpace.x, e3[u + 6] = _.texturePositionClipSpace.y, e3[u + 7] = _.sizeClipSpace.x, e3[u + 8] = _.sizeClipSpace.y)) : e3.fill(0, u, u + c - 1 - 2);
           }
           clear() {
             const e3 = this._terminal, t3 = e3.cols * e3.rows * c;
@@ -6227,19 +6227,19 @@ void main() {
             this._dimensions = e3;
           }
         }
-        t2.GlyphRenderer = f, s2([h.traceCall], f.prototype, "updateCell", null);
+        t2.GlyphRenderer = f, s2([h2.traceCall], f.prototype, "updateCell", null);
       }, 742: (e2, t2, i2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.RectangleRenderer = void 0;
         const s2 = i2(374), r = i2(859), o = i2(310), n = i2(381), a = 8 * Float32Array.BYTES_PER_ELEMENT;
-        class h {
+        class h2 {
           constructor() {
             this.attributes = new Float32Array(160), this.count = 0;
           }
         }
-        let l = 0, c = 0, d = 0, _ = 0, u = 0, g = 0, v = 0;
+        let l = 0, c = 0, d = 0, _ = 0, u = 0, g2 = 0, v2 = 0;
         class f extends r.Disposable {
           constructor(e3, t3, i3, o2) {
-            super(), this._terminal = e3, this._gl = t3, this._dimensions = i3, this._themeService = o2, this._vertices = new h(), this._verticesCursor = new h();
+            super(), this._terminal = e3, this._gl = t3, this._dimensions = i3, this._themeService = o2, this._vertices = new h2(), this._verticesCursor = new h2();
             const l2 = this._gl;
             this._program = (0, s2.throwIfFalsy)((0, n.createProgram)(l2, "#version 300 es\nlayout (location = 0) in vec2 a_position;\nlayout (location = 1) in vec2 a_size;\nlayout (location = 2) in vec4 a_color;\nlayout (location = 3) in vec2 a_unitquad;\n\nuniform mat4 u_projection;\n\nout vec4 v_color;\n\nvoid main() {\n  vec2 zeroToOne = a_position + (a_unitquad * a_size);\n  gl_Position = u_projection * vec4(zeroToOne, 0.0, 1.0);\n  v_color = a_color;\n}", "#version 300 es\nprecision lowp float;\n\nin vec4 v_color;\n\nout vec4 outColor;\n\nvoid main() {\n  outColor = v_color;\n}")), this.register((0, r.toDisposable)((() => l2.deleteProgram(this._program)))), this._projectionLocation = (0, s2.throwIfFalsy)(l2.getUniformLocation(this._program, "u_projection")), this._vertexArrayObject = l2.createVertexArray(), l2.bindVertexArray(this._vertexArrayObject);
             const c2 = new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), d2 = l2.createBuffer();
@@ -6273,12 +6273,12 @@ void main() {
           }
           updateBackgrounds(e3) {
             const t3 = this._terminal, i3 = this._vertices;
-            let s3, r2, n2, a2, h2, l2, c2, d2, _2, u2, g2, v2 = 1;
+            let s3, r2, n2, a2, h3, l2, c2, d2, _2, u2, g3, v3 = 1;
             for (s3 = 0; s3 < t3.rows; s3++) {
-              for (n2 = -1, a2 = 0, h2 = 0, l2 = false, r2 = 0; r2 < t3.cols; r2++) c2 = (s3 * t3.cols + r2) * o.RENDER_MODEL_INDICIES_PER_CELL, d2 = e3.cells[c2 + o.RENDER_MODEL_BG_OFFSET], _2 = e3.cells[c2 + o.RENDER_MODEL_FG_OFFSET], u2 = !!(67108864 & _2), (d2 !== a2 || _2 !== h2 && (l2 || u2)) && ((0 !== a2 || l2 && 0 !== h2) && (g2 = 8 * v2++, this._updateRectangle(i3, g2, h2, a2, n2, r2, s3)), n2 = r2, a2 = d2, h2 = _2, l2 = u2);
-              (0 !== a2 || l2 && 0 !== h2) && (g2 = 8 * v2++, this._updateRectangle(i3, g2, h2, a2, n2, t3.cols, s3));
+              for (n2 = -1, a2 = 0, h3 = 0, l2 = false, r2 = 0; r2 < t3.cols; r2++) c2 = (s3 * t3.cols + r2) * o.RENDER_MODEL_INDICIES_PER_CELL, d2 = e3.cells[c2 + o.RENDER_MODEL_BG_OFFSET], _2 = e3.cells[c2 + o.RENDER_MODEL_FG_OFFSET], u2 = !!(67108864 & _2), (d2 !== a2 || _2 !== h3 && (l2 || u2)) && ((0 !== a2 || l2 && 0 !== h3) && (g3 = 8 * v3++, this._updateRectangle(i3, g3, h3, a2, n2, r2, s3)), n2 = r2, a2 = d2, h3 = _2, l2 = u2);
+              (0 !== a2 || l2 && 0 !== h3) && (g3 = 8 * v3++, this._updateRectangle(i3, g3, h3, a2, n2, t3.cols, s3));
             }
-            i3.count = v2;
+            i3.count = v3;
           }
           updateCursor(e3) {
             const t3 = this._verticesCursor, i3 = e3.cursor;
@@ -6309,10 +6309,10 @@ void main() {
               default:
                 l = this._themeService.colors.background.rgba;
             }
-            e3.attributes.length < t3 + 4 && (e3.attributes = (0, n.expandFloat32Array)(e3.attributes, this._terminal.rows * this._terminal.cols * 8)), c = r2 * this._dimensions.device.cell.width, d = a2 * this._dimensions.device.cell.height, _ = (l >> 24 & 255) / 255, u = (l >> 16 & 255) / 255, g = (l >> 8 & 255) / 255, v = 1, this._addRectangle(e3.attributes, t3, c, d, (o2 - r2) * this._dimensions.device.cell.width, this._dimensions.device.cell.height, _, u, g, v);
+            e3.attributes.length < t3 + 4 && (e3.attributes = (0, n.expandFloat32Array)(e3.attributes, this._terminal.rows * this._terminal.cols * 8)), c = r2 * this._dimensions.device.cell.width, d = a2 * this._dimensions.device.cell.height, _ = (l >> 24 & 255) / 255, u = (l >> 16 & 255) / 255, g2 = (l >> 8 & 255) / 255, v2 = 1, this._addRectangle(e3.attributes, t3, c, d, (o2 - r2) * this._dimensions.device.cell.width, this._dimensions.device.cell.height, _, u, g2, v2);
           }
-          _addRectangle(e3, t3, i3, s3, r2, o2, n2, a2, h2, l2) {
-            e3[t3] = i3 / this._dimensions.device.canvas.width, e3[t3 + 1] = s3 / this._dimensions.device.canvas.height, e3[t3 + 2] = r2 / this._dimensions.device.canvas.width, e3[t3 + 3] = o2 / this._dimensions.device.canvas.height, e3[t3 + 4] = n2, e3[t3 + 5] = a2, e3[t3 + 6] = h2, e3[t3 + 7] = l2;
+          _addRectangle(e3, t3, i3, s3, r2, o2, n2, a2, h3, l2) {
+            e3[t3] = i3 / this._dimensions.device.canvas.width, e3[t3 + 1] = s3 / this._dimensions.device.canvas.height, e3[t3 + 2] = r2 / this._dimensions.device.canvas.width, e3[t3 + 3] = o2 / this._dimensions.device.canvas.height, e3[t3 + 4] = n2, e3[t3 + 5] = a2, e3[t3 + 6] = h3, e3[t3 + 7] = l2;
           }
           _addRectangleFloat(e3, t3, i3, s3, r2, o2, n2) {
             e3[t3] = i3 / this._dimensions.device.canvas.width, e3[t3 + 1] = s3 / this._dimensions.device.canvas.height, e3[t3 + 2] = r2 / this._dimensions.device.canvas.width, e3[t3 + 3] = o2 / this._dimensions.device.canvas.height, e3[t3 + 4] = n2[0], e3[t3 + 5] = n2[1], e3[t3 + 6] = n2[2], e3[t3 + 7] = n2[3];
@@ -6345,10 +6345,10 @@ void main() {
           return o2 > 3 && n2 && Object.defineProperty(t3, i3, n2), n2;
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.JoinedCellData = t2.WebglRenderer = void 0;
-        const r = i2(820), o = i2(274), n = i2(627), a = i2(457), h = i2(56), l = i2(374), c = i2(345), d = i2(859), _ = i2(147), u = i2(782), g = i2(855), v = i2(776), f = i2(965), p = i2(742), C = i2(310), m = i2(733);
+        const r = i2(820), o = i2(274), n = i2(627), a = i2(457), h2 = i2(56), l = i2(374), c = i2(345), d = i2(859), _ = i2(147), u = i2(782), g2 = i2(855), v2 = i2(776), f = i2(965), p = i2(742), C = i2(310), m2 = i2(733);
         class L extends d.Disposable {
-          constructor(e3, t3, i3, s3, a2, _2, g2, v2, f2) {
-            super(), this._terminal = e3, this._characterJoinerService = t3, this._charSizeService = i3, this._coreBrowserService = s3, this._coreService = a2, this._decorationService = _2, this._optionsService = g2, this._themeService = v2, this._cursorBlinkStateManager = new d.MutableDisposable(), this._charAtlasDisposable = this.register(new d.MutableDisposable()), this._model = new C.RenderModel(), this._workCell = new u.CellData(), this._rectangleRenderer = this.register(new d.MutableDisposable()), this._glyphRenderer = this.register(new d.MutableDisposable()), this._onChangeTextureAtlas = this.register(new c.EventEmitter()), this.onChangeTextureAtlas = this._onChangeTextureAtlas.event, this._onAddTextureAtlasCanvas = this.register(new c.EventEmitter()), this.onAddTextureAtlasCanvas = this._onAddTextureAtlasCanvas.event, this._onRemoveTextureAtlasCanvas = this.register(new c.EventEmitter()), this.onRemoveTextureAtlasCanvas = this._onRemoveTextureAtlasCanvas.event, this._onRequestRedraw = this.register(new c.EventEmitter()), this.onRequestRedraw = this._onRequestRedraw.event, this._onContextLoss = this.register(new c.EventEmitter()), this.onContextLoss = this._onContextLoss.event, this.register(this._themeService.onChangeColors((() => this._handleColorChange()))), this._cellColorResolver = new o.CellColorResolver(this._terminal, this._model.selection, this._decorationService, this._coreBrowserService, this._themeService), this._core = this._terminal._core, this._renderLayers = [new m.LinkRenderLayer(this._core.screenElement, 2, this._terminal, this._core.linkifier2, this._coreBrowserService, g2, this._themeService)], this.dimensions = (0, l.createRenderDimensions)(), this._devicePixelRatio = this._coreBrowserService.dpr, this._updateDimensions(), this._updateCursorBlink(), this.register(g2.onOptionChange((() => this._handleOptionsChanged()))), this._canvas = document.createElement("canvas");
+          constructor(e3, t3, i3, s3, a2, _2, g3, v3, f2) {
+            super(), this._terminal = e3, this._characterJoinerService = t3, this._charSizeService = i3, this._coreBrowserService = s3, this._coreService = a2, this._decorationService = _2, this._optionsService = g3, this._themeService = v3, this._cursorBlinkStateManager = new d.MutableDisposable(), this._charAtlasDisposable = this.register(new d.MutableDisposable()), this._model = new C.RenderModel(), this._workCell = new u.CellData(), this._rectangleRenderer = this.register(new d.MutableDisposable()), this._glyphRenderer = this.register(new d.MutableDisposable()), this._onChangeTextureAtlas = this.register(new c.EventEmitter()), this.onChangeTextureAtlas = this._onChangeTextureAtlas.event, this._onAddTextureAtlasCanvas = this.register(new c.EventEmitter()), this.onAddTextureAtlasCanvas = this._onAddTextureAtlasCanvas.event, this._onRemoveTextureAtlasCanvas = this.register(new c.EventEmitter()), this.onRemoveTextureAtlasCanvas = this._onRemoveTextureAtlasCanvas.event, this._onRequestRedraw = this.register(new c.EventEmitter()), this.onRequestRedraw = this._onRequestRedraw.event, this._onContextLoss = this.register(new c.EventEmitter()), this.onContextLoss = this._onContextLoss.event, this.register(this._themeService.onChangeColors((() => this._handleColorChange()))), this._cellColorResolver = new o.CellColorResolver(this._terminal, this._model.selection, this._decorationService, this._coreBrowserService, this._themeService), this._core = this._terminal._core, this._renderLayers = [new m2.LinkRenderLayer(this._core.screenElement, 2, this._terminal, this._core.linkifier2, this._coreBrowserService, g3, this._themeService)], this.dimensions = (0, l.createRenderDimensions)(), this._devicePixelRatio = this._coreBrowserService.dpr, this._updateDimensions(), this._updateCursorBlink(), this.register(g3.onOptionChange((() => this._handleOptionsChanged()))), this._canvas = document.createElement("canvas");
             const p2 = { antialias: false, depth: false, preserveDrawingBuffer: f2 };
             if (this._gl = this._canvas.getContext("webgl2", p2), !this._gl) throw new Error("WebGL2 not supported " + this._gl);
             this.register((0, r.addDisposableDomListener)(this._canvas, "webglcontextlost", ((e4) => {
@@ -6357,7 +6357,7 @@ void main() {
               }), 3e3);
             }))), this.register((0, r.addDisposableDomListener)(this._canvas, "webglcontextrestored", ((e4) => {
               console.warn("webglcontextrestored event received"), clearTimeout(this._contextRestorationTimeout), this._contextRestorationTimeout = void 0, (0, n.removeTerminalFromCache)(this._terminal), this._initializeWebGLState(), this._requestRedrawViewport();
-            }))), this.register((0, h.observeDevicePixelDimensions)(this._canvas, this._coreBrowserService.window, ((e4, t4) => this._setCanvasDevicePixelDimensions(e4, t4)))), this._core.screenElement.appendChild(this._canvas), [this._rectangleRenderer.value, this._glyphRenderer.value] = this._initializeWebGLState(), this._isAttached = this._coreBrowserService.window.document.body.contains(this._core.screenElement), this.register((0, d.toDisposable)((() => {
+            }))), this.register((0, h2.observeDevicePixelDimensions)(this._canvas, this._coreBrowserService.window, ((e4, t4) => this._setCanvasDevicePixelDimensions(e4, t4)))), this._core.screenElement.appendChild(this._canvas), [this._rectangleRenderer.value, this._glyphRenderer.value] = this._initializeWebGLState(), this._isAttached = this._coreBrowserService.window.document.body.contains(this._core.screenElement), this.register((0, d.toDisposable)((() => {
               var e4;
               for (const e5 of this._renderLayers) e5.dispose();
               null === (e4 = this._canvas.parentElement) || void 0 === e4 || e4.removeChild(this._canvas), (0, n.removeTerminalFromCache)(this._terminal);
@@ -6448,15 +6448,15 @@ void main() {
           }
           _updateModel(e3, t3) {
             const i3 = this._core;
-            let s3, r2, o2, n2, a2, h2, l2, c2, d2, _2, u2, v2, f2, p2 = this._workCell;
-            e3 = w(e3, i3.rows - 1, 0), t3 = w(t3, i3.rows - 1, 0);
-            const m2 = this._terminal.buffer.active.baseY + this._terminal.buffer.active.cursorY, L2 = Math.min(this._terminal.buffer.active.cursorX, i3.cols - 1);
+            let s3, r2, o2, n2, a2, h3, l2, c2, d2, _2, u2, v3, f2, p2 = this._workCell;
+            e3 = w2(e3, i3.rows - 1, 0), t3 = w2(t3, i3.rows - 1, 0);
+            const m3 = this._terminal.buffer.active.baseY + this._terminal.buffer.active.cursorY, L2 = Math.min(this._terminal.buffer.active.cursorX, i3.cols - 1);
             let b = -1;
             const R = this._coreService.isCursorInitialized && !this._coreService.isCursorHidden && (!this._cursorBlinkStateManager.value || this._cursorBlinkStateManager.value.isCursorVisible);
             this._model.cursor = void 0;
-            let M = false;
-            for (r2 = e3; r2 <= t3; r2++) for (o2 = r2 + i3.buffer.ydisp, n2 = i3.buffer.lines.get(o2), this._model.lineLengths[r2] = 0, a2 = this._characterJoinerService.getJoinedCharacters(o2), v2 = 0; v2 < i3.cols; v2++) if (s3 = this._cellColorResolver.result.bg, n2.loadCell(v2, p2), 0 === v2 && (s3 = this._cellColorResolver.result.bg), h2 = false, l2 = v2, a2.length > 0 && v2 === a2[0][0] && (h2 = true, c2 = a2.shift(), p2 = new x(p2, n2.translateToString(true, c2[0], c2[1]), c2[1] - c2[0]), l2 = c2[1] - 1), d2 = p2.getChars(), _2 = p2.getCode(), u2 = (r2 * i3.cols + v2) * C.RENDER_MODEL_INDICIES_PER_CELL, this._cellColorResolver.resolve(p2, v2, o2), R && o2 === m2 && (v2 === L2 && (this._model.cursor = { x: L2, y: this._terminal.buffer.active.cursorY, width: p2.getWidth(), style: this._coreBrowserService.isFocused ? i3.options.cursorStyle || "block" : i3.options.cursorInactiveStyle, cursorWidth: i3.options.cursorWidth, dpr: this._devicePixelRatio }, b = L2 + p2.getWidth() - 1), v2 >= L2 && v2 <= b && (this._coreBrowserService.isFocused && "block" === (i3.options.cursorStyle || "block") || false === this._coreBrowserService.isFocused && "block" === i3.options.cursorInactiveStyle) && (this._cellColorResolver.result.fg = 50331648 | this._themeService.colors.cursorAccent.rgba >> 8 & 16777215, this._cellColorResolver.result.bg = 50331648 | this._themeService.colors.cursor.rgba >> 8 & 16777215)), _2 !== g.NULL_CELL_CODE && (this._model.lineLengths[r2] = v2 + 1), (this._model.cells[u2] !== _2 || this._model.cells[u2 + C.RENDER_MODEL_BG_OFFSET] !== this._cellColorResolver.result.bg || this._model.cells[u2 + C.RENDER_MODEL_FG_OFFSET] !== this._cellColorResolver.result.fg || this._model.cells[u2 + C.RENDER_MODEL_EXT_OFFSET] !== this._cellColorResolver.result.ext) && (M = true, d2.length > 1 && (_2 |= C.COMBINED_CHAR_BIT_MASK), this._model.cells[u2] = _2, this._model.cells[u2 + C.RENDER_MODEL_BG_OFFSET] = this._cellColorResolver.result.bg, this._model.cells[u2 + C.RENDER_MODEL_FG_OFFSET] = this._cellColorResolver.result.fg, this._model.cells[u2 + C.RENDER_MODEL_EXT_OFFSET] = this._cellColorResolver.result.ext, this._glyphRenderer.value.updateCell(v2, r2, _2, this._cellColorResolver.result.bg, this._cellColorResolver.result.fg, this._cellColorResolver.result.ext, d2, s3), h2)) for (p2 = this._workCell, v2++; v2 < l2; v2++) f2 = (r2 * i3.cols + v2) * C.RENDER_MODEL_INDICIES_PER_CELL, this._glyphRenderer.value.updateCell(v2, r2, g.NULL_CELL_CODE, 0, 0, 0, g.NULL_CELL_CHAR, 0), this._model.cells[f2] = g.NULL_CELL_CODE, this._model.cells[f2 + C.RENDER_MODEL_BG_OFFSET] = this._cellColorResolver.result.bg, this._model.cells[f2 + C.RENDER_MODEL_FG_OFFSET] = this._cellColorResolver.result.fg, this._model.cells[f2 + C.RENDER_MODEL_EXT_OFFSET] = this._cellColorResolver.result.ext;
-            M && this._rectangleRenderer.value.updateBackgrounds(this._model), this._rectangleRenderer.value.updateCursor(this._model);
+            let M2 = false;
+            for (r2 = e3; r2 <= t3; r2++) for (o2 = r2 + i3.buffer.ydisp, n2 = i3.buffer.lines.get(o2), this._model.lineLengths[r2] = 0, a2 = this._characterJoinerService.getJoinedCharacters(o2), v3 = 0; v3 < i3.cols; v3++) if (s3 = this._cellColorResolver.result.bg, n2.loadCell(v3, p2), 0 === v3 && (s3 = this._cellColorResolver.result.bg), h3 = false, l2 = v3, a2.length > 0 && v3 === a2[0][0] && (h3 = true, c2 = a2.shift(), p2 = new x2(p2, n2.translateToString(true, c2[0], c2[1]), c2[1] - c2[0]), l2 = c2[1] - 1), d2 = p2.getChars(), _2 = p2.getCode(), u2 = (r2 * i3.cols + v3) * C.RENDER_MODEL_INDICIES_PER_CELL, this._cellColorResolver.resolve(p2, v3, o2), R && o2 === m3 && (v3 === L2 && (this._model.cursor = { x: L2, y: this._terminal.buffer.active.cursorY, width: p2.getWidth(), style: this._coreBrowserService.isFocused ? i3.options.cursorStyle || "block" : i3.options.cursorInactiveStyle, cursorWidth: i3.options.cursorWidth, dpr: this._devicePixelRatio }, b = L2 + p2.getWidth() - 1), v3 >= L2 && v3 <= b && (this._coreBrowserService.isFocused && "block" === (i3.options.cursorStyle || "block") || false === this._coreBrowserService.isFocused && "block" === i3.options.cursorInactiveStyle) && (this._cellColorResolver.result.fg = 50331648 | this._themeService.colors.cursorAccent.rgba >> 8 & 16777215, this._cellColorResolver.result.bg = 50331648 | this._themeService.colors.cursor.rgba >> 8 & 16777215)), _2 !== g2.NULL_CELL_CODE && (this._model.lineLengths[r2] = v3 + 1), (this._model.cells[u2] !== _2 || this._model.cells[u2 + C.RENDER_MODEL_BG_OFFSET] !== this._cellColorResolver.result.bg || this._model.cells[u2 + C.RENDER_MODEL_FG_OFFSET] !== this._cellColorResolver.result.fg || this._model.cells[u2 + C.RENDER_MODEL_EXT_OFFSET] !== this._cellColorResolver.result.ext) && (M2 = true, d2.length > 1 && (_2 |= C.COMBINED_CHAR_BIT_MASK), this._model.cells[u2] = _2, this._model.cells[u2 + C.RENDER_MODEL_BG_OFFSET] = this._cellColorResolver.result.bg, this._model.cells[u2 + C.RENDER_MODEL_FG_OFFSET] = this._cellColorResolver.result.fg, this._model.cells[u2 + C.RENDER_MODEL_EXT_OFFSET] = this._cellColorResolver.result.ext, this._glyphRenderer.value.updateCell(v3, r2, _2, this._cellColorResolver.result.bg, this._cellColorResolver.result.fg, this._cellColorResolver.result.ext, d2, s3), h3)) for (p2 = this._workCell, v3++; v3 < l2; v3++) f2 = (r2 * i3.cols + v3) * C.RENDER_MODEL_INDICIES_PER_CELL, this._glyphRenderer.value.updateCell(v3, r2, g2.NULL_CELL_CODE, 0, 0, 0, g2.NULL_CELL_CHAR, 0), this._model.cells[f2] = g2.NULL_CELL_CODE, this._model.cells[f2 + C.RENDER_MODEL_BG_OFFSET] = this._cellColorResolver.result.bg, this._model.cells[f2 + C.RENDER_MODEL_FG_OFFSET] = this._cellColorResolver.result.fg, this._model.cells[f2 + C.RENDER_MODEL_EXT_OFFSET] = this._cellColorResolver.result.ext;
+            M2 && this._rectangleRenderer.value.updateBackgrounds(this._model), this._rectangleRenderer.value.updateCursor(this._model);
           }
           _updateDimensions() {
             this._charSizeService.width && this._charSizeService.height && (this.dimensions.device.char.width = Math.floor(this._charSizeService.width * this._devicePixelRatio), this.dimensions.device.char.height = Math.ceil(this._charSizeService.height * this._devicePixelRatio), this.dimensions.device.cell.height = Math.floor(this.dimensions.device.char.height * this._optionsService.rawOptions.lineHeight), this.dimensions.device.char.top = 1 === this._optionsService.rawOptions.lineHeight ? 0 : Math.round((this.dimensions.device.cell.height - this.dimensions.device.char.height) / 2), this.dimensions.device.cell.width = this.dimensions.device.char.width + Math.round(this._optionsService.rawOptions.letterSpacing), this.dimensions.device.char.left = Math.floor(this._optionsService.rawOptions.letterSpacing / 2), this.dimensions.device.canvas.height = this._terminal.rows * this.dimensions.device.cell.height, this.dimensions.device.canvas.width = this._terminal.cols * this.dimensions.device.cell.width, this.dimensions.css.canvas.height = Math.round(this.dimensions.device.canvas.height / this._devicePixelRatio), this.dimensions.css.canvas.width = Math.round(this.dimensions.device.canvas.width / this._devicePixelRatio), this.dimensions.css.cell.height = this.dimensions.device.cell.height / this._devicePixelRatio, this.dimensions.css.cell.width = this.dimensions.device.cell.width / this._devicePixelRatio);
@@ -6472,8 +6472,8 @@ void main() {
             this._onRequestRedraw.fire({ start: e3, end: e3 });
           }
         }
-        t2.WebglRenderer = L, s2([v.traceCall], L.prototype, "renderRows", null);
-        class x extends _.AttributeData {
+        t2.WebglRenderer = L, s2([v2.traceCall], L.prototype, "renderRows", null);
+        class x2 extends _.AttributeData {
           constructor(e3, t3, i3) {
             super(), this.content = 0, this.combinedData = "", this.fg = e3.fg, this.bg = e3.bg, this.combinedData = t3, this._width = i3;
           }
@@ -6496,10 +6496,10 @@ void main() {
             return [this.fg, this.getChars(), this.getWidth(), this.getCode()];
           }
         }
-        function w(e3, t3, i3 = 0) {
+        function w2(e3, t3, i3 = 0) {
           return Math.max(Math.min(e3, t3), i3);
         }
-        t2.JoinedCellData = x;
+        t2.JoinedCellData = x2;
       }, 381: (e2, t2, i2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.GLTexture = t2.expandFloat32Array = t2.createShader = t2.createProgram = t2.PROJECTION_MATRIX = void 0;
         const s2 = i2(374);
@@ -6525,8 +6525,8 @@ void main() {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.BaseRenderLayer = void 0;
         const s2 = i2(627), r = i2(237), o = i2(374), n = i2(859);
         class a extends n.Disposable {
-          constructor(e3, t3, i3, s3, r2, o2, a2, h) {
-            super(), this._container = t3, this._alpha = r2, this._coreBrowserService = o2, this._optionsService = a2, this._themeService = h, this._deviceCharWidth = 0, this._deviceCharHeight = 0, this._deviceCellWidth = 0, this._deviceCellHeight = 0, this._deviceCharLeft = 0, this._deviceCharTop = 0, this._canvas = document.createElement("canvas"), this._canvas.classList.add(`xterm-${i3}-layer`), this._canvas.style.zIndex = s3.toString(), this._initCanvas(), this._container.appendChild(this._canvas), this.register(this._themeService.onChangeColors(((t4) => {
+          constructor(e3, t3, i3, s3, r2, o2, a2, h2) {
+            super(), this._container = t3, this._alpha = r2, this._coreBrowserService = o2, this._optionsService = a2, this._themeService = h2, this._deviceCharWidth = 0, this._deviceCharHeight = 0, this._deviceCellWidth = 0, this._deviceCellHeight = 0, this._deviceCharLeft = 0, this._deviceCharTop = 0, this._canvas = document.createElement("canvas"), this._canvas.classList.add(`xterm-${i3}-layer`), this._canvas.style.zIndex = s3.toString(), this._initCanvas(), this._container.appendChild(this._canvas), this.register(this._themeService.onChangeColors(((t4) => {
               this._refreshCharAtlas(e3, t4), this.reset(e3);
             }))), this.register((0, n.toDisposable)((() => {
               this._canvas.remove();
@@ -6625,10 +6625,10 @@ void main() {
           constructor(e3, t3, i3, s3, r2) {
             this._terminal = e3, this._selectionRenderModel = t3, this._decorationService = i3, this._coreBrowserService = s3, this._themeService = r2, this.result = { fg: 0, bg: 0, ext: 0 };
           }
-          resolve(e3, t3, h) {
-            this.result.bg = e3.bg, this.result.fg = e3.fg, this.result.ext = 268435456 & e3.bg ? e3.extended.ext : 0, r = 0, s2 = 0, n = false, o = false, a = false, i2 = this._themeService.colors, this._decorationService.forEachDecorationAtCell(t3, h, "bottom", ((e4) => {
+          resolve(e3, t3, h2) {
+            this.result.bg = e3.bg, this.result.fg = e3.fg, this.result.ext = 268435456 & e3.bg ? e3.extended.ext : 0, r = 0, s2 = 0, n = false, o = false, a = false, i2 = this._themeService.colors, this._decorationService.forEachDecorationAtCell(t3, h2, "bottom", ((e4) => {
               e4.backgroundColorRGB && (r = e4.backgroundColorRGB.rgba >> 8 & 16777215, n = true), e4.foregroundColorRGB && (s2 = e4.foregroundColorRGB.rgba >> 8 & 16777215, o = true);
-            })), a = this._selectionRenderModel.isCellSelected(this._terminal, t3, h), a && (r = (this._coreBrowserService.isFocused ? i2.selectionBackgroundOpaque : i2.selectionInactiveBackgroundOpaque).rgba >> 8 & 16777215, n = true, i2.selectionForeground && (s2 = i2.selectionForeground.rgba >> 8 & 16777215, o = true)), this._decorationService.forEachDecorationAtCell(t3, h, "top", ((e4) => {
+            })), a = this._selectionRenderModel.isCellSelected(this._terminal, t3, h2), a && (r = (this._coreBrowserService.isFocused ? i2.selectionBackgroundOpaque : i2.selectionInactiveBackgroundOpaque).rgba >> 8 & 16777215, n = true, i2.selectionForeground && (s2 = i2.selectionForeground.rgba >> 8 & 16777215, o = true)), this._decorationService.forEachDecorationAtCell(t3, h2, "top", ((e4) => {
               e4.backgroundColorRGB && (r = e4.backgroundColorRGB.rgba >> 8 & 16777215, n = true), e4.foregroundColorRGB && (s2 = e4.foregroundColorRGB.rgba >> 8 & 16777215, o = true);
             })), n && (r = a ? -16777216 & e3.bg & -134217729 | r | 50331648 : -16777216 & e3.bg | r | 50331648), o && (s2 = -16777216 & e3.fg & -67108865 | s2 | 50331648), 67108864 & this.result.fg && (n && !o && (s2 = 0 == (50331648 & this.result.bg) ? -134217728 & this.result.fg | 16777215 & i2.background.rgba >> 8 | 50331648 : -134217728 & this.result.fg | 67108863 & this.result.bg, o = true), !n && o && (r = 0 == (50331648 & this.result.fg) ? -67108864 & this.result.bg | 16777215 & i2.foreground.rgba >> 8 | 50331648 : -67108864 & this.result.bg | 67108863 & this.result.fg, n = true)), i2 = void 0, this.result.bg = n ? r : this.result.bg, this.result.fg = o ? s2 : this.result.fg;
           }
@@ -6636,8 +6636,8 @@ void main() {
       }, 627: (e2, t2, i2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.removeTerminalFromCache = t2.acquireTextureAtlas = void 0;
         const s2 = i2(509), r = i2(197), o = [];
-        t2.acquireTextureAtlas = function(e3, t3, i3, n, a, h, l, c) {
-          const d = (0, r.generateConfig)(n, a, h, l, t3, i3, c);
+        t2.acquireTextureAtlas = function(e3, t3, i3, n, a, h2, l, c) {
+          const d = (0, r.generateConfig)(n, a, h2, l, t3, i3, c);
           for (let t4 = 0; t4 < o.length; t4++) {
             const i4 = o[t4], s3 = i4.ownedBy.indexOf(e3);
             if (s3 >= 0) {
@@ -6665,8 +6665,8 @@ void main() {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.is256Color = t2.configEquals = t2.generateConfig = void 0;
         const s2 = i2(160);
         t2.generateConfig = function(e3, t3, i3, r, o, n, a) {
-          const h = { foreground: n.foreground, background: n.background, cursor: s2.NULL_COLOR, cursorAccent: s2.NULL_COLOR, selectionForeground: s2.NULL_COLOR, selectionBackgroundTransparent: s2.NULL_COLOR, selectionBackgroundOpaque: s2.NULL_COLOR, selectionInactiveBackgroundTransparent: s2.NULL_COLOR, selectionInactiveBackgroundOpaque: s2.NULL_COLOR, ansi: n.ansi.slice(), contrastCache: n.contrastCache, halfContrastCache: n.halfContrastCache };
-          return { customGlyphs: o.customGlyphs, devicePixelRatio: a, letterSpacing: o.letterSpacing, lineHeight: o.lineHeight, deviceCellWidth: e3, deviceCellHeight: t3, deviceCharWidth: i3, deviceCharHeight: r, fontFamily: o.fontFamily, fontSize: o.fontSize, fontWeight: o.fontWeight, fontWeightBold: o.fontWeightBold, allowTransparency: o.allowTransparency, drawBoldTextInBrightColors: o.drawBoldTextInBrightColors, minimumContrastRatio: o.minimumContrastRatio, colors: h };
+          const h2 = { foreground: n.foreground, background: n.background, cursor: s2.NULL_COLOR, cursorAccent: s2.NULL_COLOR, selectionForeground: s2.NULL_COLOR, selectionBackgroundTransparent: s2.NULL_COLOR, selectionBackgroundOpaque: s2.NULL_COLOR, selectionInactiveBackgroundTransparent: s2.NULL_COLOR, selectionInactiveBackgroundOpaque: s2.NULL_COLOR, ansi: n.ansi.slice(), contrastCache: n.contrastCache, halfContrastCache: n.halfContrastCache };
+          return { customGlyphs: o.customGlyphs, devicePixelRatio: a, letterSpacing: o.letterSpacing, lineHeight: o.lineHeight, deviceCellWidth: e3, deviceCellHeight: t3, deviceCharWidth: i3, deviceCharHeight: r, fontFamily: o.fontFamily, fontSize: o.fontSize, fontWeight: o.fontWeight, fontWeightBold: o.fontWeightBold, allowTransparency: o.allowTransparency, drawBoldTextInBrightColors: o.drawBoldTextInBrightColors, minimumContrastRatio: o.minimumContrastRatio, colors: h2 };
         }, t2.configEquals = function(e3, t3) {
           for (let i3 = 0; i3 < e3.colors.ansi.length; i3++) if (e3.colors.ansi[i3].rgba !== t3.colors.ansi[i3].rgba) return false;
           return e3.devicePixelRatio === t3.devicePixelRatio && e3.customGlyphs === t3.customGlyphs && e3.lineHeight === t3.lineHeight && e3.letterSpacing === t3.letterSpacing && e3.fontFamily === t3.fontFamily && e3.fontSize === t3.fontSize && e3.fontWeight === t3.fontWeight && e3.fontWeightBold === t3.fontWeightBold && e3.allowTransparency === t3.allowTransparency && e3.deviceCharWidth === t3.deviceCharWidth && e3.deviceCharHeight === t3.deviceCharHeight && e3.drawBoldTextInBrightColors === t3.drawBoldTextInBrightColors && e3.minimumContrastRatio === t3.minimumContrastRatio && e3.colors.foreground.rgba === t3.colors.foreground.rgba && e3.colors.background.rgba === t3.colors.background.rgba;
@@ -6726,35 +6726,35 @@ void main() {
         t2.blockElementDefinitions = { "\u2580": [{ x: 0, y: 0, w: 8, h: 4 }], "\u2581": [{ x: 0, y: 7, w: 8, h: 1 }], "\u2582": [{ x: 0, y: 6, w: 8, h: 2 }], "\u2583": [{ x: 0, y: 5, w: 8, h: 3 }], "\u2584": [{ x: 0, y: 4, w: 8, h: 4 }], "\u2585": [{ x: 0, y: 3, w: 8, h: 5 }], "\u2586": [{ x: 0, y: 2, w: 8, h: 6 }], "\u2587": [{ x: 0, y: 1, w: 8, h: 7 }], "\u2588": [{ x: 0, y: 0, w: 8, h: 8 }], "\u2589": [{ x: 0, y: 0, w: 7, h: 8 }], "\u258A": [{ x: 0, y: 0, w: 6, h: 8 }], "\u258B": [{ x: 0, y: 0, w: 5, h: 8 }], "\u258C": [{ x: 0, y: 0, w: 4, h: 8 }], "\u258D": [{ x: 0, y: 0, w: 3, h: 8 }], "\u258E": [{ x: 0, y: 0, w: 2, h: 8 }], "\u258F": [{ x: 0, y: 0, w: 1, h: 8 }], "\u2590": [{ x: 4, y: 0, w: 4, h: 8 }], "\u2594": [{ x: 0, y: 0, w: 8, h: 1 }], "\u2595": [{ x: 7, y: 0, w: 1, h: 8 }], "\u2596": [{ x: 0, y: 4, w: 4, h: 4 }], "\u2597": [{ x: 4, y: 4, w: 4, h: 4 }], "\u2598": [{ x: 0, y: 0, w: 4, h: 4 }], "\u2599": [{ x: 0, y: 0, w: 4, h: 8 }, { x: 0, y: 4, w: 8, h: 4 }], "\u259A": [{ x: 0, y: 0, w: 4, h: 4 }, { x: 4, y: 4, w: 4, h: 4 }], "\u259B": [{ x: 0, y: 0, w: 4, h: 8 }, { x: 4, y: 0, w: 4, h: 4 }], "\u259C": [{ x: 0, y: 0, w: 8, h: 4 }, { x: 4, y: 0, w: 4, h: 8 }], "\u259D": [{ x: 4, y: 0, w: 4, h: 4 }], "\u259E": [{ x: 4, y: 0, w: 4, h: 4 }, { x: 0, y: 4, w: 4, h: 4 }], "\u259F": [{ x: 4, y: 0, w: 4, h: 8 }, { x: 0, y: 4, w: 8, h: 4 }], "\u{1FB70}": [{ x: 1, y: 0, w: 1, h: 8 }], "\u{1FB71}": [{ x: 2, y: 0, w: 1, h: 8 }], "\u{1FB72}": [{ x: 3, y: 0, w: 1, h: 8 }], "\u{1FB73}": [{ x: 4, y: 0, w: 1, h: 8 }], "\u{1FB74}": [{ x: 5, y: 0, w: 1, h: 8 }], "\u{1FB75}": [{ x: 6, y: 0, w: 1, h: 8 }], "\u{1FB76}": [{ x: 0, y: 1, w: 8, h: 1 }], "\u{1FB77}": [{ x: 0, y: 2, w: 8, h: 1 }], "\u{1FB78}": [{ x: 0, y: 3, w: 8, h: 1 }], "\u{1FB79}": [{ x: 0, y: 4, w: 8, h: 1 }], "\u{1FB7A}": [{ x: 0, y: 5, w: 8, h: 1 }], "\u{1FB7B}": [{ x: 0, y: 6, w: 8, h: 1 }], "\u{1FB7C}": [{ x: 0, y: 0, w: 1, h: 8 }, { x: 0, y: 7, w: 8, h: 1 }], "\u{1FB7D}": [{ x: 0, y: 0, w: 1, h: 8 }, { x: 0, y: 0, w: 8, h: 1 }], "\u{1FB7E}": [{ x: 7, y: 0, w: 1, h: 8 }, { x: 0, y: 0, w: 8, h: 1 }], "\u{1FB7F}": [{ x: 7, y: 0, w: 1, h: 8 }, { x: 0, y: 7, w: 8, h: 1 }], "\u{1FB80}": [{ x: 0, y: 0, w: 8, h: 1 }, { x: 0, y: 7, w: 8, h: 1 }], "\u{1FB81}": [{ x: 0, y: 0, w: 8, h: 1 }, { x: 0, y: 2, w: 8, h: 1 }, { x: 0, y: 4, w: 8, h: 1 }, { x: 0, y: 7, w: 8, h: 1 }], "\u{1FB82}": [{ x: 0, y: 0, w: 8, h: 2 }], "\u{1FB83}": [{ x: 0, y: 0, w: 8, h: 3 }], "\u{1FB84}": [{ x: 0, y: 0, w: 8, h: 5 }], "\u{1FB85}": [{ x: 0, y: 0, w: 8, h: 6 }], "\u{1FB86}": [{ x: 0, y: 0, w: 8, h: 7 }], "\u{1FB87}": [{ x: 6, y: 0, w: 2, h: 8 }], "\u{1FB88}": [{ x: 5, y: 0, w: 3, h: 8 }], "\u{1FB89}": [{ x: 3, y: 0, w: 5, h: 8 }], "\u{1FB8A}": [{ x: 2, y: 0, w: 6, h: 8 }], "\u{1FB8B}": [{ x: 1, y: 0, w: 7, h: 8 }], "\u{1FB95}": [{ x: 0, y: 0, w: 2, h: 2 }, { x: 4, y: 0, w: 2, h: 2 }, { x: 2, y: 2, w: 2, h: 2 }, { x: 6, y: 2, w: 2, h: 2 }, { x: 0, y: 4, w: 2, h: 2 }, { x: 4, y: 4, w: 2, h: 2 }, { x: 2, y: 6, w: 2, h: 2 }, { x: 6, y: 6, w: 2, h: 2 }], "\u{1FB96}": [{ x: 2, y: 0, w: 2, h: 2 }, { x: 6, y: 0, w: 2, h: 2 }, { x: 0, y: 2, w: 2, h: 2 }, { x: 4, y: 2, w: 2, h: 2 }, { x: 2, y: 4, w: 2, h: 2 }, { x: 6, y: 4, w: 2, h: 2 }, { x: 0, y: 6, w: 2, h: 2 }, { x: 4, y: 6, w: 2, h: 2 }], "\u{1FB97}": [{ x: 0, y: 2, w: 8, h: 2 }, { x: 0, y: 6, w: 8, h: 2 }] };
         const r = { "\u2591": [[1, 0, 0, 0], [0, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 0]], "\u2592": [[1, 0], [0, 0], [0, 1], [0, 0]], "\u2593": [[0, 1], [1, 1], [1, 0], [1, 1]] };
         t2.boxDrawingDefinitions = { "\u2500": { 1: "M0,.5 L1,.5" }, "\u2501": { 3: "M0,.5 L1,.5" }, "\u2502": { 1: "M.5,0 L.5,1" }, "\u2503": { 3: "M.5,0 L.5,1" }, "\u250C": { 1: "M0.5,1 L.5,.5 L1,.5" }, "\u250F": { 3: "M0.5,1 L.5,.5 L1,.5" }, "\u2510": { 1: "M0,.5 L.5,.5 L.5,1" }, "\u2513": { 3: "M0,.5 L.5,.5 L.5,1" }, "\u2514": { 1: "M.5,0 L.5,.5 L1,.5" }, "\u2517": { 3: "M.5,0 L.5,.5 L1,.5" }, "\u2518": { 1: "M.5,0 L.5,.5 L0,.5" }, "\u251B": { 3: "M.5,0 L.5,.5 L0,.5" }, "\u251C": { 1: "M.5,0 L.5,1 M.5,.5 L1,.5" }, "\u2523": { 3: "M.5,0 L.5,1 M.5,.5 L1,.5" }, "\u2524": { 1: "M.5,0 L.5,1 M.5,.5 L0,.5" }, "\u252B": { 3: "M.5,0 L.5,1 M.5,.5 L0,.5" }, "\u252C": { 1: "M0,.5 L1,.5 M.5,.5 L.5,1" }, "\u2533": { 3: "M0,.5 L1,.5 M.5,.5 L.5,1" }, "\u2534": { 1: "M0,.5 L1,.5 M.5,.5 L.5,0" }, "\u253B": { 3: "M0,.5 L1,.5 M.5,.5 L.5,0" }, "\u253C": { 1: "M0,.5 L1,.5 M.5,0 L.5,1" }, "\u254B": { 3: "M0,.5 L1,.5 M.5,0 L.5,1" }, "\u2574": { 1: "M.5,.5 L0,.5" }, "\u2578": { 3: "M.5,.5 L0,.5" }, "\u2575": { 1: "M.5,.5 L.5,0" }, "\u2579": { 3: "M.5,.5 L.5,0" }, "\u2576": { 1: "M.5,.5 L1,.5" }, "\u257A": { 3: "M.5,.5 L1,.5" }, "\u2577": { 1: "M.5,.5 L.5,1" }, "\u257B": { 3: "M.5,.5 L.5,1" }, "\u2550": { 1: (e3, t3) => `M0,${0.5 - t3} L1,${0.5 - t3} M0,${0.5 + t3} L1,${0.5 + t3}` }, "\u2551": { 1: (e3, t3) => `M${0.5 - e3},0 L${0.5 - e3},1 M${0.5 + e3},0 L${0.5 + e3},1` }, "\u2552": { 1: (e3, t3) => `M.5,1 L.5,${0.5 - t3} L1,${0.5 - t3} M.5,${0.5 + t3} L1,${0.5 + t3}` }, "\u2553": { 1: (e3, t3) => `M${0.5 - e3},1 L${0.5 - e3},.5 L1,.5 M${0.5 + e3},.5 L${0.5 + e3},1` }, "\u2554": { 1: (e3, t3) => `M1,${0.5 - t3} L${0.5 - e3},${0.5 - t3} L${0.5 - e3},1 M1,${0.5 + t3} L${0.5 + e3},${0.5 + t3} L${0.5 + e3},1` }, "\u2555": { 1: (e3, t3) => `M0,${0.5 - t3} L.5,${0.5 - t3} L.5,1 M0,${0.5 + t3} L.5,${0.5 + t3}` }, "\u2556": { 1: (e3, t3) => `M${0.5 + e3},1 L${0.5 + e3},.5 L0,.5 M${0.5 - e3},.5 L${0.5 - e3},1` }, "\u2557": { 1: (e3, t3) => `M0,${0.5 + t3} L${0.5 - e3},${0.5 + t3} L${0.5 - e3},1 M0,${0.5 - t3} L${0.5 + e3},${0.5 - t3} L${0.5 + e3},1` }, "\u2558": { 1: (e3, t3) => `M.5,0 L.5,${0.5 + t3} L1,${0.5 + t3} M.5,${0.5 - t3} L1,${0.5 - t3}` }, "\u2559": { 1: (e3, t3) => `M1,.5 L${0.5 - e3},.5 L${0.5 - e3},0 M${0.5 + e3},.5 L${0.5 + e3},0` }, "\u255A": { 1: (e3, t3) => `M1,${0.5 - t3} L${0.5 + e3},${0.5 - t3} L${0.5 + e3},0 M1,${0.5 + t3} L${0.5 - e3},${0.5 + t3} L${0.5 - e3},0` }, "\u255B": { 1: (e3, t3) => `M0,${0.5 + t3} L.5,${0.5 + t3} L.5,0 M0,${0.5 - t3} L.5,${0.5 - t3}` }, "\u255C": { 1: (e3, t3) => `M0,.5 L${0.5 + e3},.5 L${0.5 + e3},0 M${0.5 - e3},.5 L${0.5 - e3},0` }, "\u255D": { 1: (e3, t3) => `M0,${0.5 - t3} L${0.5 - e3},${0.5 - t3} L${0.5 - e3},0 M0,${0.5 + t3} L${0.5 + e3},${0.5 + t3} L${0.5 + e3},0` }, "\u255E": { 1: (e3, t3) => `M.5,0 L.5,1 M.5,${0.5 - t3} L1,${0.5 - t3} M.5,${0.5 + t3} L1,${0.5 + t3}` }, "\u255F": { 1: (e3, t3) => `M${0.5 - e3},0 L${0.5 - e3},1 M${0.5 + e3},0 L${0.5 + e3},1 M${0.5 + e3},.5 L1,.5` }, "\u2560": { 1: (e3, t3) => `M${0.5 - e3},0 L${0.5 - e3},1 M1,${0.5 + t3} L${0.5 + e3},${0.5 + t3} L${0.5 + e3},1 M1,${0.5 - t3} L${0.5 + e3},${0.5 - t3} L${0.5 + e3},0` }, "\u2561": { 1: (e3, t3) => `M.5,0 L.5,1 M0,${0.5 - t3} L.5,${0.5 - t3} M0,${0.5 + t3} L.5,${0.5 + t3}` }, "\u2562": { 1: (e3, t3) => `M0,.5 L${0.5 - e3},.5 M${0.5 - e3},0 L${0.5 - e3},1 M${0.5 + e3},0 L${0.5 + e3},1` }, "\u2563": { 1: (e3, t3) => `M${0.5 + e3},0 L${0.5 + e3},1 M0,${0.5 + t3} L${0.5 - e3},${0.5 + t3} L${0.5 - e3},1 M0,${0.5 - t3} L${0.5 - e3},${0.5 - t3} L${0.5 - e3},0` }, "\u2564": { 1: (e3, t3) => `M0,${0.5 - t3} L1,${0.5 - t3} M0,${0.5 + t3} L1,${0.5 + t3} M.5,${0.5 + t3} L.5,1` }, "\u2565": { 1: (e3, t3) => `M0,.5 L1,.5 M${0.5 - e3},.5 L${0.5 - e3},1 M${0.5 + e3},.5 L${0.5 + e3},1` }, "\u2566": { 1: (e3, t3) => `M0,${0.5 - t3} L1,${0.5 - t3} M0,${0.5 + t3} L${0.5 - e3},${0.5 + t3} L${0.5 - e3},1 M1,${0.5 + t3} L${0.5 + e3},${0.5 + t3} L${0.5 + e3},1` }, "\u2567": { 1: (e3, t3) => `M.5,0 L.5,${0.5 - t3} M0,${0.5 - t3} L1,${0.5 - t3} M0,${0.5 + t3} L1,${0.5 + t3}` }, "\u2568": { 1: (e3, t3) => `M0,.5 L1,.5 M${0.5 - e3},.5 L${0.5 - e3},0 M${0.5 + e3},.5 L${0.5 + e3},0` }, "\u2569": { 1: (e3, t3) => `M0,${0.5 + t3} L1,${0.5 + t3} M0,${0.5 - t3} L${0.5 - e3},${0.5 - t3} L${0.5 - e3},0 M1,${0.5 - t3} L${0.5 + e3},${0.5 - t3} L${0.5 + e3},0` }, "\u256A": { 1: (e3, t3) => `M.5,0 L.5,1 M0,${0.5 - t3} L1,${0.5 - t3} M0,${0.5 + t3} L1,${0.5 + t3}` }, "\u256B": { 1: (e3, t3) => `M0,.5 L1,.5 M${0.5 - e3},0 L${0.5 - e3},1 M${0.5 + e3},0 L${0.5 + e3},1` }, "\u256C": { 1: (e3, t3) => `M0,${0.5 + t3} L${0.5 - e3},${0.5 + t3} L${0.5 - e3},1 M1,${0.5 + t3} L${0.5 + e3},${0.5 + t3} L${0.5 + e3},1 M0,${0.5 - t3} L${0.5 - e3},${0.5 - t3} L${0.5 - e3},0 M1,${0.5 - t3} L${0.5 + e3},${0.5 - t3} L${0.5 + e3},0` }, "\u2571": { 1: "M1,0 L0,1" }, "\u2572": { 1: "M0,0 L1,1" }, "\u2573": { 1: "M1,0 L0,1 M0,0 L1,1" }, "\u257C": { 1: "M.5,.5 L0,.5", 3: "M.5,.5 L1,.5" }, "\u257D": { 1: "M.5,.5 L.5,0", 3: "M.5,.5 L.5,1" }, "\u257E": { 1: "M.5,.5 L1,.5", 3: "M.5,.5 L0,.5" }, "\u257F": { 1: "M.5,.5 L.5,1", 3: "M.5,.5 L.5,0" }, "\u250D": { 1: "M.5,.5 L.5,1", 3: "M.5,.5 L1,.5" }, "\u250E": { 1: "M.5,.5 L1,.5", 3: "M.5,.5 L.5,1" }, "\u2511": { 1: "M.5,.5 L.5,1", 3: "M.5,.5 L0,.5" }, "\u2512": { 1: "M.5,.5 L0,.5", 3: "M.5,.5 L.5,1" }, "\u2515": { 1: "M.5,.5 L.5,0", 3: "M.5,.5 L1,.5" }, "\u2516": { 1: "M.5,.5 L1,.5", 3: "M.5,.5 L.5,0" }, "\u2519": { 1: "M.5,.5 L.5,0", 3: "M.5,.5 L0,.5" }, "\u251A": { 1: "M.5,.5 L0,.5", 3: "M.5,.5 L.5,0" }, "\u251D": { 1: "M.5,0 L.5,1", 3: "M.5,.5 L1,.5" }, "\u251E": { 1: "M0.5,1 L.5,.5 L1,.5", 3: "M.5,.5 L.5,0" }, "\u251F": { 1: "M.5,0 L.5,.5 L1,.5", 3: "M.5,.5 L.5,1" }, "\u2520": { 1: "M.5,.5 L1,.5", 3: "M.5,0 L.5,1" }, "\u2521": { 1: "M.5,.5 L.5,1", 3: "M.5,0 L.5,.5 L1,.5" }, "\u2522": { 1: "M.5,.5 L.5,0", 3: "M0.5,1 L.5,.5 L1,.5" }, "\u2525": { 1: "M.5,0 L.5,1", 3: "M.5,.5 L0,.5" }, "\u2526": { 1: "M0,.5 L.5,.5 L.5,1", 3: "M.5,.5 L.5,0" }, "\u2527": { 1: "M.5,0 L.5,.5 L0,.5", 3: "M.5,.5 L.5,1" }, "\u2528": { 1: "M.5,.5 L0,.5", 3: "M.5,0 L.5,1" }, "\u2529": { 1: "M.5,.5 L.5,1", 3: "M.5,0 L.5,.5 L0,.5" }, "\u252A": { 1: "M.5,.5 L.5,0", 3: "M0,.5 L.5,.5 L.5,1" }, "\u252D": { 1: "M0.5,1 L.5,.5 L1,.5", 3: "M.5,.5 L0,.5" }, "\u252E": { 1: "M0,.5 L.5,.5 L.5,1", 3: "M.5,.5 L1,.5" }, "\u252F": { 1: "M.5,.5 L.5,1", 3: "M0,.5 L1,.5" }, "\u2530": { 1: "M0,.5 L1,.5", 3: "M.5,.5 L.5,1" }, "\u2531": { 1: "M.5,.5 L1,.5", 3: "M0,.5 L.5,.5 L.5,1" }, "\u2532": { 1: "M.5,.5 L0,.5", 3: "M0.5,1 L.5,.5 L1,.5" }, "\u2535": { 1: "M.5,0 L.5,.5 L1,.5", 3: "M.5,.5 L0,.5" }, "\u2536": { 1: "M.5,0 L.5,.5 L0,.5", 3: "M.5,.5 L1,.5" }, "\u2537": { 1: "M.5,.5 L.5,0", 3: "M0,.5 L1,.5" }, "\u2538": { 1: "M0,.5 L1,.5", 3: "M.5,.5 L.5,0" }, "\u2539": { 1: "M.5,.5 L1,.5", 3: "M.5,0 L.5,.5 L0,.5" }, "\u253A": { 1: "M.5,.5 L0,.5", 3: "M.5,0 L.5,.5 L1,.5" }, "\u253D": { 1: "M.5,0 L.5,1 M.5,.5 L1,.5", 3: "M.5,.5 L0,.5" }, "\u253E": { 1: "M.5,0 L.5,1 M.5,.5 L0,.5", 3: "M.5,.5 L1,.5" }, "\u253F": { 1: "M.5,0 L.5,1", 3: "M0,.5 L1,.5" }, "\u2540": { 1: "M0,.5 L1,.5 M.5,.5 L.5,1", 3: "M.5,.5 L.5,0" }, "\u2541": { 1: "M.5,.5 L.5,0 M0,.5 L1,.5", 3: "M.5,.5 L.5,1" }, "\u2542": { 1: "M0,.5 L1,.5", 3: "M.5,0 L.5,1" }, "\u2543": { 1: "M0.5,1 L.5,.5 L1,.5", 3: "M.5,0 L.5,.5 L0,.5" }, "\u2544": { 1: "M0,.5 L.5,.5 L.5,1", 3: "M.5,0 L.5,.5 L1,.5" }, "\u2545": { 1: "M.5,0 L.5,.5 L1,.5", 3: "M0,.5 L.5,.5 L.5,1" }, "\u2546": { 1: "M.5,0 L.5,.5 L0,.5", 3: "M0.5,1 L.5,.5 L1,.5" }, "\u2547": { 1: "M.5,.5 L.5,1", 3: "M.5,.5 L.5,0 M0,.5 L1,.5" }, "\u2548": { 1: "M.5,.5 L.5,0", 3: "M0,.5 L1,.5 M.5,.5 L.5,1" }, "\u2549": { 1: "M.5,.5 L1,.5", 3: "M.5,0 L.5,1 M.5,.5 L0,.5" }, "\u254A": { 1: "M.5,.5 L0,.5", 3: "M.5,0 L.5,1 M.5,.5 L1,.5" }, "\u254C": { 1: "M.1,.5 L.4,.5 M.6,.5 L.9,.5" }, "\u254D": { 3: "M.1,.5 L.4,.5 M.6,.5 L.9,.5" }, "\u2504": { 1: "M.0667,.5 L.2667,.5 M.4,.5 L.6,.5 M.7333,.5 L.9333,.5" }, "\u2505": { 3: "M.0667,.5 L.2667,.5 M.4,.5 L.6,.5 M.7333,.5 L.9333,.5" }, "\u2508": { 1: "M.05,.5 L.2,.5 M.3,.5 L.45,.5 M.55,.5 L.7,.5 M.8,.5 L.95,.5" }, "\u2509": { 3: "M.05,.5 L.2,.5 M.3,.5 L.45,.5 M.55,.5 L.7,.5 M.8,.5 L.95,.5" }, "\u254E": { 1: "M.5,.1 L.5,.4 M.5,.6 L.5,.9" }, "\u254F": { 3: "M.5,.1 L.5,.4 M.5,.6 L.5,.9" }, "\u2506": { 1: "M.5,.0667 L.5,.2667 M.5,.4 L.5,.6 M.5,.7333 L.5,.9333" }, "\u2507": { 3: "M.5,.0667 L.5,.2667 M.5,.4 L.5,.6 M.5,.7333 L.5,.9333" }, "\u250A": { 1: "M.5,.05 L.5,.2 M.5,.3 L.5,.45 L.5,.55 M.5,.7 L.5,.95" }, "\u250B": { 3: "M.5,.05 L.5,.2 M.5,.3 L.5,.45 L.5,.55 M.5,.7 L.5,.95" }, "\u256D": { 1: (e3, t3) => `M.5,1 L.5,${0.5 + t3 / 0.15 * 0.5} C.5,${0.5 + t3 / 0.15 * 0.5},.5,.5,1,.5` }, "\u256E": { 1: (e3, t3) => `M.5,1 L.5,${0.5 + t3 / 0.15 * 0.5} C.5,${0.5 + t3 / 0.15 * 0.5},.5,.5,0,.5` }, "\u256F": { 1: (e3, t3) => `M.5,0 L.5,${0.5 - t3 / 0.15 * 0.5} C.5,${0.5 - t3 / 0.15 * 0.5},.5,.5,0,.5` }, "\u2570": { 1: (e3, t3) => `M.5,0 L.5,${0.5 - t3 / 0.15 * 0.5} C.5,${0.5 - t3 / 0.15 * 0.5},.5,.5,1,.5` } }, t2.powerlineDefinitions = { "\uE0B0": { d: "M0,0 L1,.5 L0,1", type: 0, rightPadding: 2 }, "\uE0B1": { d: "M-1,-.5 L1,.5 L-1,1.5", type: 1, leftPadding: 1, rightPadding: 1 }, "\uE0B2": { d: "M1,0 L0,.5 L1,1", type: 0, leftPadding: 2 }, "\uE0B3": { d: "M2,-.5 L0,.5 L2,1.5", type: 1, leftPadding: 1, rightPadding: 1 }, "\uE0B4": { d: "M0,0 L0,1 C0.552,1,1,0.776,1,.5 C1,0.224,0.552,0,0,0", type: 0, rightPadding: 1 }, "\uE0B5": { d: "M.2,1 C.422,1,.8,.826,.78,.5 C.8,.174,0.422,0,.2,0", type: 1, rightPadding: 1 }, "\uE0B6": { d: "M1,0 L1,1 C0.448,1,0,0.776,0,.5 C0,0.224,0.448,0,1,0", type: 0, leftPadding: 1 }, "\uE0B7": { d: "M.8,1 C0.578,1,0.2,.826,.22,.5 C0.2,0.174,0.578,0,0.8,0", type: 1, leftPadding: 1 }, "\uE0B8": { d: "M-.5,-.5 L1.5,1.5 L-.5,1.5", type: 0 }, "\uE0B9": { d: "M-.5,-.5 L1.5,1.5", type: 1, leftPadding: 1, rightPadding: 1 }, "\uE0BA": { d: "M1.5,-.5 L-.5,1.5 L1.5,1.5", type: 0 }, "\uE0BC": { d: "M1.5,-.5 L-.5,1.5 L-.5,-.5", type: 0 }, "\uE0BD": { d: "M1.5,-.5 L-.5,1.5", type: 1, leftPadding: 1, rightPadding: 1 }, "\uE0BE": { d: "M-.5,-.5 L1.5,1.5 L1.5,-.5", type: 0 } }, t2.powerlineDefinitions["\uE0BB"] = t2.powerlineDefinitions["\uE0BD"], t2.powerlineDefinitions["\uE0BF"] = t2.powerlineDefinitions["\uE0B9"], t2.tryDrawCustomChar = function(e3, i3, n2, l, c, d, _, u) {
-          const g = t2.blockElementDefinitions[i3];
-          if (g) return (function(e4, t3, i4, s3, r2, o2) {
+          const g2 = t2.blockElementDefinitions[i3];
+          if (g2) return (function(e4, t3, i4, s3, r2, o2) {
             for (let n3 = 0; n3 < t3.length; n3++) {
-              const a2 = t3[n3], h2 = r2 / 8, l2 = o2 / 8;
-              e4.fillRect(i4 + a2.x * h2, s3 + a2.y * l2, a2.w * h2, a2.h * l2);
+              const a2 = t3[n3], h3 = r2 / 8, l2 = o2 / 8;
+              e4.fillRect(i4 + a2.x * h3, s3 + a2.y * l2, a2.w * h3, a2.h * l2);
             }
-          })(e3, g, n2, l, c, d), true;
-          const v = r[i3];
-          if (v) return (function(e4, t3, i4, r2, n3, a2) {
-            let h2 = o.get(t3);
-            h2 || (h2 = /* @__PURE__ */ new Map(), o.set(t3, h2));
+          })(e3, g2, n2, l, c, d), true;
+          const v2 = r[i3];
+          if (v2) return (function(e4, t3, i4, r2, n3, a2) {
+            let h3 = o.get(t3);
+            h3 || (h3 = /* @__PURE__ */ new Map(), o.set(t3, h3));
             const l2 = e4.fillStyle;
             if ("string" != typeof l2) throw new Error(`Unexpected fillStyle type "${l2}"`);
-            let c2 = h2.get(l2);
+            let c2 = h3.get(l2);
             if (!c2) {
               const i5 = t3[0].length, r3 = t3.length, o2 = document.createElement("canvas");
               o2.width = i5, o2.height = r3;
               const n4 = (0, s2.throwIfFalsy)(o2.getContext("2d")), a3 = new ImageData(i5, r3);
-              let d2, _2, u2, g2;
-              if (l2.startsWith("#")) d2 = parseInt(l2.slice(1, 3), 16), _2 = parseInt(l2.slice(3, 5), 16), u2 = parseInt(l2.slice(5, 7), 16), g2 = l2.length > 7 && parseInt(l2.slice(7, 9), 16) || 1;
+              let d2, _2, u2, g3;
+              if (l2.startsWith("#")) d2 = parseInt(l2.slice(1, 3), 16), _2 = parseInt(l2.slice(3, 5), 16), u2 = parseInt(l2.slice(5, 7), 16), g3 = l2.length > 7 && parseInt(l2.slice(7, 9), 16) || 1;
               else {
                 if (!l2.startsWith("rgba")) throw new Error(`Unexpected fillStyle color format "${l2}" when drawing pattern glyph`);
-                [d2, _2, u2, g2] = l2.substring(5, l2.length - 1).split(",").map(((e5) => parseFloat(e5)));
+                [d2, _2, u2, g3] = l2.substring(5, l2.length - 1).split(",").map(((e5) => parseFloat(e5)));
               }
-              for (let e5 = 0; e5 < r3; e5++) for (let s3 = 0; s3 < i5; s3++) a3.data[4 * (e5 * i5 + s3)] = d2, a3.data[4 * (e5 * i5 + s3) + 1] = _2, a3.data[4 * (e5 * i5 + s3) + 2] = u2, a3.data[4 * (e5 * i5 + s3) + 3] = t3[e5][s3] * (255 * g2);
-              n4.putImageData(a3, 0, 0), c2 = (0, s2.throwIfFalsy)(e4.createPattern(o2, null)), h2.set(l2, c2);
+              for (let e5 = 0; e5 < r3; e5++) for (let s3 = 0; s3 < i5; s3++) a3.data[4 * (e5 * i5 + s3)] = d2, a3.data[4 * (e5 * i5 + s3) + 1] = _2, a3.data[4 * (e5 * i5 + s3) + 2] = u2, a3.data[4 * (e5 * i5 + s3) + 3] = t3[e5][s3] * (255 * g3);
+              n4.putImageData(a3, 0, 0), c2 = (0, s2.throwIfFalsy)(e4.createPattern(o2, null)), h3.set(l2, c2);
             }
             e4.fillStyle = c2, e4.fillRect(i4, r2, n3, a2);
-          })(e3, v, n2, l, c, d), true;
+          })(e3, v2, n2, l, c, d), true;
           const f = t2.boxDrawingDefinitions[i3];
           if (f) return (function(e4, t3, i4, s3, r2, o2, n3) {
             e4.strokeStyle = e4.fillStyle;
@@ -6768,7 +6768,7 @@ void main() {
                   continue;
                 }
                 const d2 = l3.substring(1).split(",");
-                d2[0] && d2[1] && c3(e4, h(d2, r2, o2, i4, s3, true, n3));
+                d2[0] && d2[1] && c3(e4, h2(d2, r2, o2, i4, s3, true, n3));
               }
               e4.stroke(), e4.closePath();
             }
@@ -6781,13 +6781,13 @@ void main() {
             const u2 = n3 / 12;
             e4.lineWidth = l2 * u2;
             for (const n4 of t3.d.split(" ")) {
-              const _3 = n4[0], g2 = a[_3];
-              if (!g2) {
+              const _3 = n4[0], g3 = a[_3];
+              if (!g3) {
                 console.error(`Could not find drawing instructions for "${_3}"`);
                 continue;
               }
-              const v2 = n4.substring(1).split(",");
-              v2[0] && v2[1] && g2(e4, h(v2, r2, o2, i4, s3, false, l2, (null !== (c2 = t3.leftPadding) && void 0 !== c2 ? c2 : 0) * (u2 / 2), (null !== (d2 = t3.rightPadding) && void 0 !== d2 ? d2 : 0) * (u2 / 2)));
+              const v3 = n4.substring(1).split(",");
+              v3[0] && v3[1] && g3(e4, h2(v3, r2, o2, i4, s3, false, l2, (null !== (c2 = t3.leftPadding) && void 0 !== c2 ? c2 : 0) * (u2 / 2), (null !== (d2 = t3.rightPadding) && void 0 !== d2 ? d2 : 0) * (u2 / 2)));
             }
             1 === t3.type ? (e4.strokeStyle = e4.fillStyle, e4.stroke()) : e4.fill(), e4.closePath();
           })(e3, p, n2, l, c, d, _, u), true);
@@ -6797,10 +6797,10 @@ void main() {
           return Math.max(Math.min(e3, t3), i3);
         }
         const a = { C: (e3, t3) => e3.bezierCurveTo(t3[0], t3[1], t3[2], t3[3], t3[4], t3[5]), L: (e3, t3) => e3.lineTo(t3[0], t3[1]), M: (e3, t3) => e3.moveTo(t3[0], t3[1]) };
-        function h(e3, t3, i3, s3, r2, o2, a2, h2 = 0, l = 0) {
+        function h2(e3, t3, i3, s3, r2, o2, a2, h3 = 0, l = 0) {
           const c = e3.map(((e4) => parseFloat(e4) || parseInt(e4)));
           if (c.length < 2) throw new Error("Too few arguments for instruction");
-          for (let e4 = 0; e4 < c.length; e4 += 2) c[e4] *= t3 - h2 * a2 - l * a2, o2 && 0 !== c[e4] && (c[e4] = n(Math.round(c[e4] + 0.5) - 0.5, t3, 0)), c[e4] += s3 + h2 * a2;
+          for (let e4 = 0; e4 < c.length; e4 += 2) c[e4] *= t3 - h3 * a2 - l * a2, o2 && 0 !== c[e4] && (c[e4] = n(Math.round(c[e4] + 0.5) - 0.5, t3, 0)), c[e4] += s3 + h3 * a2;
           for (let e4 = 1; e4 < c.length; e4 += 2) c[e4] *= i3, o2 && 0 !== c[e4] && (c[e4] = n(Math.round(c[e4] + 0.5) - 0.5, i3, 0)), c[e4] += r2;
           return c;
         }
@@ -6867,14 +6867,14 @@ void main() {
           return o2 > 3 && n2 && Object.defineProperty(t3, i3, n2), n2;
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.TextureAtlas = void 0;
-        const r = i2(237), o = i2(860), n = i2(374), a = i2(160), h = i2(345), l = i2(485), c = i2(385), d = i2(147), _ = i2(855), u = i2(776), g = { texturePage: 0, texturePosition: { x: 0, y: 0 }, texturePositionClipSpace: { x: 0, y: 0 }, offset: { x: 0, y: 0 }, size: { x: 0, y: 0 }, sizeClipSpace: { x: 0, y: 0 } };
-        let v;
+        const r = i2(237), o = i2(860), n = i2(374), a = i2(160), h2 = i2(345), l = i2(485), c = i2(385), d = i2(147), _ = i2(855), u = i2(776), g2 = { texturePage: 0, texturePosition: { x: 0, y: 0 }, texturePositionClipSpace: { x: 0, y: 0 }, offset: { x: 0, y: 0 }, size: { x: 0, y: 0 }, sizeClipSpace: { x: 0, y: 0 } };
+        let v2;
         class f {
           get pages() {
             return this._pages;
           }
           constructor(e3, t3, i3) {
-            this._document = e3, this._config = t3, this._unicodeService = i3, this._didWarmUp = false, this._cacheMap = new l.FourKeyMap(), this._cacheMapCombined = new l.FourKeyMap(), this._pages = [], this._activePages = [], this._workBoundingBox = { top: 0, left: 0, bottom: 0, right: 0 }, this._workAttributeData = new d.AttributeData(), this._textureSize = 512, this._onAddTextureAtlasCanvas = new h.EventEmitter(), this.onAddTextureAtlasCanvas = this._onAddTextureAtlasCanvas.event, this._onRemoveTextureAtlasCanvas = new h.EventEmitter(), this.onRemoveTextureAtlasCanvas = this._onRemoveTextureAtlasCanvas.event, this._requestClearModel = false, this._createNewPage(), this._tmpCanvas = m(e3, 4 * this._config.deviceCellWidth + 4, this._config.deviceCellHeight + 4), this._tmpCtx = (0, n.throwIfFalsy)(this._tmpCanvas.getContext("2d", { alpha: this._config.allowTransparency, willReadFrequently: true }));
+            this._document = e3, this._config = t3, this._unicodeService = i3, this._didWarmUp = false, this._cacheMap = new l.FourKeyMap(), this._cacheMapCombined = new l.FourKeyMap(), this._pages = [], this._activePages = [], this._workBoundingBox = { top: 0, left: 0, bottom: 0, right: 0 }, this._workAttributeData = new d.AttributeData(), this._textureSize = 512, this._onAddTextureAtlasCanvas = new h2.EventEmitter(), this.onAddTextureAtlasCanvas = this._onAddTextureAtlasCanvas.event, this._onRemoveTextureAtlasCanvas = new h2.EventEmitter(), this.onRemoveTextureAtlasCanvas = this._onRemoveTextureAtlasCanvas.event, this._requestClearModel = false, this._createNewPage(), this._tmpCanvas = m2(e3, 4 * this._config.deviceCellWidth + 4, this._config.deviceCellHeight + 4), this._tmpCtx = (0, n.throwIfFalsy)(this._tmpCanvas.getContext("2d", { alpha: this._config.allowTransparency, willReadFrequently: true }));
           }
           dispose() {
             for (const e3 of this.pages) e3.canvas.remove();
@@ -6942,7 +6942,7 @@ void main() {
             return this._getFromCacheMap(this._cacheMap, e3, t3, i3, s3, r2);
           }
           _getFromCacheMap(e3, t3, i3, s3, r2, o2 = false) {
-            return v = e3.get(t3, i3, s3, r2), v || (v = this._drawToCache(t3, i3, s3, r2, o2), e3.set(t3, i3, s3, r2, v)), v;
+            return v2 = e3.get(t3, i3, s3, r2), v2 || (v2 = this._drawToCache(t3, i3, s3, r2, o2), e3.set(t3, i3, s3, r2, v2)), v2;
           }
           _getColorFromAnsiIndex(e3) {
             if (e3 >= this._config.colors.ansi.length) throw new Error("No color found for idx " + e3);
@@ -6965,23 +6965,23 @@ void main() {
             }
             return r2;
           }
-          _getForegroundColor(e3, t3, i3, s3, o2, n2, h2, l2, c2, _2) {
+          _getForegroundColor(e3, t3, i3, s3, o2, n2, h3, l2, c2, _2) {
             const u2 = this._getMinimumContrastColor(e3, t3, i3, s3, o2, n2, false, c2, l2, _2);
             if (u2) return u2;
-            let g2;
+            let g3;
             switch (o2) {
               case 16777216:
               case 33554432:
-                this._config.drawBoldTextInBrightColors && c2 && n2 < 8 && (n2 += 8), g2 = this._getColorFromAnsiIndex(n2);
+                this._config.drawBoldTextInBrightColors && c2 && n2 < 8 && (n2 += 8), g3 = this._getColorFromAnsiIndex(n2);
                 break;
               case 50331648:
                 const e4 = d.AttributeData.toColorRGB(n2);
-                g2 = a.rgba.toColor(e4[0], e4[1], e4[2]);
+                g3 = a.rgba.toColor(e4[0], e4[1], e4[2]);
                 break;
               default:
-                g2 = h2 ? this._config.colors.background : this._config.colors.foreground;
+                g3 = h3 ? this._config.colors.background : this._config.colors.foreground;
             }
-            return this._config.allowTransparency && (g2 = a.color.opaque(g2)), l2 && (g2 = a.color.multiplyOpacity(g2, r.DIM_OPACITY)), g2;
+            return this._config.allowTransparency && (g3 = a.color.opaque(g3)), l2 && (g3 = a.color.multiplyOpacity(g3, r.DIM_OPACITY)), g3;
           }
           _resolveBackgroundRgba(e3, t3, i3) {
             switch (e3) {
@@ -7005,183 +7005,183 @@ void main() {
                 return i3 ? this._config.colors.background.rgba : this._config.colors.foreground.rgba;
             }
           }
-          _getMinimumContrastColor(e3, t3, i3, s3, r2, o2, n2, h2, l2, c2) {
+          _getMinimumContrastColor(e3, t3, i3, s3, r2, o2, n2, h3, l2, c2) {
             if (1 === this._config.minimumContrastRatio || c2) return;
             const d2 = this._getContrastCache(l2), _2 = d2.getColor(e3, s3);
             if (void 0 !== _2) return _2 || void 0;
-            const u2 = this._resolveBackgroundRgba(t3, i3, n2), g2 = this._resolveForegroundRgba(r2, o2, n2, h2), v2 = a.rgba.ensureContrastRatio(u2, g2, this._config.minimumContrastRatio / (l2 ? 2 : 1));
-            if (!v2) return void d2.setColor(e3, s3, null);
-            const f2 = a.rgba.toColor(v2 >> 24 & 255, v2 >> 16 & 255, v2 >> 8 & 255);
+            const u2 = this._resolveBackgroundRgba(t3, i3, n2), g3 = this._resolveForegroundRgba(r2, o2, n2, h3), v3 = a.rgba.ensureContrastRatio(u2, g3, this._config.minimumContrastRatio / (l2 ? 2 : 1));
+            if (!v3) return void d2.setColor(e3, s3, null);
+            const f2 = a.rgba.toColor(v3 >> 24 & 255, v3 >> 16 & 255, v3 >> 8 & 255);
             return d2.setColor(e3, s3, f2), f2;
           }
           _getContrastCache(e3) {
             return e3 ? this._config.colors.halfContrastCache : this._config.colors.contrastCache;
           }
           _drawToCache(e3, t3, i3, s3, a2 = false) {
-            const h2 = "number" == typeof e3 ? String.fromCharCode(e3) : e3, l2 = Math.min(this._config.deviceCellWidth * Math.max(h2.length, 2) + 4, this._textureSize);
+            const h3 = "number" == typeof e3 ? String.fromCharCode(e3) : e3, l2 = Math.min(this._config.deviceCellWidth * Math.max(h3.length, 2) + 4, this._textureSize);
             this._tmpCanvas.width < l2 && (this._tmpCanvas.width = l2);
             const c2 = Math.min(this._config.deviceCellHeight + 8, this._textureSize);
-            if (this._tmpCanvas.height < c2 && (this._tmpCanvas.height = c2), this._tmpCtx.save(), this._workAttributeData.fg = i3, this._workAttributeData.bg = t3, this._workAttributeData.extended.ext = s3, this._workAttributeData.isInvisible()) return g;
-            const _2 = !!this._workAttributeData.isBold(), u2 = !!this._workAttributeData.isInverse(), v2 = !!this._workAttributeData.isDim(), p2 = !!this._workAttributeData.isItalic(), m2 = !!this._workAttributeData.isUnderline(), L = !!this._workAttributeData.isStrikethrough(), x = !!this._workAttributeData.isOverline();
-            let w = this._workAttributeData.getFgColor(), b = this._workAttributeData.getFgColorMode(), R = this._workAttributeData.getBgColor(), M = this._workAttributeData.getBgColorMode();
+            if (this._tmpCanvas.height < c2 && (this._tmpCanvas.height = c2), this._tmpCtx.save(), this._workAttributeData.fg = i3, this._workAttributeData.bg = t3, this._workAttributeData.extended.ext = s3, this._workAttributeData.isInvisible()) return g2;
+            const _2 = !!this._workAttributeData.isBold(), u2 = !!this._workAttributeData.isInverse(), v3 = !!this._workAttributeData.isDim(), p2 = !!this._workAttributeData.isItalic(), m3 = !!this._workAttributeData.isUnderline(), L = !!this._workAttributeData.isStrikethrough(), x2 = !!this._workAttributeData.isOverline();
+            let w2 = this._workAttributeData.getFgColor(), b = this._workAttributeData.getFgColorMode(), R = this._workAttributeData.getBgColor(), M2 = this._workAttributeData.getBgColorMode();
             if (u2) {
-              const e4 = w;
-              w = R, R = e4;
+              const e4 = w2;
+              w2 = R, R = e4;
               const t4 = b;
-              b = M, M = t4;
+              b = M2, M2 = t4;
             }
-            const y = this._getBackgroundColor(M, R, u2, v2);
-            this._tmpCtx.globalCompositeOperation = "copy", this._tmpCtx.fillStyle = y.css, this._tmpCtx.fillRect(0, 0, this._tmpCanvas.width, this._tmpCanvas.height), this._tmpCtx.globalCompositeOperation = "source-over";
+            const y2 = this._getBackgroundColor(M2, R, u2, v3);
+            this._tmpCtx.globalCompositeOperation = "copy", this._tmpCtx.fillStyle = y2.css, this._tmpCtx.fillRect(0, 0, this._tmpCanvas.width, this._tmpCanvas.height), this._tmpCtx.globalCompositeOperation = "source-over";
             const A = _2 ? this._config.fontWeightBold : this._config.fontWeight, E = p2 ? "italic" : "";
             this._tmpCtx.font = `${E} ${A} ${this._config.fontSize * this._config.devicePixelRatio}px ${this._config.fontFamily}`, this._tmpCtx.textBaseline = r.TEXT_BASELINE;
-            const S = 1 === h2.length && (0, n.isPowerlineGlyph)(h2.charCodeAt(0)), T = 1 === h2.length && (0, n.isRestrictedPowerlineGlyph)(h2.charCodeAt(0)), D = this._getForegroundColor(t3, M, R, i3, b, w, u2, v2, _2, (0, n.excludeFromContrastRatioDemands)(h2.charCodeAt(0)));
-            this._tmpCtx.fillStyle = D.css;
-            const P = T ? 0 : 4;
+            const S2 = 1 === h3.length && (0, n.isPowerlineGlyph)(h3.charCodeAt(0)), T = 1 === h3.length && (0, n.isRestrictedPowerlineGlyph)(h3.charCodeAt(0)), D2 = this._getForegroundColor(t3, M2, R, i3, b, w2, u2, v3, _2, (0, n.excludeFromContrastRatioDemands)(h3.charCodeAt(0)));
+            this._tmpCtx.fillStyle = D2.css;
+            const P2 = T ? 0 : 4;
             let F = false;
-            false !== this._config.customGlyphs && (F = (0, o.tryDrawCustomChar)(this._tmpCtx, h2, P, P, this._config.deviceCellWidth, this._config.deviceCellHeight, this._config.fontSize, this._config.devicePixelRatio));
-            let B, I = !S;
-            if (B = "number" == typeof e3 ? this._unicodeService.wcwidth(e3) : this._unicodeService.getStringCellWidth(e3), m2) {
+            false !== this._config.customGlyphs && (F = (0, o.tryDrawCustomChar)(this._tmpCtx, h3, P2, P2, this._config.deviceCellWidth, this._config.deviceCellHeight, this._config.fontSize, this._config.devicePixelRatio));
+            let B2, I2 = !S2;
+            if (B2 = "number" == typeof e3 ? this._unicodeService.wcwidth(e3) : this._unicodeService.getStringCellWidth(e3), m3) {
               this._tmpCtx.save();
               const e4 = Math.max(1, Math.floor(this._config.fontSize * this._config.devicePixelRatio / 15)), t4 = e4 % 2 == 1 ? 0.5 : 0;
               if (this._tmpCtx.lineWidth = e4, this._workAttributeData.isUnderlineColorDefault()) this._tmpCtx.strokeStyle = this._tmpCtx.fillStyle;
-              else if (this._workAttributeData.isUnderlineColorRGB()) I = false, this._tmpCtx.strokeStyle = `rgb(${d.AttributeData.toColorRGB(this._workAttributeData.getUnderlineColor()).join(",")})`;
+              else if (this._workAttributeData.isUnderlineColorRGB()) I2 = false, this._tmpCtx.strokeStyle = `rgb(${d.AttributeData.toColorRGB(this._workAttributeData.getUnderlineColor()).join(",")})`;
               else {
-                I = false;
+                I2 = false;
                 let e5 = this._workAttributeData.getUnderlineColor();
                 this._config.drawBoldTextInBrightColors && this._workAttributeData.isBold() && e5 < 8 && (e5 += 8), this._tmpCtx.strokeStyle = this._getColorFromAnsiIndex(e5).css;
               }
               this._tmpCtx.beginPath();
-              const i4 = P, s4 = Math.ceil(P + this._config.deviceCharHeight) - t4 - (a2 ? 2 * e4 : 0), r2 = s4 + e4, o2 = s4 + 2 * e4;
-              for (let n2 = 0; n2 < B; n2++) {
+              const i4 = P2, s4 = Math.ceil(P2 + this._config.deviceCharHeight) - t4 - (a2 ? 2 * e4 : 0), r2 = s4 + e4, o2 = s4 + 2 * e4;
+              for (let n2 = 0; n2 < B2; n2++) {
                 this._tmpCtx.save();
-                const a3 = i4 + n2 * this._config.deviceCellWidth, h3 = i4 + (n2 + 1) * this._config.deviceCellWidth, l3 = a3 + this._config.deviceCellWidth / 2;
+                const a3 = i4 + n2 * this._config.deviceCellWidth, h4 = i4 + (n2 + 1) * this._config.deviceCellWidth, l3 = a3 + this._config.deviceCellWidth / 2;
                 switch (this._workAttributeData.extended.underlineStyle) {
                   case 2:
-                    this._tmpCtx.moveTo(a3, s4), this._tmpCtx.lineTo(h3, s4), this._tmpCtx.moveTo(a3, o2), this._tmpCtx.lineTo(h3, o2);
+                    this._tmpCtx.moveTo(a3, s4), this._tmpCtx.lineTo(h4, s4), this._tmpCtx.moveTo(a3, o2), this._tmpCtx.lineTo(h4, o2);
                     break;
                   case 3:
-                    const i5 = e4 <= 1 ? o2 : Math.ceil(P + this._config.deviceCharHeight - e4 / 2) - t4, n3 = e4 <= 1 ? s4 : Math.ceil(P + this._config.deviceCharHeight + e4 / 2) - t4, c3 = new Path2D();
-                    c3.rect(a3, s4, this._config.deviceCellWidth, o2 - s4), this._tmpCtx.clip(c3), this._tmpCtx.moveTo(a3 - this._config.deviceCellWidth / 2, r2), this._tmpCtx.bezierCurveTo(a3 - this._config.deviceCellWidth / 2, n3, a3, n3, a3, r2), this._tmpCtx.bezierCurveTo(a3, i5, l3, i5, l3, r2), this._tmpCtx.bezierCurveTo(l3, n3, h3, n3, h3, r2), this._tmpCtx.bezierCurveTo(h3, i5, h3 + this._config.deviceCellWidth / 2, i5, h3 + this._config.deviceCellWidth / 2, r2);
+                    const i5 = e4 <= 1 ? o2 : Math.ceil(P2 + this._config.deviceCharHeight - e4 / 2) - t4, n3 = e4 <= 1 ? s4 : Math.ceil(P2 + this._config.deviceCharHeight + e4 / 2) - t4, c3 = new Path2D();
+                    c3.rect(a3, s4, this._config.deviceCellWidth, o2 - s4), this._tmpCtx.clip(c3), this._tmpCtx.moveTo(a3 - this._config.deviceCellWidth / 2, r2), this._tmpCtx.bezierCurveTo(a3 - this._config.deviceCellWidth / 2, n3, a3, n3, a3, r2), this._tmpCtx.bezierCurveTo(a3, i5, l3, i5, l3, r2), this._tmpCtx.bezierCurveTo(l3, n3, h4, n3, h4, r2), this._tmpCtx.bezierCurveTo(h4, i5, h4 + this._config.deviceCellWidth / 2, i5, h4 + this._config.deviceCellWidth / 2, r2);
                     break;
                   case 4:
-                    this._tmpCtx.setLineDash([Math.round(e4), Math.round(e4)]), this._tmpCtx.moveTo(a3, s4), this._tmpCtx.lineTo(h3, s4);
+                    this._tmpCtx.setLineDash([Math.round(e4), Math.round(e4)]), this._tmpCtx.moveTo(a3, s4), this._tmpCtx.lineTo(h4, s4);
                     break;
                   case 5:
-                    this._tmpCtx.setLineDash([4 * this._config.devicePixelRatio, 3 * this._config.devicePixelRatio]), this._tmpCtx.moveTo(a3, s4), this._tmpCtx.lineTo(h3, s4);
+                    this._tmpCtx.setLineDash([4 * this._config.devicePixelRatio, 3 * this._config.devicePixelRatio]), this._tmpCtx.moveTo(a3, s4), this._tmpCtx.lineTo(h4, s4);
                     break;
                   default:
-                    this._tmpCtx.moveTo(a3, s4), this._tmpCtx.lineTo(h3, s4);
+                    this._tmpCtx.moveTo(a3, s4), this._tmpCtx.lineTo(h4, s4);
                 }
                 this._tmpCtx.stroke(), this._tmpCtx.restore();
               }
-              if (this._tmpCtx.restore(), !F && this._config.fontSize >= 12 && !this._config.allowTransparency && " " !== h2) {
+              if (this._tmpCtx.restore(), !F && this._config.fontSize >= 12 && !this._config.allowTransparency && " " !== h3) {
                 this._tmpCtx.save(), this._tmpCtx.textBaseline = "alphabetic";
-                const t5 = this._tmpCtx.measureText(h2);
+                const t5 = this._tmpCtx.measureText(h3);
                 if (this._tmpCtx.restore(), "actualBoundingBoxDescent" in t5 && t5.actualBoundingBoxDescent > 0) {
                   this._tmpCtx.save();
                   const t6 = new Path2D();
-                  t6.rect(i4, s4 - Math.ceil(e4 / 2), this._config.deviceCellWidth * B, o2 - s4 + Math.ceil(e4 / 2)), this._tmpCtx.clip(t6), this._tmpCtx.lineWidth = 3 * this._config.devicePixelRatio, this._tmpCtx.strokeStyle = y.css, this._tmpCtx.strokeText(h2, P, P + this._config.deviceCharHeight), this._tmpCtx.restore();
+                  t6.rect(i4, s4 - Math.ceil(e4 / 2), this._config.deviceCellWidth * B2, o2 - s4 + Math.ceil(e4 / 2)), this._tmpCtx.clip(t6), this._tmpCtx.lineWidth = 3 * this._config.devicePixelRatio, this._tmpCtx.strokeStyle = y2.css, this._tmpCtx.strokeText(h3, P2, P2 + this._config.deviceCharHeight), this._tmpCtx.restore();
                 }
               }
             }
-            if (x) {
+            if (x2) {
               const e4 = Math.max(1, Math.floor(this._config.fontSize * this._config.devicePixelRatio / 15)), t4 = e4 % 2 == 1 ? 0.5 : 0;
-              this._tmpCtx.lineWidth = e4, this._tmpCtx.strokeStyle = this._tmpCtx.fillStyle, this._tmpCtx.beginPath(), this._tmpCtx.moveTo(P, P + t4), this._tmpCtx.lineTo(P + this._config.deviceCharWidth * B, P + t4), this._tmpCtx.stroke();
+              this._tmpCtx.lineWidth = e4, this._tmpCtx.strokeStyle = this._tmpCtx.fillStyle, this._tmpCtx.beginPath(), this._tmpCtx.moveTo(P2, P2 + t4), this._tmpCtx.lineTo(P2 + this._config.deviceCharWidth * B2, P2 + t4), this._tmpCtx.stroke();
             }
-            if (F || this._tmpCtx.fillText(h2, P, P + this._config.deviceCharHeight), "_" === h2 && !this._config.allowTransparency) {
-              let e4 = C(this._tmpCtx.getImageData(P, P, this._config.deviceCellWidth, this._config.deviceCellHeight), y, D, I);
-              if (e4) for (let t4 = 1; t4 <= 5 && (this._tmpCtx.save(), this._tmpCtx.fillStyle = y.css, this._tmpCtx.fillRect(0, 0, this._tmpCanvas.width, this._tmpCanvas.height), this._tmpCtx.restore(), this._tmpCtx.fillText(h2, P, P + this._config.deviceCharHeight - t4), e4 = C(this._tmpCtx.getImageData(P, P, this._config.deviceCellWidth, this._config.deviceCellHeight), y, D, I), e4); t4++) ;
+            if (F || this._tmpCtx.fillText(h3, P2, P2 + this._config.deviceCharHeight), "_" === h3 && !this._config.allowTransparency) {
+              let e4 = C(this._tmpCtx.getImageData(P2, P2, this._config.deviceCellWidth, this._config.deviceCellHeight), y2, D2, I2);
+              if (e4) for (let t4 = 1; t4 <= 5 && (this._tmpCtx.save(), this._tmpCtx.fillStyle = y2.css, this._tmpCtx.fillRect(0, 0, this._tmpCanvas.width, this._tmpCanvas.height), this._tmpCtx.restore(), this._tmpCtx.fillText(h3, P2, P2 + this._config.deviceCharHeight - t4), e4 = C(this._tmpCtx.getImageData(P2, P2, this._config.deviceCellWidth, this._config.deviceCellHeight), y2, D2, I2), e4); t4++) ;
             }
             if (L) {
               const e4 = Math.max(1, Math.floor(this._config.fontSize * this._config.devicePixelRatio / 10)), t4 = this._tmpCtx.lineWidth % 2 == 1 ? 0.5 : 0;
-              this._tmpCtx.lineWidth = e4, this._tmpCtx.strokeStyle = this._tmpCtx.fillStyle, this._tmpCtx.beginPath(), this._tmpCtx.moveTo(P, P + Math.floor(this._config.deviceCharHeight / 2) - t4), this._tmpCtx.lineTo(P + this._config.deviceCharWidth * B, P + Math.floor(this._config.deviceCharHeight / 2) - t4), this._tmpCtx.stroke();
+              this._tmpCtx.lineWidth = e4, this._tmpCtx.strokeStyle = this._tmpCtx.fillStyle, this._tmpCtx.beginPath(), this._tmpCtx.moveTo(P2, P2 + Math.floor(this._config.deviceCharHeight / 2) - t4), this._tmpCtx.lineTo(P2 + this._config.deviceCharWidth * B2, P2 + Math.floor(this._config.deviceCharHeight / 2) - t4), this._tmpCtx.stroke();
             }
             this._tmpCtx.restore();
-            const O = this._tmpCtx.getImageData(0, 0, this._tmpCanvas.width, this._tmpCanvas.height);
-            let $;
-            if ($ = this._config.allowTransparency ? (function(e4) {
+            const O2 = this._tmpCtx.getImageData(0, 0, this._tmpCanvas.width, this._tmpCanvas.height);
+            let $2;
+            if ($2 = this._config.allowTransparency ? (function(e4) {
               for (let t4 = 0; t4 < e4.data.length; t4 += 4) if (e4.data[t4 + 3] > 0) return false;
               return true;
-            })(O) : C(O, y, D, I), $) return g;
-            const k = this._findGlyphBoundingBox(O, this._workBoundingBox, l2, T, F, P);
-            let U, N;
+            })(O2) : C(O2, y2, D2, I2), $2) return g2;
+            const k2 = this._findGlyphBoundingBox(O2, this._workBoundingBox, l2, T, F, P2);
+            let U2, N;
             for (; ; ) {
               if (0 === this._activePages.length) {
                 const e4 = this._createNewPage();
-                U = e4, N = e4.currentRow, N.height = k.size.y;
+                U2 = e4, N = e4.currentRow, N.height = k2.size.y;
                 break;
               }
-              U = this._activePages[this._activePages.length - 1], N = U.currentRow;
-              for (const e4 of this._activePages) k.size.y <= e4.currentRow.height && (U = e4, N = e4.currentRow);
-              for (let e4 = this._activePages.length - 1; e4 >= 0; e4--) for (const t4 of this._activePages[e4].fixedRows) t4.height <= N.height && k.size.y <= t4.height && (U = this._activePages[e4], N = t4);
-              if (N.y + k.size.y >= U.canvas.height || N.height > k.size.y + 2) {
+              U2 = this._activePages[this._activePages.length - 1], N = U2.currentRow;
+              for (const e4 of this._activePages) k2.size.y <= e4.currentRow.height && (U2 = e4, N = e4.currentRow);
+              for (let e4 = this._activePages.length - 1; e4 >= 0; e4--) for (const t4 of this._activePages[e4].fixedRows) t4.height <= N.height && k2.size.y <= t4.height && (U2 = this._activePages[e4], N = t4);
+              if (N.y + k2.size.y >= U2.canvas.height || N.height > k2.size.y + 2) {
                 let e4 = false;
-                if (U.currentRow.y + U.currentRow.height + k.size.y >= U.canvas.height) {
+                if (U2.currentRow.y + U2.currentRow.height + k2.size.y >= U2.canvas.height) {
                   let t4;
-                  for (const e5 of this._activePages) if (e5.currentRow.y + e5.currentRow.height + k.size.y < e5.canvas.height) {
+                  for (const e5 of this._activePages) if (e5.currentRow.y + e5.currentRow.height + k2.size.y < e5.canvas.height) {
                     t4 = e5;
                     break;
                   }
-                  if (t4) U = t4;
-                  else if (f.maxAtlasPages && this._pages.length >= f.maxAtlasPages && N.y + k.size.y <= U.canvas.height && N.height >= k.size.y && N.x + k.size.x <= U.canvas.width) e4 = true;
+                  if (t4) U2 = t4;
+                  else if (f.maxAtlasPages && this._pages.length >= f.maxAtlasPages && N.y + k2.size.y <= U2.canvas.height && N.height >= k2.size.y && N.x + k2.size.x <= U2.canvas.width) e4 = true;
                   else {
                     const t5 = this._createNewPage();
-                    U = t5, N = t5.currentRow, N.height = k.size.y, e4 = true;
+                    U2 = t5, N = t5.currentRow, N.height = k2.size.y, e4 = true;
                   }
                 }
-                e4 || (U.currentRow.height > 0 && U.fixedRows.push(U.currentRow), N = { x: 0, y: U.currentRow.y + U.currentRow.height, height: k.size.y }, U.fixedRows.push(N), U.currentRow = { x: 0, y: N.y + N.height, height: 0 });
+                e4 || (U2.currentRow.height > 0 && U2.fixedRows.push(U2.currentRow), N = { x: 0, y: U2.currentRow.y + U2.currentRow.height, height: k2.size.y }, U2.fixedRows.push(N), U2.currentRow = { x: 0, y: N.y + N.height, height: 0 });
               }
-              if (N.x + k.size.x <= U.canvas.width) break;
-              N === U.currentRow ? (N.x = 0, N.y += N.height, N.height = 0) : U.fixedRows.splice(U.fixedRows.indexOf(N), 1);
+              if (N.x + k2.size.x <= U2.canvas.width) break;
+              N === U2.currentRow ? (N.x = 0, N.y += N.height, N.height = 0) : U2.fixedRows.splice(U2.fixedRows.indexOf(N), 1);
             }
-            return k.texturePage = this._pages.indexOf(U), k.texturePosition.x = N.x, k.texturePosition.y = N.y, k.texturePositionClipSpace.x = N.x / U.canvas.width, k.texturePositionClipSpace.y = N.y / U.canvas.height, k.sizeClipSpace.x /= U.canvas.width, k.sizeClipSpace.y /= U.canvas.height, N.height = Math.max(N.height, k.size.y), N.x += k.size.x, U.ctx.putImageData(O, k.texturePosition.x - this._workBoundingBox.left, k.texturePosition.y - this._workBoundingBox.top, this._workBoundingBox.left, this._workBoundingBox.top, k.size.x, k.size.y), U.addGlyph(k), U.version++, k;
+            return k2.texturePage = this._pages.indexOf(U2), k2.texturePosition.x = N.x, k2.texturePosition.y = N.y, k2.texturePositionClipSpace.x = N.x / U2.canvas.width, k2.texturePositionClipSpace.y = N.y / U2.canvas.height, k2.sizeClipSpace.x /= U2.canvas.width, k2.sizeClipSpace.y /= U2.canvas.height, N.height = Math.max(N.height, k2.size.y), N.x += k2.size.x, U2.ctx.putImageData(O2, k2.texturePosition.x - this._workBoundingBox.left, k2.texturePosition.y - this._workBoundingBox.top, this._workBoundingBox.left, this._workBoundingBox.top, k2.size.x, k2.size.y), U2.addGlyph(k2), U2.version++, k2;
           }
           _findGlyphBoundingBox(e3, t3, i3, s3, r2, o2) {
             t3.top = 0;
             const n2 = s3 ? this._config.deviceCellHeight : this._tmpCanvas.height, a2 = s3 ? this._config.deviceCellWidth : i3;
-            let h2 = false;
+            let h3 = false;
             for (let i4 = 0; i4 < n2; i4++) {
               for (let s4 = 0; s4 < a2; s4++) {
                 const r3 = i4 * this._tmpCanvas.width * 4 + 4 * s4 + 3;
                 if (0 !== e3.data[r3]) {
-                  t3.top = i4, h2 = true;
+                  t3.top = i4, h3 = true;
                   break;
                 }
               }
-              if (h2) break;
+              if (h3) break;
             }
-            t3.left = 0, h2 = false;
+            t3.left = 0, h3 = false;
             for (let i4 = 0; i4 < o2 + a2; i4++) {
               for (let s4 = 0; s4 < n2; s4++) {
                 const r3 = s4 * this._tmpCanvas.width * 4 + 4 * i4 + 3;
                 if (0 !== e3.data[r3]) {
-                  t3.left = i4, h2 = true;
+                  t3.left = i4, h3 = true;
                   break;
                 }
               }
-              if (h2) break;
+              if (h3) break;
             }
-            t3.right = a2, h2 = false;
+            t3.right = a2, h3 = false;
             for (let i4 = o2 + a2 - 1; i4 >= o2; i4--) {
               for (let s4 = 0; s4 < n2; s4++) {
                 const r3 = s4 * this._tmpCanvas.width * 4 + 4 * i4 + 3;
                 if (0 !== e3.data[r3]) {
-                  t3.right = i4, h2 = true;
+                  t3.right = i4, h3 = true;
                   break;
                 }
               }
-              if (h2) break;
+              if (h3) break;
             }
-            t3.bottom = n2, h2 = false;
+            t3.bottom = n2, h3 = false;
             for (let i4 = n2 - 1; i4 >= 0; i4--) {
               for (let s4 = 0; s4 < a2; s4++) {
                 const r3 = i4 * this._tmpCanvas.width * 4 + 4 * s4 + 3;
                 if (0 !== e3.data[r3]) {
-                  t3.bottom = i4, h2 = true;
+                  t3.bottom = i4, h3 = true;
                   break;
                 }
               }
-              if (h2) break;
+              if (h3) break;
             }
             return { texturePage: 0, texturePosition: { x: 0, y: 0 }, texturePositionClipSpace: { x: 0, y: 0 }, size: { x: t3.right - t3.left + 1, y: t3.bottom - t3.top + 1 }, sizeClipSpace: { x: t3.right - t3.left + 1, y: t3.bottom - t3.top + 1 }, offset: { x: -t3.left + o2 + (s3 || r2 ? Math.floor((this._config.deviceCellWidth - this._config.deviceCharWidth) / 2) : 0), y: -t3.top + o2 + (s3 || r2 ? 1 === this._config.lineHeight ? 0 : Math.round((this._config.deviceCellHeight - this._config.deviceCharHeight) / 2) : 0) } };
           }
@@ -7199,19 +7199,19 @@ void main() {
           }
           constructor(e3, t3, i3) {
             if (this._usedPixels = 0, this._glyphs = [], this.version = 0, this.currentRow = { x: 0, y: 0, height: 0 }, this.fixedRows = [], i3) for (const e4 of i3) this._glyphs.push(...e4.glyphs), this._usedPixels += e4._usedPixels;
-            this.canvas = m(e3, t3, t3), this.ctx = (0, n.throwIfFalsy)(this.canvas.getContext("2d", { alpha: true }));
+            this.canvas = m2(e3, t3, t3), this.ctx = (0, n.throwIfFalsy)(this.canvas.getContext("2d", { alpha: true }));
           }
           clear() {
             this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height), this.currentRow.x = 0, this.currentRow.y = 0, this.currentRow.height = 0, this.fixedRows.length = 0, this.version++;
           }
         }
         function C(e3, t3, i3, s3) {
-          const r2 = t3.rgba >>> 24, o2 = t3.rgba >>> 16 & 255, n2 = t3.rgba >>> 8 & 255, a2 = i3.rgba >>> 24, h2 = i3.rgba >>> 16 & 255, l2 = i3.rgba >>> 8 & 255, c2 = Math.floor((Math.abs(r2 - a2) + Math.abs(o2 - h2) + Math.abs(n2 - l2)) / 12);
+          const r2 = t3.rgba >>> 24, o2 = t3.rgba >>> 16 & 255, n2 = t3.rgba >>> 8 & 255, a2 = i3.rgba >>> 24, h3 = i3.rgba >>> 16 & 255, l2 = i3.rgba >>> 8 & 255, c2 = Math.floor((Math.abs(r2 - a2) + Math.abs(o2 - h3) + Math.abs(n2 - l2)) / 12);
           let d2 = true;
           for (let t4 = 0; t4 < e3.data.length; t4 += 4) e3.data[t4] === r2 && e3.data[t4 + 1] === o2 && e3.data[t4 + 2] === n2 || s3 && Math.abs(e3.data[t4] - r2) + Math.abs(e3.data[t4 + 1] - o2) + Math.abs(e3.data[t4 + 2] - n2) < c2 ? e3.data[t4 + 3] = 0 : d2 = false;
           return d2;
         }
-        function m(e3, t3, i3) {
+        function m2(e3, t3, i3) {
           const s3 = e3.createElement("canvas");
           return s3.width = t3, s3.height = i3, s3;
         }
@@ -7219,12 +7219,12 @@ void main() {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.contrastRatio = t2.toPaddedHex = t2.rgba = t2.rgb = t2.css = t2.color = t2.channels = t2.NULL_COLOR = void 0;
         const s2 = i2(399);
         let r = 0, o = 0, n = 0, a = 0;
-        var h, l, c, d, _;
+        var h2, l, c, d, _;
         function u(e3) {
           const t3 = e3.toString(16);
           return t3.length < 2 ? "0" + t3 : t3;
         }
-        function g(e3, t3) {
+        function g2(e3, t3) {
           return e3 < t3 ? (t3 + 0.05) / (e3 + 0.05) : (e3 + 0.05) / (t3 + 0.05);
         }
         t2.NULL_COLOR = { css: "#00000000", rgba: 0 }, (function(e3) {
@@ -7233,14 +7233,14 @@ void main() {
           }, e3.toRgba = function(e4, t3, i3, s3 = 255) {
             return (e4 << 24 | t3 << 16 | i3 << 8 | s3) >>> 0;
           };
-        })(h || (t2.channels = h = {})), (function(e3) {
+        })(h2 || (t2.channels = h2 = {})), (function(e3) {
           function t3(e4, t4) {
-            return a = Math.round(255 * t4), [r, o, n] = _.toChannels(e4.rgba), { css: h.toCss(r, o, n, a), rgba: h.toRgba(r, o, n, a) };
+            return a = Math.round(255 * t4), [r, o, n] = _.toChannels(e4.rgba), { css: h2.toCss(r, o, n, a), rgba: h2.toRgba(r, o, n, a) };
           }
           e3.blend = function(e4, t4) {
             if (a = (255 & t4.rgba) / 255, 1 === a) return { css: t4.css, rgba: t4.rgba };
             const i3 = t4.rgba >> 24 & 255, s3 = t4.rgba >> 16 & 255, l2 = t4.rgba >> 8 & 255, c2 = e4.rgba >> 24 & 255, d2 = e4.rgba >> 16 & 255, _2 = e4.rgba >> 8 & 255;
-            return r = c2 + Math.round((i3 - c2) * a), o = d2 + Math.round((s3 - d2) * a), n = _2 + Math.round((l2 - _2) * a), { css: h.toCss(r, o, n), rgba: h.toRgba(r, o, n) };
+            return r = c2 + Math.round((i3 - c2) * a), o = d2 + Math.round((s3 - d2) * a), n = _2 + Math.round((l2 - _2) * a), { css: h2.toCss(r, o, n), rgba: h2.toRgba(r, o, n) };
           }, e3.isOpaque = function(e4) {
             return 255 == (255 & e4.rgba);
           }, e3.ensureContrastRatio = function(e4, t4, i3) {
@@ -7248,7 +7248,7 @@ void main() {
             if (s3) return _.toColor(s3 >> 24 & 255, s3 >> 16 & 255, s3 >> 8 & 255);
           }, e3.opaque = function(e4) {
             const t4 = (255 | e4.rgba) >>> 0;
-            return [r, o, n] = _.toChannels(t4), { css: h.toCss(r, o, n), rgba: t4 };
+            return [r, o, n] = _.toChannels(t4), { css: h2.toCss(r, o, n), rgba: t4 };
           }, e3.opacity = t3, e3.multiplyOpacity = function(e4, i3) {
             return a = 255 & e4.rgba, t3(e4, a * i3 / 255);
           }, e3.toColorRGB = function(e4) {
@@ -7278,7 +7278,7 @@ void main() {
             if (!t3 || !i3) throw new Error("css.toColor: Unsupported css format");
             if (t3.fillStyle = i3, t3.fillStyle = e4, "string" != typeof t3.fillStyle) throw new Error("css.toColor: Unsupported css format");
             if (t3.fillRect(0, 0, 1, 1), [r, o, n, a] = t3.getImageData(0, 0, 1, 1).data, 255 !== a) throw new Error("css.toColor: Unsupported css format");
-            return { rgba: h.toRgba(r, o, n, a), css: e4 };
+            return { rgba: h2.toRgba(r, o, n, a), css: e4 };
           };
         })(c || (t2.css = c = {})), (function(e3) {
           function t3(e4, t4, i3) {
@@ -7291,40 +7291,40 @@ void main() {
         })(d || (t2.rgb = d = {})), (function(e3) {
           function t3(e4, t4, i4) {
             const s3 = e4 >> 24 & 255, r2 = e4 >> 16 & 255, o2 = e4 >> 8 & 255;
-            let n2 = t4 >> 24 & 255, a2 = t4 >> 16 & 255, h2 = t4 >> 8 & 255, l2 = g(d.relativeLuminance2(n2, a2, h2), d.relativeLuminance2(s3, r2, o2));
-            for (; l2 < i4 && (n2 > 0 || a2 > 0 || h2 > 0); ) n2 -= Math.max(0, Math.ceil(0.1 * n2)), a2 -= Math.max(0, Math.ceil(0.1 * a2)), h2 -= Math.max(0, Math.ceil(0.1 * h2)), l2 = g(d.relativeLuminance2(n2, a2, h2), d.relativeLuminance2(s3, r2, o2));
-            return (n2 << 24 | a2 << 16 | h2 << 8 | 255) >>> 0;
+            let n2 = t4 >> 24 & 255, a2 = t4 >> 16 & 255, h3 = t4 >> 8 & 255, l2 = g2(d.relativeLuminance2(n2, a2, h3), d.relativeLuminance2(s3, r2, o2));
+            for (; l2 < i4 && (n2 > 0 || a2 > 0 || h3 > 0); ) n2 -= Math.max(0, Math.ceil(0.1 * n2)), a2 -= Math.max(0, Math.ceil(0.1 * a2)), h3 -= Math.max(0, Math.ceil(0.1 * h3)), l2 = g2(d.relativeLuminance2(n2, a2, h3), d.relativeLuminance2(s3, r2, o2));
+            return (n2 << 24 | a2 << 16 | h3 << 8 | 255) >>> 0;
           }
           function i3(e4, t4, i4) {
             const s3 = e4 >> 24 & 255, r2 = e4 >> 16 & 255, o2 = e4 >> 8 & 255;
-            let n2 = t4 >> 24 & 255, a2 = t4 >> 16 & 255, h2 = t4 >> 8 & 255, l2 = g(d.relativeLuminance2(n2, a2, h2), d.relativeLuminance2(s3, r2, o2));
-            for (; l2 < i4 && (n2 < 255 || a2 < 255 || h2 < 255); ) n2 = Math.min(255, n2 + Math.ceil(0.1 * (255 - n2))), a2 = Math.min(255, a2 + Math.ceil(0.1 * (255 - a2))), h2 = Math.min(255, h2 + Math.ceil(0.1 * (255 - h2))), l2 = g(d.relativeLuminance2(n2, a2, h2), d.relativeLuminance2(s3, r2, o2));
-            return (n2 << 24 | a2 << 16 | h2 << 8 | 255) >>> 0;
+            let n2 = t4 >> 24 & 255, a2 = t4 >> 16 & 255, h3 = t4 >> 8 & 255, l2 = g2(d.relativeLuminance2(n2, a2, h3), d.relativeLuminance2(s3, r2, o2));
+            for (; l2 < i4 && (n2 < 255 || a2 < 255 || h3 < 255); ) n2 = Math.min(255, n2 + Math.ceil(0.1 * (255 - n2))), a2 = Math.min(255, a2 + Math.ceil(0.1 * (255 - a2))), h3 = Math.min(255, h3 + Math.ceil(0.1 * (255 - h3))), l2 = g2(d.relativeLuminance2(n2, a2, h3), d.relativeLuminance2(s3, r2, o2));
+            return (n2 << 24 | a2 << 16 | h3 << 8 | 255) >>> 0;
           }
           e3.ensureContrastRatio = function(e4, s3, r2) {
             const o2 = d.relativeLuminance(e4 >> 8), n2 = d.relativeLuminance(s3 >> 8);
-            if (g(o2, n2) < r2) {
+            if (g2(o2, n2) < r2) {
               if (n2 < o2) {
-                const n3 = t3(e4, s3, r2), a3 = g(o2, d.relativeLuminance(n3 >> 8));
+                const n3 = t3(e4, s3, r2), a3 = g2(o2, d.relativeLuminance(n3 >> 8));
                 if (a3 < r2) {
                   const t4 = i3(e4, s3, r2);
-                  return a3 > g(o2, d.relativeLuminance(t4 >> 8)) ? n3 : t4;
+                  return a3 > g2(o2, d.relativeLuminance(t4 >> 8)) ? n3 : t4;
                 }
                 return n3;
               }
-              const a2 = i3(e4, s3, r2), h2 = g(o2, d.relativeLuminance(a2 >> 8));
-              if (h2 < r2) {
+              const a2 = i3(e4, s3, r2), h3 = g2(o2, d.relativeLuminance(a2 >> 8));
+              if (h3 < r2) {
                 const i4 = t3(e4, s3, r2);
-                return h2 > g(o2, d.relativeLuminance(i4 >> 8)) ? a2 : i4;
+                return h3 > g2(o2, d.relativeLuminance(i4 >> 8)) ? a2 : i4;
               }
               return a2;
             }
           }, e3.reduceLuminance = t3, e3.increaseLuminance = i3, e3.toChannels = function(e4) {
             return [e4 >> 24 & 255, e4 >> 16 & 255, e4 >> 8 & 255, 255 & e4];
           }, e3.toColor = function(e4, t4, i4, s3) {
-            return { css: h.toCss(e4, t4, i4, s3), rgba: h.toRgba(e4, t4, i4, s3) };
+            return { css: h2.toCss(e4, t4, i4, s3), rgba: h2.toRgba(e4, t4, i4, s3) };
           };
-        })(_ || (t2.rgba = _ = {})), t2.toPaddedHex = u, t2.contrastRatio = g;
+        })(_ || (t2.rgba = _ = {})), t2.toPaddedHex = u, t2.contrastRatio = g2;
       }, 345: (e2, t2) => {
         Object.defineProperty(t2, "__esModule", { value: true }), t2.forwardEvent = t2.EventEmitter = void 0, t2.EventEmitter = class {
           constructor() {
@@ -7748,13 +7748,13 @@ void main() {
           decode(e3, t3) {
             const i2 = e3.length;
             if (!i2) return 0;
-            let s2, r, o, n, a = 0, h = 0, l = 0;
+            let s2, r, o, n, a = 0, h2 = 0, l = 0;
             if (this.interim[0]) {
               let s3 = false, r2 = this.interim[0];
               r2 &= 192 == (224 & r2) ? 31 : 224 == (240 & r2) ? 15 : 7;
               let o2, n2 = 0;
               for (; (o2 = 63 & this.interim[++n2]) && n2 < 4; ) r2 <<= 6, r2 |= o2;
-              const h2 = 192 == (224 & this.interim[0]) ? 2 : 224 == (240 & this.interim[0]) ? 3 : 4, c2 = h2 - n2;
+              const h3 = 192 == (224 & this.interim[0]) ? 2 : 224 == (240 & this.interim[0]) ? 3 : 4, c2 = h3 - n2;
               for (; l < c2; ) {
                 if (l >= i2) return 0;
                 if (o2 = e3[l++], 128 != (192 & o2)) {
@@ -7763,7 +7763,7 @@ void main() {
                 }
                 this.interim[n2++] = o2, r2 <<= 6, r2 |= 63 & o2;
               }
-              s3 || (2 === h2 ? r2 < 128 ? l-- : t3[a++] = r2 : 3 === h2 ? r2 < 2048 || r2 >= 55296 && r2 <= 57343 || 65279 === r2 || (t3[a++] = r2) : r2 < 65536 || r2 > 1114111 || (t3[a++] = r2)), this.interim.fill(0);
+              s3 || (2 === h3 ? r2 < 128 ? l-- : t3[a++] = r2 : 3 === h3 ? r2 < 2048 || r2 >= 55296 && r2 <= 57343 || 65279 === r2 || (t3[a++] = r2) : r2 < 65536 || r2 > 1114111 || (t3[a++] = r2)), this.interim.fill(0);
             }
             const c = i2 - 4;
             let d = l;
@@ -7776,11 +7776,11 @@ void main() {
                   d--;
                   continue;
                 }
-                if (h = (31 & s2) << 6 | 63 & r, h < 128) {
+                if (h2 = (31 & s2) << 6 | 63 & r, h2 < 128) {
                   d--;
                   continue;
                 }
-                t3[a++] = h;
+                t3[a++] = h2;
               } else if (224 == (240 & s2)) {
                 if (d >= i2) return this.interim[0] = s2, a;
                 if (r = e3[d++], 128 != (192 & r)) {
@@ -7792,8 +7792,8 @@ void main() {
                   d--;
                   continue;
                 }
-                if (h = (15 & s2) << 12 | (63 & r) << 6 | 63 & o, h < 2048 || h >= 55296 && h <= 57343 || 65279 === h) continue;
-                t3[a++] = h;
+                if (h2 = (15 & s2) << 12 | (63 & r) << 6 | 63 & o, h2 < 2048 || h2 >= 55296 && h2 <= 57343 || 65279 === h2) continue;
+                t3[a++] = h2;
               } else if (240 == (248 & s2)) {
                 if (d >= i2) return this.interim[0] = s2, a;
                 if (r = e3[d++], 128 != (192 & r)) {
@@ -7810,8 +7810,8 @@ void main() {
                   d--;
                   continue;
                 }
-                if (h = (7 & s2) << 18 | (63 & r) << 12 | (63 & o) << 6 | 63 & n, h < 65536 || h > 1114111) continue;
-                t3[a++] = h;
+                if (h2 = (7 & s2) << 18 | (63 & r) << 12 | (63 & o) << 6 | 63 & n, h2 < 65536 || h2 > 1114111) continue;
+                t3[a++] = h2;
               }
             }
             return a;
@@ -7830,12 +7830,12 @@ void main() {
         };
         Object.defineProperty(t2, "__esModule", { value: true }), t2.traceCall = t2.setTraceLogger = t2.LogService = void 0;
         const o = i2(859), n = i2(97), a = { trace: n.LogLevelEnum.TRACE, debug: n.LogLevelEnum.DEBUG, info: n.LogLevelEnum.INFO, warn: n.LogLevelEnum.WARN, error: n.LogLevelEnum.ERROR, off: n.LogLevelEnum.OFF };
-        let h, l = t2.LogService = class extends o.Disposable {
+        let h2, l = t2.LogService = class extends o.Disposable {
           get logLevel() {
             return this._logLevel;
           }
           constructor(e3) {
-            super(), this._optionsService = e3, this._logLevel = n.LogLevelEnum.OFF, this._updateLogLevel(), this.register(this._optionsService.onSpecificOptionChange("logLevel", (() => this._updateLogLevel()))), h = this;
+            super(), this._optionsService = e3, this._logLevel = n.LogLevelEnum.OFF, this._updateLogLevel(), this.register(this._optionsService.onSpecificOptionChange("logLevel", (() => this._updateLogLevel()))), h2 = this;
           }
           _updateLogLevel() {
             this._logLevel = a[this._optionsService.rawOptions.logLevel];
@@ -7868,15 +7868,15 @@ void main() {
           }
         };
         t2.LogService = l = s2([r(0, n.IOptionsService)], l), t2.setTraceLogger = function(e3) {
-          h = e3;
+          h2 = e3;
         }, t2.traceCall = function(e3, t3, i3) {
           if ("function" != typeof i3.value) throw new Error("not supported");
           const s3 = i3.value;
           i3.value = function(...e4) {
-            if (h.logLevel !== n.LogLevelEnum.TRACE) return s3.apply(this, e4);
-            h.trace(`GlyphRenderer#${s3.name}(${e4.map(((e5) => JSON.stringify(e5))).join(", ")})`);
+            if (h2.logLevel !== n.LogLevelEnum.TRACE) return s3.apply(this, e4);
+            h2.trace(`GlyphRenderer#${s3.name}(${e4.map(((e5) => JSON.stringify(e5))).join(", ")})`);
             const t4 = s3.apply(this, e4);
-            return h.trace(`GlyphRenderer#${s3.name} return`, t4), t4;
+            return h2.trace(`GlyphRenderer#${s3.name} return`, t4), t4;
           };
         };
       }, 726: (e2, t2) => {
@@ -7913,7 +7913,7 @@ void main() {
         var e2 = s;
         Object.defineProperty(e2, "__esModule", { value: true }), e2.WebglAddon = void 0;
         const t2 = i(345), r = i(859), o = i(399), n = i(666), a = i(776);
-        class h extends r.Disposable {
+        class h2 extends r.Disposable {
           constructor(e3) {
             if (o.isSafari && (0, o.getSafariVersion)() < 16) throw new Error("Webgl2 is only supported on Safari 16 and above");
             super(), this._preserveDrawingBuffer = e3, this._onChangeTextureAtlas = this.register(new t2.EventEmitter()), this.onChangeTextureAtlas = this._onChangeTextureAtlas.event, this._onAddTextureAtlasCanvas = this.register(new t2.EventEmitter()), this.onAddTextureAtlasCanvas = this._onAddTextureAtlasCanvas.event, this._onRemoveTextureAtlasCanvas = this.register(new t2.EventEmitter()), this.onRemoveTextureAtlasCanvas = this._onRemoveTextureAtlasCanvas.event, this._onContextLoss = this.register(new t2.EventEmitter()), this.onContextLoss = this._onContextLoss.event;
@@ -7922,8 +7922,8 @@ void main() {
             const i2 = e3._core;
             if (!e3.element) return void this.register(i2.onWillOpen((() => this.activate(e3))));
             this._terminal = e3;
-            const s2 = i2.coreService, o2 = i2.optionsService, h2 = i2, l = h2._renderService, c = h2._characterJoinerService, d = h2._charSizeService, _ = h2._coreBrowserService, u = h2._decorationService, g = h2._logService, v = h2._themeService;
-            (0, a.setTraceLogger)(g), this._renderer = this.register(new n.WebglRenderer(e3, c, d, _, s2, u, o2, v, this._preserveDrawingBuffer)), this.register((0, t2.forwardEvent)(this._renderer.onContextLoss, this._onContextLoss)), this.register((0, t2.forwardEvent)(this._renderer.onChangeTextureAtlas, this._onChangeTextureAtlas)), this.register((0, t2.forwardEvent)(this._renderer.onAddTextureAtlasCanvas, this._onAddTextureAtlasCanvas)), this.register((0, t2.forwardEvent)(this._renderer.onRemoveTextureAtlasCanvas, this._onRemoveTextureAtlasCanvas)), l.setRenderer(this._renderer), this.register((0, r.toDisposable)((() => {
+            const s2 = i2.coreService, o2 = i2.optionsService, h3 = i2, l = h3._renderService, c = h3._characterJoinerService, d = h3._charSizeService, _ = h3._coreBrowserService, u = h3._decorationService, g2 = h3._logService, v2 = h3._themeService;
+            (0, a.setTraceLogger)(g2), this._renderer = this.register(new n.WebglRenderer(e3, c, d, _, s2, u, o2, v2, this._preserveDrawingBuffer)), this.register((0, t2.forwardEvent)(this._renderer.onContextLoss, this._onContextLoss)), this.register((0, t2.forwardEvent)(this._renderer.onChangeTextureAtlas, this._onChangeTextureAtlas)), this.register((0, t2.forwardEvent)(this._renderer.onAddTextureAtlasCanvas, this._onAddTextureAtlasCanvas)), this.register((0, t2.forwardEvent)(this._renderer.onRemoveTextureAtlasCanvas, this._onRemoveTextureAtlasCanvas)), l.setRenderer(this._renderer), this.register((0, r.toDisposable)((() => {
               const t3 = this._terminal._core._renderService;
               t3.setRenderer(this._terminal._core._createRenderer()), t3.handleResize(e3.cols, e3.rows);
             })));
@@ -7937,261 +7937,78 @@ void main() {
             null === (e3 = this._renderer) || void 0 === e3 || e3.clearTextureAtlas();
           }
         }
-        e2.WebglAddon = h;
+        e2.WebglAddon = h2;
       })(), s;
     })()));
   }
 });
 
 // ../../../../../../../Users/jeroen/projects/fast-api/docs/external/duckdb-browser.mjs
-var __create2 = Object.create;
-var __defProp2 = Object.defineProperty;
-var __getOwnPropDesc2 = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames2 = Object.getOwnPropertyNames;
-var __getProtoOf2 = Object.getPrototypeOf;
-var __hasOwnProp2 = Object.prototype.hasOwnProperty;
-var __commonJS2 = (cb, mod) => function __require() {
-  return mod || (0, cb[__getOwnPropNames2(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+var j = Object.create;
+var P = Object.defineProperty;
+var K = Object.getOwnPropertyDescriptor;
+var V = Object.getOwnPropertyNames;
+var z = Object.getPrototypeOf;
+var J = Object.prototype.hasOwnProperty;
+var X = (s, e) => () => (e || s((e = { exports: {} }).exports, e), e.exports);
+var $ = (s, e, r, t) => {
+  if (e && typeof e == "object" || typeof e == "function") for (let o of V(e)) !J.call(s, o) && o !== r && P(s, o, { get: () => e[o], enumerable: !(t = K(e, o)) || t.enumerable });
+  return s;
 };
-var __copyProps2 = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames2(from))
-      if (!__hasOwnProp2.call(to, key) && key !== except)
-        __defProp2(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc2(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM2 = (mod, isNodeMode, target) => (target = mod != null ? __create2(__getProtoOf2(mod)) : {}, __copyProps2(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp2(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
-var require_browser = __commonJS2({
-  "../../node_modules/web-worker/cjs/browser.js"(exports, module) {
-    module.exports = Worker;
-  }
+var Z = (s, e, r) => (r = s != null ? j(z(s)) : {}, $(e || !s || !s.__esModule ? P(r, "default", { value: s, enumerable: true }) : r, s));
+var q = X((Ze, H) => {
+  H.exports = Worker;
 });
-var TEXT_ENCODER = new TextEncoder();
-function TextDecoderWrapper() {
-  const decoder = new TextDecoder();
-  return (data) => {
-    if (typeof SharedArrayBuffer !== "undefined" && data.buffer instanceof SharedArrayBuffer) {
-      data = new Uint8Array(data);
-    }
-    return decoder.decode(data);
-  };
+var ee = ((o) => (o[o.UNDEFINED = 0] = "UNDEFINED", o[o.AUTOMATIC = 1] = "AUTOMATIC", o[o.READ_ONLY = 2] = "READ_ONLY", o[o.READ_WRITE = 3] = "READ_WRITE", o))(ee || {});
+var re = ((n) => (n[n.IDENTIFIER = 0] = "IDENTIFIER", n[n.NUMERIC_CONSTANT = 1] = "NUMERIC_CONSTANT", n[n.STRING_CONSTANT = 2] = "STRING_CONSTANT", n[n.OPERATOR = 3] = "OPERATOR", n[n.KEYWORD = 4] = "KEYWORD", n[n.COMMENT = 5] = "COMMENT", n))(re || {});
+var te = ((i) => (i[i.NONE = 0] = "NONE", i[i.DEBUG = 1] = "DEBUG", i[i.INFO = 2] = "INFO", i[i.WARNING = 3] = "WARNING", i[i.ERROR = 4] = "ERROR", i))(te || {});
+var se = ((n) => (n[n.NONE = 0] = "NONE", n[n.CONNECT = 1] = "CONNECT", n[n.DISCONNECT = 2] = "DISCONNECT", n[n.OPEN = 3] = "OPEN", n[n.QUERY = 4] = "QUERY", n[n.INSTANTIATE = 5] = "INSTANTIATE", n))(se || {});
+var ne = ((n) => (n[n.NONE = 0] = "NONE", n[n.OK = 1] = "OK", n[n.ERROR = 2] = "ERROR", n[n.START = 3] = "START", n[n.RUN = 4] = "RUN", n[n.CAPTURE = 5] = "CAPTURE", n))(ne || {});
+var oe = ((i) => (i[i.NONE = 0] = "NONE", i[i.WEB_WORKER = 1] = "WEB_WORKER", i[i.NODE_WORKER = 2] = "NODE_WORKER", i[i.BINDINGS = 3] = "BINDINGS", i[i.ASYNC_DUCKDB = 4] = "ASYNC_DUCKDB", i))(oe || {});
+var ie = ((t) => (t[t.SUCCESS = 0] = "SUCCESS", t[t.MAX_ARROW_ERROR = 255] = "MAX_ARROW_ERROR", t[t.DUCKDB_WASM_RETRY = 256] = "DUCKDB_WASM_RETRY", t))(ie || {});
+var D = ((c) => (c.CANCEL_PENDING_QUERY = "CANCEL_PENDING_QUERY", c.CLOSE_PREPARED = "CLOSE_PREPARED", c.COLLECT_FILE_STATISTICS = "COLLECT_FILE_STATISTICS", c.REGISTER_OPFS_FILE_NAME = "REGISTER_OPFS_FILE_NAME", c.CONNECT = "CONNECT", c.COPY_FILE_TO_BUFFER = "COPY_FILE_TO_BUFFER", c.COPY_FILE_TO_PATH = "COPY_FILE_TO_PATH", c.CREATE_PREPARED = "CREATE_PREPARED", c.DISCONNECT = "DISCONNECT", c.DROP_FILE = "DROP_FILE", c.DROP_FILES = "DROP_FILES", c.EXPORT_FILE_STATISTICS = "EXPORT_FILE_STATISTICS", c.FETCH_QUERY_RESULTS = "FETCH_QUERY_RESULTS", c.FLUSH_FILES = "FLUSH_FILES", c.GET_FEATURE_FLAGS = "GET_FEATURE_FLAGS", c.GET_TABLE_NAMES = "GET_TABLE_NAMES", c.GET_VERSION = "GET_VERSION", c.GLOB_FILE_INFOS = "GLOB_FILE_INFOS", c.INSERT_ARROW_FROM_IPC_STREAM = "INSERT_ARROW_FROM_IPC_STREAM", c.INSERT_CSV_FROM_PATH = "IMPORT_CSV_FROM_PATH", c.INSERT_JSON_FROM_PATH = "IMPORT_JSON_FROM_PATH", c.INSTANTIATE = "INSTANTIATE", c.OPEN = "OPEN", c.PING = "PING", c.POLL_PENDING_QUERY = "POLL_PENDING_QUERY", c.REGISTER_FILE_BUFFER = "REGISTER_FILE_BUFFER", c.REGISTER_FILE_HANDLE = "REGISTER_FILE_HANDLE", c.REGISTER_FILE_URL = "REGISTER_FILE_URL", c.RESET = "RESET", c.RUN_PREPARED = "RUN_PREPARED", c.RUN_QUERY = "RUN_QUERY", c.SEND_PREPARED = "SEND_PREPARED", c.START_PENDING_QUERY = "START_PENDING_QUERY", c.TOKENIZE = "TOKENIZE", c))(D || {});
+var O = ((l) => (l.CONNECTION_INFO = "CONNECTION_INFO", l.ERROR = "ERROR", l.FEATURE_FLAGS = "FEATURE_FLAGS", l.FILE_BUFFER = "FILE_BUFFER", l.FILE_INFOS = "FILE_INFOS", l.FILE_SIZE = "FILE_SIZE", l.FILE_STATISTICS = "FILE_STATISTICS", l.INSTANTIATE_PROGRESS = "INSTANTIATE_PROGRESS", l.LOG = "LOG", l.PROGRESS_UPDATE = "PROGRESS_UPDATE", l.OK = "OK", l.PREPARED_STATEMENT_ID = "PREPARED_STATEMENT_ID", l.QUERY_PLAN = "QUERY_PLAN", l.QUERY_RESULT = "QUERY_RESULT", l.QUERY_RESULT_CHUNK = "QUERY_RESULT_CHUNK", l.QUERY_RESULT_HEADER = "QUERY_RESULT_HEADER", l.QUERY_RESULT_HEADER_OR_NULL = "QUERY_RESULT_HEADER_OR_NULL", l.REGISTERED_FILE = "REGISTERED_FILE", l.SCRIPT_TOKENS = "SCRIPT_TOKENS", l.SUCCESS = "SUCCESS", l.TABLE_NAMES = "TABLE_NAMES", l.VERSION_STRING = "VERSION_STRING", l))(O || {});
+var ce = new TextEncoder();
+function le() {
+  let s = new TextDecoder();
+  return (e) => (typeof SharedArrayBuffer < "u" && e.buffer instanceof SharedArrayBuffer && (e = new Uint8Array(e)), s.decode(e));
 }
-var decodeText = TextDecoderWrapper();
-var DuckDBDataProtocol = /* @__PURE__ */ ((DuckDBDataProtocol2) => {
-  DuckDBDataProtocol2[DuckDBDataProtocol2["BUFFER"] = 0] = "BUFFER";
-  DuckDBDataProtocol2[DuckDBDataProtocol2["NODE_FS"] = 1] = "NODE_FS";
-  DuckDBDataProtocol2[DuckDBDataProtocol2["BROWSER_FILEREADER"] = 2] = "BROWSER_FILEREADER";
-  DuckDBDataProtocol2[DuckDBDataProtocol2["BROWSER_FSACCESS"] = 3] = "BROWSER_FSACCESS";
-  DuckDBDataProtocol2[DuckDBDataProtocol2["HTTP"] = 4] = "HTTP";
-  DuckDBDataProtocol2[DuckDBDataProtocol2["S3"] = 5] = "S3";
-  return DuckDBDataProtocol2;
-})(DuckDBDataProtocol || {});
-var bulkMemory = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 5, 3, 1, 0, 1, 10, 14, 1, 12, 0, 65, 0, 65, 0, 65, 0, 252, 10, 0, 0, 11]));
-var exceptions = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 8, 1, 6, 0, 6, 64, 25, 11, 11]));
-var simd = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11]));
-var threads = () => (async (e) => {
+var Be = le();
+var w = ((n) => (n[n.BUFFER = 0] = "BUFFER", n[n.NODE_FS = 1] = "NODE_FS", n[n.BROWSER_FILEREADER = 2] = "BROWSER_FILEREADER", n[n.BROWSER_FSACCESS = 3] = "BROWSER_FSACCESS", n[n.HTTP = 4] = "HTTP", n[n.S3 = 5] = "S3", n))(w || {});
+var U = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 5, 3, 1, 0, 1, 10, 14, 1, 12, 0, 65, 0, 65, 0, 65, 0, 252, 10, 0, 0, 11]));
+var W = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 8, 1, 6, 0, 6, 64, 25, 11, 11]));
+var v = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11]));
+var B = () => (async (s) => {
   try {
-    return "undefined" != typeof MessageChannel && new MessageChannel().port1.postMessage(new SharedArrayBuffer(1)), WebAssembly.validate(e);
-  } catch (e2) {
+    return typeof MessageChannel < "u" && new MessageChannel().port1.postMessage(new SharedArrayBuffer(1)), WebAssembly.validate(s);
+  } catch (e) {
     return false;
   }
 })(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 5, 4, 1, 3, 1, 1, 10, 11, 1, 9, 0, 65, 0, 254, 16, 2, 0, 26, 11]));
-var package_default = {
-  name: "@duckdb/duckdb-wasm",
-  version: "1.11.0",
-  description: "DuckDB powered by WebAssembly",
-  license: "MIT",
-  repository: {
-    type: "git",
-    url: "https://github.com/duckdb/duckdb-wasm.git"
-  },
-  keywords: [
-    "sql",
-    "duckdb",
-    "relational",
-    "database",
-    "data",
-    "query",
-    "wasm",
-    "analytics",
-    "olap",
-    "arrow",
-    "parquet",
-    "json",
-    "csv"
-  ],
-  dependencies: {
-    "apache-arrow": "^17.0.0",
-    qs: "^6.14.1"
-  },
-  devDependencies: {
-    "@types/emscripten": "^1.39.10",
-    "@types/jasmine": "^5.1.13",
-    "@typescript-eslint/eslint-plugin": "^6.21.0",
-    "@typescript-eslint/parser": "^6.21.0",
-    esbuild: "^0.20.2",
-    eslint: "^8.57.0",
-    "eslint-plugin-jasmine": "^4.1.3",
-    "eslint-plugin-react": "^7.37.5",
-    "fast-glob": "^3.3.2",
-    jasmine: "^5.13.0",
-    "jasmine-core": "^5.1.2",
-    "jasmine-spec-reporter": "^7.0.0",
-    "js-sha256": "^0.11.1",
-    karma: "^6.4.2",
-    "karma-chrome-launcher": "^3.2.0",
-    "karma-coverage": "^2.2.1",
-    "karma-firefox-launcher": "^2.1.3",
-    "karma-jasmine": "^5.1.0",
-    "karma-jasmine-html-reporter": "^2.1.0",
-    "karma-sourcemap-loader": "^0.4.0",
-    "karma-spec-reporter": "^0.0.36",
-    "make-dir": "^4.0.0",
-    nyc: "^15.1.0",
-    prettier: "^3.2.5",
-    puppeteer: "^22.8.0",
-    rimraf: "^5.0.5",
-    s3rver: "^3.7.1",
-    typedoc: "^0.28.15",
-    typescript: "^5.3.3",
-    "wasm-feature-detect": "^1.6.1",
-    "web-worker": "^1.2.0"
-  },
-  scripts: {
-    "build:debug": "node bundle.mjs debug && tsc --emitDeclarationOnly",
-    "build:release": "node bundle.mjs release && tsc --emitDeclarationOnly",
-    docs: "typedoc",
-    format: 'prettier --write "**/*.+(js|ts)"',
-    report: "node ./coverage.mjs",
-    "test:node": "node --enable-source-maps ../../node_modules/jasmine/bin/jasmine ./dist/tests-node.cjs",
-    "test:node:debug": "node --inspect-brk --enable-source-maps ../../node_modules/jasmine/bin/jasmine ./dist/tests-node.cjs",
-    "test:node:coverage": "nyc -r json --report-dir ./coverage/node node ../../node_modules/jasmine/bin/jasmine ./dist/tests-node.cjs",
-    "test:firefox": "karma start ./karma/tests-firefox.cjs",
-    "test:chrome": "karma start ./karma/tests-chrome.cjs",
-    "test:chrome:eh": "karma start ./karma/tests-chrome-eh.cjs",
-    "test:chrome:coverage": "karma start ./karma/tests-chrome-coverage.cjs",
-    "test:browser": "karma start ./karma/tests-all.cjs",
-    "test:browser:debug": "karma start ./karma/tests-debug.cjs",
-    test: "npm run test:chrome && npm run test:node",
-    "test:coverage": "npm run test:chrome:coverage && npm run test:node:coverage && npm run report",
-    lint: "eslint src test"
-  },
-  files: [
-    "dist",
-    "!dist/tests-*",
-    "!dist/duckdb-browser-mvp.worker.js.map",
-    "!dist/types/test"
-  ],
-  main: "dist/duckdb-browser.cjs",
-  module: "dist/duckdb-browser.mjs",
-  types: "dist/duckdb-browser.d.ts",
-  jsdelivr: "dist/duckdb-browser.cjs",
-  unpkg: "dist/duckdb-browser.mjs",
-  sideEffects: false,
-  browser: {
-    fs: false,
-    path: false,
-    perf_hooks: false,
-    os: false,
-    worker_threads: false
-  },
-  exports: {
-    "./dist/duckdb-mvp.wasm": "./dist/duckdb-mvp.wasm",
-    "./dist/duckdb-eh.wasm": "./dist/duckdb-eh.wasm",
-    "./dist/duckdb-coi.wasm": "./dist/duckdb-coi.wasm",
-    "./dist/duckdb-browser": "./dist/duckdb-browser.mjs",
-    "./dist/duckdb-browser.cjs": "./dist/duckdb-browser.cjs",
-    "./dist/duckdb-browser.mjs": "./dist/duckdb-browser.mjs",
-    "./dist/duckdb-browser-coi.pthread.worker.js": "./dist/duckdb-browser-coi.pthread.worker.js",
-    "./dist/duckdb-browser-coi.worker.js": "./dist/duckdb-browser-coi.worker.js",
-    "./dist/duckdb-browser-eh.worker.js": "./dist/duckdb-browser-eh.worker.js",
-    "./dist/duckdb-browser-mvp.worker.js": "./dist/duckdb-browser-mvp.worker.js",
-    "./dist/duckdb-node": "./dist/duckdb-node.cjs",
-    "./dist/duckdb-node.cjs": "./dist/duckdb-node.cjs",
-    "./dist/duckdb-node-blocking": "./dist/duckdb-node-blocking.cjs",
-    "./dist/duckdb-node-blocking.cjs": "./dist/duckdb-node-blocking.cjs",
-    "./dist/duckdb-node-eh.worker.cjs": "./dist/duckdb-node-eh.worker.cjs",
-    "./dist/duckdb-node-mvp.worker.cjs": "./dist/duckdb-node-mvp.worker.cjs",
-    "./blocking": {
-      node: {
-        types: "./dist/duckdb-node-blocking.d.ts",
-        require: "./dist/duckdb-node-blocking.cjs",
-        import: "./dist/duckdb-node-blocking.cjs"
-      },
-      types: "./dist/duckdb-node-blocking.d.ts",
-      import: "./dist/duckdb-node-blocking.mjs",
-      require: "./dist/duckdb-node-blocking.cjs"
-    },
-    ".": {
-      browser: {
-        types: "./dist/duckdb-browser.d.ts",
-        import: "./dist/duckdb-browser.mjs",
-        require: "./dist/duckdb-browser.cjs"
-      },
-      node: {
-        types: "./dist/duckdb-node.d.ts",
-        import: "./dist/duckdb-node.cjs",
-        require: "./dist/duckdb-node.cjs"
-      },
-      types: "./dist/duckdb-browser.d.ts",
-      import: "./dist/duckdb-browser.mjs",
-      require: "./dist/duckdb-browser.cjs"
-    }
-  }
-};
-var PACKAGE_NAME = package_default.name;
-var PACKAGE_VERSION = package_default.version;
-var VERSION_PARTS = package_default.version.split(".");
-var PACKAGE_VERSION_MAJOR = VERSION_PARTS[0];
-var PACKAGE_VERSION_MINOR = VERSION_PARTS[1];
-var PACKAGE_VERSION_PATCH = VERSION_PARTS[2];
-var isNode = () => typeof navigator === "undefined" ? true : false;
-var bigInt64Array = null;
-var wasmExceptions = null;
-var wasmThreads = null;
-var wasmSIMD = null;
-var wasmBulkMemory = null;
-async function getPlatformFeatures() {
-  if (bigInt64Array == null) {
-    bigInt64Array = typeof BigInt64Array != "undefined";
-  }
-  if (wasmExceptions == null) {
-    wasmExceptions = await exceptions();
-  }
-  if (wasmThreads == null) {
-    wasmThreads = await threads();
-  }
-  if (wasmSIMD == null) {
-    wasmSIMD = await simd();
-  }
-  if (wasmBulkMemory == null) {
-    wasmBulkMemory = await bulkMemory();
-  }
-  return {
-    bigInt64Array,
-    crossOriginIsolated: isNode() || globalThis.crossOriginIsolated || false,
-    wasmExceptions,
-    wasmSIMD,
-    wasmThreads,
-    wasmBulkMemory
-  };
+var m = { name: "@duckdb/duckdb-wasm", version: "1.11.0", description: "DuckDB powered by WebAssembly", license: "MIT", repository: { type: "git", url: "https://github.com/duckdb/duckdb-wasm.git" }, keywords: ["sql", "duckdb", "relational", "database", "data", "query", "wasm", "analytics", "olap", "arrow", "parquet", "json", "csv"], dependencies: { "apache-arrow": "^17.0.0", qs: "^6.14.1" }, devDependencies: { "@types/emscripten": "^1.39.10", "@types/jasmine": "^5.1.13", "@typescript-eslint/eslint-plugin": "^6.21.0", "@typescript-eslint/parser": "^6.21.0", esbuild: "^0.20.2", eslint: "^8.57.0", "eslint-plugin-jasmine": "^4.1.3", "eslint-plugin-react": "^7.37.5", "fast-glob": "^3.3.2", jasmine: "^5.13.0", "jasmine-core": "^5.1.2", "jasmine-spec-reporter": "^7.0.0", "js-sha256": "^0.11.1", karma: "^6.4.2", "karma-chrome-launcher": "^3.2.0", "karma-coverage": "^2.2.1", "karma-firefox-launcher": "^2.1.3", "karma-jasmine": "^5.1.0", "karma-jasmine-html-reporter": "^2.1.0", "karma-sourcemap-loader": "^0.4.0", "karma-spec-reporter": "^0.0.36", "make-dir": "^4.0.0", nyc: "^15.1.0", prettier: "^3.2.5", puppeteer: "^22.8.0", rimraf: "^5.0.5", s3rver: "^3.7.1", typedoc: "^0.28.15", typescript: "^5.3.3", "wasm-feature-detect": "^1.6.1", "web-worker": "^1.2.0" }, scripts: { "build:debug": "node bundle.mjs debug && tsc --emitDeclarationOnly", "build:release": "node bundle.mjs release && tsc --emitDeclarationOnly", docs: "typedoc", format: 'prettier --write "**/*.+(js|ts)"', report: "node ./coverage.mjs", "test:node": "node --enable-source-maps ../../node_modules/jasmine/bin/jasmine ./dist/tests-node.cjs", "test:node:debug": "node --inspect-brk --enable-source-maps ../../node_modules/jasmine/bin/jasmine ./dist/tests-node.cjs", "test:node:coverage": "nyc -r json --report-dir ./coverage/node node ../../node_modules/jasmine/bin/jasmine ./dist/tests-node.cjs", "test:firefox": "karma start ./karma/tests-firefox.cjs", "test:chrome": "karma start ./karma/tests-chrome.cjs", "test:chrome:eh": "karma start ./karma/tests-chrome-eh.cjs", "test:chrome:coverage": "karma start ./karma/tests-chrome-coverage.cjs", "test:browser": "karma start ./karma/tests-all.cjs", "test:browser:debug": "karma start ./karma/tests-debug.cjs", test: "npm run test:chrome && npm run test:node", "test:coverage": "npm run test:chrome:coverage && npm run test:node:coverage && npm run report", lint: "eslint src test" }, files: ["dist", "!dist/tests-*", "!dist/duckdb-browser-mvp.worker.js.map", "!dist/types/test"], main: "dist/duckdb-browser.cjs", module: "dist/duckdb-browser.mjs", types: "dist/duckdb-browser.d.ts", jsdelivr: "dist/duckdb-browser.cjs", unpkg: "dist/duckdb-browser.mjs", sideEffects: false, browser: { fs: false, path: false, perf_hooks: false, os: false, worker_threads: false }, exports: { "./dist/duckdb-mvp.wasm": "./dist/duckdb-mvp.wasm", "./dist/duckdb-eh.wasm": "./dist/duckdb-eh.wasm", "./dist/duckdb-coi.wasm": "./dist/duckdb-coi.wasm", "./dist/duckdb-browser": "./dist/duckdb-browser.mjs", "./dist/duckdb-browser.cjs": "./dist/duckdb-browser.cjs", "./dist/duckdb-browser.mjs": "./dist/duckdb-browser.mjs", "./dist/duckdb-browser-coi.pthread.worker.js": "./dist/duckdb-browser-coi.pthread.worker.js", "./dist/duckdb-browser-coi.worker.js": "./dist/duckdb-browser-coi.worker.js", "./dist/duckdb-browser-eh.worker.js": "./dist/duckdb-browser-eh.worker.js", "./dist/duckdb-browser-mvp.worker.js": "./dist/duckdb-browser-mvp.worker.js", "./dist/duckdb-node": "./dist/duckdb-node.cjs", "./dist/duckdb-node.cjs": "./dist/duckdb-node.cjs", "./dist/duckdb-node-blocking": "./dist/duckdb-node-blocking.cjs", "./dist/duckdb-node-blocking.cjs": "./dist/duckdb-node-blocking.cjs", "./dist/duckdb-node-eh.worker.cjs": "./dist/duckdb-node-eh.worker.cjs", "./dist/duckdb-node-mvp.worker.cjs": "./dist/duckdb-node-mvp.worker.cjs", "./blocking": { node: { types: "./dist/duckdb-node-blocking.d.ts", require: "./dist/duckdb-node-blocking.cjs", import: "./dist/duckdb-node-blocking.cjs" }, types: "./dist/duckdb-node-blocking.d.ts", import: "./dist/duckdb-node-blocking.mjs", require: "./dist/duckdb-node-blocking.cjs" }, ".": { browser: { types: "./dist/duckdb-browser.d.ts", import: "./dist/duckdb-browser.mjs", require: "./dist/duckdb-browser.cjs" }, node: { types: "./dist/duckdb-node.d.ts", import: "./dist/duckdb-node.cjs", require: "./dist/duckdb-node.cjs" }, types: "./dist/duckdb-browser.d.ts", import: "./dist/duckdb-browser.mjs", require: "./dist/duckdb-browser.cjs" } } };
+var M = m.name;
+var G = m.version;
+var I = m.version.split(".");
+var He = I[0];
+var qe = I[1];
+var Ye = I[2];
+var x = () => typeof navigator > "u";
+var k = null;
+var y = null;
+var g = null;
+var S = null;
+var h = null;
+async function pe() {
+  return k == null && (k = typeof BigInt64Array < "u"), y == null && (y = await W()), g == null && (g = await B()), S == null && (S = await v()), h == null && (h = await U()), { bigInt64Array: k, crossOriginIsolated: x() || globalThis.crossOriginIsolated || false, wasmExceptions: y, wasmSIMD: S, wasmThreads: g, wasmBulkMemory: h };
 }
-var import_web_worker = __toESM2(require_browser());
+var Y = Z(q());
 
 // ../../../../../../../Users/jeroen/projects/fast-api/docs/external/shell.mjs
 var import_xterm = __toESM(require_xterm(), 1);
 var import_xterm_addon_fit = __toESM(require_xterm_addon_fit(), 1);
 var import_xterm_addon_web_links = __toESM(require_xterm_addon_web_links(), 1);
 var import_xterm_addon_webgl = __toESM(require_xterm_addon_webgl(), 1);
-var package_default2 = {
+var package_default = {
   name: "@duckdb/duckdb-wasm-shell",
   version: "1.11.0",
   description: "",
@@ -8266,28 +8083,13 @@ var package_default2 = {
     }
   }
 };
-var PACKAGE_NAME2 = package_default2.name;
-var PACKAGE_VERSION2 = package_default2.version;
-var VERSION_PARTS2 = package_default2.version.split(".");
-var PACKAGE_VERSION_MAJOR2 = VERSION_PARTS2[0];
-var PACKAGE_VERSION_MINOR2 = VERSION_PARTS2[1];
-var PACKAGE_VERSION_PATCH2 = VERSION_PARTS2[2];
+var PACKAGE_NAME = package_default.name;
+var PACKAGE_VERSION = package_default.version;
+var VERSION_PARTS = package_default.version.split(".");
+var PACKAGE_VERSION_MAJOR = VERSION_PARTS[0];
+var PACKAGE_VERSION_MINOR = VERSION_PARTS[1];
+var PACKAGE_VERSION_PATCH = VERSION_PARTS[2];
 var wasm;
-function logError(f, args) {
-  try {
-    return f.apply(this, args);
-  } catch (e) {
-    let error = (function() {
-      try {
-        return e instanceof Error ? "".concat(e.message, "\n\nStack:\n").concat(e.stack) : e.toString();
-      } catch (_) {
-        return "<failed to stringify thrown value>";
-      }
-    })();
-    console.error("wasm-bindgen: imported JS function that was not marked as `catch` threw an error:", error);
-    throw e;
-  }
-}
 var WASM_VECTOR_LEN = 0;
 var cachedUint8ArrayMemory0 = null;
 function getUint8ArrayMemory0() {
@@ -8310,8 +8112,6 @@ var encodeString = typeof cachedTextEncoder.encodeInto === "function" ? function
   };
 };
 function passStringToWasm0(arg, malloc, realloc) {
-  if (typeof arg !== "string")
-    throw new Error("expected a string argument, found ".concat(typeof arg));
   if (realloc === void 0) {
     const buf = cachedTextEncoder.encode(arg);
     const ptr2 = malloc(buf.length, 1) >>> 0;
@@ -8336,8 +8136,6 @@ function passStringToWasm0(arg, malloc, realloc) {
     ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
     const view = getUint8ArrayMemory0().subarray(ptr + offset, ptr + len);
     const ret = encodeString(arg, view);
-    if (ret.read !== arg.length)
-      throw new Error("failed to pass whole string");
     offset += ret.written;
     ptr = realloc(ptr, len, offset, 1) >>> 0;
   }
@@ -8350,11 +8148,6 @@ function getDataViewMemory0() {
     cachedDataViewMemory0 = new DataView(wasm.memory.buffer);
   }
   return cachedDataViewMemory0;
-}
-function _assertBoolean(n) {
-  if (typeof n !== "boolean") {
-    throw new Error("expected a boolean argument, found ".concat(typeof n));
-  }
 }
 function addToExternrefTable0(obj) {
   const idx = wasm.__externref_table_alloc();
@@ -8379,10 +8172,6 @@ function getStringFromWasm0(ptr, len) {
   ptr = ptr >>> 0;
   return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
 }
-function _assertNum(n) {
-  if (typeof n !== "number")
-    throw new Error("expected a number argument, found ".concat(typeof n));
-}
 var cachedUint32ArrayMemory0 = null;
 function getUint32ArrayMemory0() {
   if (cachedUint32ArrayMemory0 === null || cachedUint32ArrayMemory0.byteLength === 0) {
@@ -8396,8 +8185,8 @@ function passArray32ToWasm0(arg, malloc) {
   WASM_VECTOR_LEN = arg.length;
   return ptr;
 }
-function isLikeNone(x) {
-  return x === void 0 || x === null;
+function isLikeNone(x2) {
+  return x2 === void 0 || x2 === null;
 }
 function passArray8ToWasm0(arg, malloc) {
   const ptr = malloc(arg.length * 1, 1) >>> 0;
@@ -8486,22 +8275,17 @@ function debugString(val) {
   }
   return className;
 }
-function resize(_width, _height) {
-  _assertNum(_width);
-  _assertNum(_height);
-  wasm.resize(_width, _height);
+function loadHistory(history, cursor) {
+  wasm.loadHistory(history, cursor);
+}
+function writeln(text) {
+  const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+  const len0 = WASM_VECTOR_LEN;
+  wasm.writeln(ptr0, len0);
 }
 function configureDatabase(db) {
   const ret = wasm.configureDatabase(db);
   return ret;
-}
-function passInitQueries(queries) {
-  const ret = wasm.passInitQueries(queries);
-  return ret;
-}
-function loadHistory(history, cursor) {
-  _assertNum(cursor);
-  wasm.loadHistory(history, cursor);
 }
 function takeFromExternrefTable0(idx) {
   const value = wasm.__wbindgen_export_4.get(idx);
@@ -8514,31 +8298,27 @@ function embed(elem, runtime, options) {
     throw takeFromExternrefTable0(ret[0]);
   }
 }
+function resize(_width, _height) {
+  wasm.resize(_width, _height);
+}
 function write(text) {
   const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
   const len0 = WASM_VECTOR_LEN;
   wasm.write(ptr0, len0);
 }
-function writeln(text) {
-  const ptr0 = passStringToWasm0(text, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-  const len0 = WASM_VECTOR_LEN;
-  wasm.writeln(ptr0, len0);
+function passInitQueries(queries) {
+  const ret = wasm.passInitQueries(queries);
+  return ret;
 }
 function __wbg_adapter_26(arg0, arg1, arg2) {
-  _assertNum(arg0);
-  _assertNum(arg1);
-  const ret = wasm.closure36_externref_shim(arg0, arg1, arg2);
+  const ret = wasm.closure109_externref_shim(arg0, arg1, arg2);
   return ret !== 0;
 }
 function __wbg_adapter_29(arg0, arg1, arg2) {
-  _assertNum(arg0);
-  _assertNum(arg1);
-  wasm.closure147_externref_shim(arg0, arg1, arg2);
+  wasm.closure195_externref_shim(arg0, arg1, arg2);
 }
-function __wbg_adapter_221(arg0, arg1, arg2, arg3) {
-  _assertNum(arg0);
-  _assertNum(arg1);
-  wasm.closure1376_externref_shim(arg0, arg1, arg2, arg3);
+function __wbg_adapter_217(arg0, arg1, arg2, arg3) {
+  wasm.closure1260_externref_shim(arg0, arg1, arg2, arg3);
 }
 var ShellInputContext = Object.freeze({
   FileInput: 0,
@@ -8556,9 +8336,6 @@ var DuckDBConfigFinalization = typeof FinalizationRegistry === "undefined" ? { r
 }, unregister: () => {
 } } : new FinalizationRegistry((ptr) => wasm.__wbg_duckdbconfig_free(ptr >>> 0, 1));
 var DuckDBConfig = class _DuckDBConfig {
-  constructor() {
-    throw new Error("cannot invoke `new` directly");
-  }
   static __wrap(ptr) {
     ptr = ptr >>> 0;
     const obj = Object.create(_DuckDBConfig.prototype);
@@ -8580,9 +8357,6 @@ var DuckDBConfig = class _DuckDBConfig {
    * @returns {string | undefined}
    */
   get path() {
-    if (this.__wbg_ptr == 0)
-      throw new Error("Attempt to use a moved value");
-    _assertNum(this.__wbg_ptr);
     const ret = wasm.duckdbconfig_path(this.__wbg_ptr);
     let v1;
     if (ret[0] !== 0) {
@@ -8595,9 +8369,6 @@ var DuckDBConfig = class _DuckDBConfig {
    * @param {string | null} [path]
    */
   set path(path) {
-    if (this.__wbg_ptr == 0)
-      throw new Error("Attempt to use a moved value");
-    _assertNum(this.__wbg_ptr);
     var ptr0 = isLikeNone(path) ? 0 : passStringToWasm0(path, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     var len0 = WASM_VECTOR_LEN;
     wasm.duckdbconfig_set_path(this.__wbg_ptr, ptr0, len0);
@@ -8630,44 +8401,31 @@ async function __wbg_load(module, imports) {
 function __wbg_get_imports() {
   const imports = {};
   imports.wbg = {};
-  imports.wbg.__wbg_attachCustomKeyEventHandler_5c309ad8c2d6ff9c = function() {
-    return logError(function(arg0, arg1) {
-      arg0.attachCustomKeyEventHandler(arg1);
-    }, arguments);
+  imports.wbg.__wbg_attachCustomKeyEventHandler_5c309ad8c2d6ff9c = function(arg0, arg1) {
+    arg0.attachCustomKeyEventHandler(arg1);
   };
-  imports.wbg.__wbg_backgroundColor_51cf19ee7d4b277a = function() {
-    return logError(function(arg0, arg1) {
-      const ret = arg1.backgroundColor;
-      const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-      const len1 = WASM_VECTOR_LEN;
-      getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
-      getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-    }, arguments);
+  imports.wbg.__wbg_backgroundColor_51cf19ee7d4b277a = function(arg0, arg1) {
+    const ret = arg1.backgroundColor;
+    const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+    getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
   };
-  imports.wbg.__wbg_bigInt64Array_c64b3751e74d5277 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.bigInt64Array;
-      _assertBoolean(ret);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_bigInt64Array_c64b3751e74d5277 = function(arg0) {
+    const ret = arg0.bigInt64Array;
+    return ret;
   };
-  imports.wbg.__wbg_blockSize_cd30a6366d631ae8 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.blockSize;
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_blockSize_cd30a6366d631ae8 = function(arg0) {
+    const ret = arg0.blockSize;
+    return ret;
   };
-  imports.wbg.__wbg_blockStats_7e6019968a50af3b = function() {
-    return logError(function(arg0) {
-      const ret = arg0.blockStats;
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_blockStats_7e6019968a50af3b = function(arg0) {
+    const ret = arg0.blockStats;
+    return ret;
   };
-  imports.wbg.__wbg_buffer_609cc3eee51ed158 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.buffer;
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_buffer_609cc3eee51ed158 = function(arg0) {
+    const ret = arg0.buffer;
+    return ret;
   };
   imports.wbg.__wbg_call_672a4d21634d4a24 = function() {
     return handleError(function(arg0, arg1) {
@@ -8687,12 +8445,9 @@ function __wbg_get_imports() {
       return ret;
     }, arguments);
   };
-  imports.wbg.__wbg_cols_77a8050235d63c90 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.cols;
-      _assertNum(ret);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_cols_77a8050235d63c90 = function(arg0) {
+    const ret = arg0.cols;
+    return ret;
   };
   imports.wbg.__wbg_connectInternal_818454f7281c00df = function() {
     return handleError(function(arg0) {
@@ -8700,11 +8455,9 @@ function __wbg_get_imports() {
       return ret;
     }, arguments);
   };
-  imports.wbg.__wbg_construct_036a353ca42f67b4 = function() {
-    return logError(function(arg0) {
-      const ret = new import_xterm.Terminal(arg0);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_construct_036a353ca42f67b4 = function(arg0) {
+    const ret = new import_xterm.Terminal(arg0);
+    return ret;
   };
   imports.wbg.__wbg_copyFileToBuffer_83cb2af8941ca82a = function() {
     return handleError(function(arg0, arg1, arg2) {
@@ -8712,19 +8465,13 @@ function __wbg_get_imports() {
       return ret;
     }, arguments);
   };
-  imports.wbg.__wbg_crossOriginIsolated_0118e2417ec095ee = function() {
-    return logError(function(arg0) {
-      const ret = arg0.crossOriginIsolated;
-      _assertBoolean(ret);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_crossOriginIsolated_0118e2417ec095ee = function(arg0) {
+    const ret = arg0.crossOriginIsolated;
+    return ret;
   };
-  imports.wbg.__wbg_ctrlKey_1e826e468105ac11 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.ctrlKey;
-      _assertBoolean(ret);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_ctrlKey_1e826e468105ac11 = function(arg0) {
+    const ret = arg0.ctrlKey;
+    return ret;
   };
   imports.wbg.__wbg_disconnect_92d81f4ec3f107ec = function() {
     return handleError(function(arg0, arg1) {
@@ -8750,23 +8497,19 @@ function __wbg_get_imports() {
       return ret;
     }, arguments);
   };
-  imports.wbg.__wbg_error_7534b8e9a36f1ab4 = function() {
-    return logError(function(arg0, arg1) {
-      let deferred0_0;
-      let deferred0_1;
-      try {
-        deferred0_0 = arg0;
-        deferred0_1 = arg1;
-        console.error(getStringFromWasm0(arg0, arg1));
-      } finally {
-        wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
-      }
-    }, arguments);
-  };
-  imports.wbg.__wbg_error_ebb9ec1bc5af2f31 = function() {
-    return logError(function(arg0, arg1) {
+  imports.wbg.__wbg_error_7534b8e9a36f1ab4 = function(arg0, arg1) {
+    let deferred0_0;
+    let deferred0_1;
+    try {
+      deferred0_0 = arg0;
+      deferred0_1 = arg1;
       console.error(getStringFromWasm0(arg0, arg1));
-    }, arguments);
+    } finally {
+      wasm.__wbindgen_free(deferred0_0, deferred0_1, 1);
+    }
+  };
+  imports.wbg.__wbg_error_ebb9ec1bc5af2f31 = function(arg0, arg1) {
+    console.error(getStringFromWasm0(arg0, arg1));
   };
   imports.wbg.__wbg_exportFileStatistics_d52b61d6c201da1c = function() {
     return handleError(function(arg0, arg1, arg2) {
@@ -8774,24 +8517,18 @@ function __wbg_get_imports() {
       return ret;
     }, arguments);
   };
-  imports.wbg.__wbg_fit_0db5c78a2a85f563 = function() {
-    return logError(function(arg0) {
-      arg0.fit();
-    }, arguments);
+  imports.wbg.__wbg_fit_0db5c78a2a85f563 = function(arg0) {
+    arg0.fit();
   };
-  imports.wbg.__wbg_focus_dd92db4314c4db81 = function() {
-    return logError(function(arg0) {
-      arg0.focus();
-    }, arguments);
+  imports.wbg.__wbg_focus_dd92db4314c4db81 = function(arg0) {
+    arg0.focus();
   };
-  imports.wbg.__wbg_fontFamily_cac93414dbe897cf = function() {
-    return logError(function(arg0, arg1) {
-      const ret = arg1.fontFamily;
-      const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-      const len1 = WASM_VECTOR_LEN;
-      getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
-      getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-    }, arguments);
+  imports.wbg.__wbg_fontFamily_cac93414dbe897cf = function(arg0, arg1) {
+    const ret = arg1.fontFamily;
+    const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+    getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
   };
   imports.wbg.__wbg_getFeatureFlags_14afaddbcef26858 = function() {
     return handleError(function(arg0) {
@@ -8801,7 +8538,7 @@ function __wbg_get_imports() {
   };
   imports.wbg.__wbg_getPlatformFeatures_40454c7f78791eb6 = function() {
     return handleError(function() {
-      const ret = getPlatformFeatures();
+      const ret = pe();
       return ret;
     }, arguments);
   };
@@ -8811,11 +8548,9 @@ function __wbg_get_imports() {
       return ret;
     }, arguments);
   };
-  imports.wbg.__wbg_get_b9b93047fe3cf45b = function() {
-    return logError(function(arg0, arg1) {
-      const ret = arg0[arg1 >>> 0];
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_get_b9b93047fe3cf45b = function(arg0, arg1) {
+    const ret = arg0[arg1 >>> 0];
+    return ret;
   };
   imports.wbg.__wbg_globFiles_542704d623854358 = function() {
     return handleError(function(arg0, arg1, arg2) {
@@ -8823,173 +8558,125 @@ function __wbg_get_imports() {
       return ret;
     }, arguments);
   };
-  imports.wbg.__wbg_instanceof_WebLinksAddon_3750ea42996e2252 = function() {
-    return logError(function(arg0) {
-      let result;
-      try {
-        result = arg0 instanceof import_xterm_addon_web_links.WebLinksAddon;
-      } catch (_) {
-        result = false;
-      }
-      const ret = result;
-      _assertBoolean(ret);
+  imports.wbg.__wbg_instanceof_WebLinksAddon_3750ea42996e2252 = function(arg0) {
+    let result;
+    try {
+      result = arg0 instanceof import_xterm_addon_web_links.WebLinksAddon;
+    } catch (_) {
+      result = false;
+    }
+    const ret = result;
+    return ret;
+  };
+  imports.wbg.__wbg_instanceof_WebglAddon_d96a60a43cae1674 = function(arg0) {
+    let result;
+    try {
+      result = arg0 instanceof import_xterm_addon_webgl.WebglAddon;
+    } catch (_) {
+      result = false;
+    }
+    const ret = result;
+    return ret;
+  };
+  imports.wbg.__wbg_instanceof_Window_def73ea0955fc569 = function(arg0) {
+    let result;
+    try {
+      result = arg0 instanceof Window;
+    } catch (_) {
+      result = false;
+    }
+    const ret = result;
+    return ret;
+  };
+  imports.wbg.__wbg_key_7b5c6cb539be8e13 = function(arg0, arg1) {
+    const ret = arg1.key;
+    const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+    getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+  };
+  imports.wbg.__wbg_length_a446193dc22c12f8 = function(arg0) {
+    const ret = arg0.length;
+    return ret;
+  };
+  imports.wbg.__wbg_length_e2d2a49132c1b256 = function(arg0) {
+    const ret = arg0.length;
+    return ret;
+  };
+  imports.wbg.__wbg_loadAddon_143d540bb5725490 = function(arg0, arg1) {
+    arg0.loadAddon(arg1);
+  };
+  imports.wbg.__wbg_log_33ef14fd0c9ec1a3 = function(arg0, arg1) {
+    console.log(getStringFromWasm0(arg0, arg1));
+  };
+  imports.wbg.__wbg_message_97a2af9b89d693a3 = function(arg0) {
+    const ret = arg0.message;
+    return ret;
+  };
+  imports.wbg.__wbg_metaKey_e1dd47d709a80ce5 = function(arg0) {
+    const ret = arg0.metaKey;
+    return ret;
+  };
+  imports.wbg.__wbg_new_23a2665fac83c611 = function(arg0, arg1) {
+    try {
+      var state0 = { a: arg0, b: arg1 };
+      var cb0 = (arg02, arg12) => {
+        const a = state0.a;
+        state0.a = 0;
+        try {
+          return __wbg_adapter_217(a, state0.b, arg02, arg12);
+        } finally {
+          state0.a = a;
+        }
+      };
+      const ret = new Promise(cb0);
       return ret;
-    }, arguments);
-  };
-  imports.wbg.__wbg_instanceof_WebglAddon_d96a60a43cae1674 = function() {
-    return logError(function(arg0) {
-      let result;
-      try {
-        result = arg0 instanceof import_xterm_addon_webgl.WebglAddon;
-      } catch (_) {
-        result = false;
-      }
-      const ret = result;
-      _assertBoolean(ret);
-      return ret;
-    }, arguments);
-  };
-  imports.wbg.__wbg_instanceof_Window_def73ea0955fc569 = function() {
-    return logError(function(arg0) {
-      let result;
-      try {
-        result = arg0 instanceof Window;
-      } catch (_) {
-        result = false;
-      }
-      const ret = result;
-      _assertBoolean(ret);
-      return ret;
-    }, arguments);
-  };
-  imports.wbg.__wbg_key_7b5c6cb539be8e13 = function() {
-    return logError(function(arg0, arg1) {
-      const ret = arg1.key;
-      const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-      const len1 = WASM_VECTOR_LEN;
-      getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
-      getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-    }, arguments);
-  };
-  imports.wbg.__wbg_length_a446193dc22c12f8 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.length;
-      _assertNum(ret);
-      return ret;
-    }, arguments);
-  };
-  imports.wbg.__wbg_length_e2d2a49132c1b256 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.length;
-      _assertNum(ret);
-      return ret;
-    }, arguments);
-  };
-  imports.wbg.__wbg_loadAddon_143d540bb5725490 = function() {
-    return logError(function(arg0, arg1) {
-      arg0.loadAddon(arg1);
-    }, arguments);
-  };
-  imports.wbg.__wbg_log_33ef14fd0c9ec1a3 = function() {
-    return logError(function(arg0, arg1) {
-      console.log(getStringFromWasm0(arg0, arg1));
-    }, arguments);
-  };
-  imports.wbg.__wbg_message_97a2af9b89d693a3 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.message;
-      return ret;
-    }, arguments);
-  };
-  imports.wbg.__wbg_metaKey_e1dd47d709a80ce5 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.metaKey;
-      _assertBoolean(ret);
-      return ret;
-    }, arguments);
-  };
-  imports.wbg.__wbg_new_23a2665fac83c611 = function() {
-    return logError(function(arg0, arg1) {
-      try {
-        var state0 = { a: arg0, b: arg1 };
-        var cb0 = (arg02, arg12) => {
-          const a = state0.a;
-          state0.a = 0;
-          try {
-            return __wbg_adapter_221(a, state0.b, arg02, arg12);
-          } finally {
-            state0.a = a;
-          }
-        };
-        const ret = new Promise(cb0);
-        return ret;
-      } finally {
-        state0.a = state0.b = 0;
-      }
-    }, arguments);
+    } finally {
+      state0.a = state0.b = 0;
+    }
   };
   imports.wbg.__wbg_new_405e22f390576ce2 = function() {
-    return logError(function() {
-      const ret = new Object();
-      return ret;
-    }, arguments);
+    const ret = new Object();
+    return ret;
   };
-  imports.wbg.__wbg_new_7890702e2f921af0 = function() {
-    return logError(function(arg0) {
-      const ret = new import_xterm_addon_webgl.WebglAddon(arg0 === 16777215 ? void 0 : arg0 !== 0);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_new_7890702e2f921af0 = function(arg0) {
+    const ret = new import_xterm_addon_webgl.WebglAddon(arg0 === 16777215 ? void 0 : arg0 !== 0);
+    return ret;
   };
   imports.wbg.__wbg_new_7c075f00f439f1e0 = function() {
-    return logError(function() {
-      const ret = new import_xterm_addon_fit.FitAddon();
-      return ret;
-    }, arguments);
+    const ret = new import_xterm_addon_fit.FitAddon();
+    return ret;
   };
   imports.wbg.__wbg_new_8a6f238a6ece86ea = function() {
-    return logError(function() {
-      const ret = new Error();
-      return ret;
-    }, arguments);
+    const ret = new Error();
+    return ret;
   };
-  imports.wbg.__wbg_new_a12002a7f91c75be = function() {
-    return logError(function(arg0) {
-      const ret = new Uint8Array(arg0);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_new_a12002a7f91c75be = function(arg0) {
+    const ret = new Uint8Array(arg0);
+    return ret;
   };
-  imports.wbg.__wbg_new_c2ccb7a35264c397 = function() {
-    return logError(function(arg0, arg1, arg2) {
-      const ret = new import_xterm_addon_web_links.WebLinksAddon(arg0, arg1, arg2 === 16777215 ? void 0 : arg2 !== 0);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_new_c2ccb7a35264c397 = function(arg0, arg1, arg2) {
+    const ret = new import_xterm_addon_web_links.WebLinksAddon(arg0, arg1, arg2 === 16777215 ? void 0 : arg2 !== 0);
+    return ret;
   };
-  imports.wbg.__wbg_new_c68d7209be747379 = function() {
-    return logError(function(arg0, arg1) {
-      const ret = new Error(getStringFromWasm0(arg0, arg1));
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_new_c68d7209be747379 = function(arg0, arg1) {
+    const ret = new Error(getStringFromWasm0(arg0, arg1));
+    return ret;
   };
-  imports.wbg.__wbg_newnoargs_105ed471475aaf50 = function() {
-    return logError(function(arg0, arg1) {
-      const ret = new Function(getStringFromWasm0(arg0, arg1));
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_newnoargs_105ed471475aaf50 = function(arg0, arg1) {
+    const ret = new Function(getStringFromWasm0(arg0, arg1));
+    return ret;
   };
-  imports.wbg.__wbg_now_d18023d54d4e5500 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.now();
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_now_d18023d54d4e5500 = function(arg0) {
+    const ret = arg0.now();
+    return ret;
   };
-  imports.wbg.__wbg_offsets_9a0c43647dfe8174 = function() {
-    return logError(function(arg0, arg1) {
-      const ret = arg1.offsets;
-      const ptr1 = passArray32ToWasm0(ret, wasm.__wbindgen_malloc);
-      const len1 = WASM_VECTOR_LEN;
-      getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
-      getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-    }, arguments);
+  imports.wbg.__wbg_offsets_9a0c43647dfe8174 = function(arg0, arg1) {
+    const ret = arg1.offsets;
+    const ptr1 = passArray32ToWasm0(ret, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+    getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
   };
   imports.wbg.__wbg_open_89ca330653f2b749 = function() {
     return handleError(function(arg0, arg1) {
@@ -8997,16 +8684,12 @@ function __wbg_get_imports() {
       return ret;
     }, arguments);
   };
-  imports.wbg.__wbg_open_ea472ea5209b0983 = function() {
-    return logError(function(arg0, arg1) {
-      arg0.open(arg1);
-    }, arguments);
+  imports.wbg.__wbg_open_ea472ea5209b0983 = function(arg0, arg1) {
+    arg0.open(arg1);
   };
-  imports.wbg.__wbg_performance_c185c0cdc2766575 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.performance;
-      return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
-    }, arguments);
+  imports.wbg.__wbg_performance_c185c0cdc2766575 = function(arg0) {
+    const ret = arg0.performance;
+    return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
   };
   imports.wbg.__wbg_pickFiles_c443e685aed27e4f = function() {
     return handleError(function(arg0) {
@@ -9020,16 +8703,12 @@ function __wbg_get_imports() {
       return ret;
     }, arguments);
   };
-  imports.wbg.__wbg_queueMicrotask_97d92b4fcc8a61c5 = function() {
-    return logError(function(arg0) {
-      queueMicrotask(arg0);
-    }, arguments);
+  imports.wbg.__wbg_queueMicrotask_97d92b4fcc8a61c5 = function(arg0) {
+    queueMicrotask(arg0);
   };
-  imports.wbg.__wbg_queueMicrotask_d3219def82552485 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.queueMicrotask;
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_queueMicrotask_d3219def82552485 = function(arg0) {
+    const ret = arg0.queueMicrotask;
+    return ret;
   };
   imports.wbg.__wbg_readClipboardText_731ab326db907631 = function() {
     return handleError(function(arg0) {
@@ -9043,11 +8722,9 @@ function __wbg_get_imports() {
       return ret;
     }, arguments);
   };
-  imports.wbg.__wbg_resolve_4851785c9c5f573d = function() {
-    return logError(function(arg0) {
-      const ret = Promise.resolve(arg0);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_resolve_4851785c9c5f573d = function(arg0) {
+    const ret = Promise.resolve(arg0);
+    return ret;
   };
   imports.wbg.__wbg_runQuery_dd923bfcee4eae4d = function() {
     return handleError(function(arg0, arg1, arg2, arg3) {
@@ -9055,139 +8732,93 @@ function __wbg_get_imports() {
       return ret;
     }, arguments);
   };
-  imports.wbg.__wbg_set_65595bdd868b3009 = function() {
-    return logError(function(arg0, arg1, arg2) {
-      arg0.set(arg1, arg2 >>> 0);
-    }, arguments);
+  imports.wbg.__wbg_set_65595bdd868b3009 = function(arg0, arg1, arg2) {
+    arg0.set(arg1, arg2 >>> 0);
   };
-  imports.wbg.__wbg_setallowProposedApi_1e56ae3768e93420 = function() {
-    return logError(function(arg0, arg1) {
-      arg0.allowProposedApi = arg1 !== 0;
-    }, arguments);
+  imports.wbg.__wbg_setallowProposedApi_1e56ae3768e93420 = function(arg0, arg1) {
+    arg0.allowProposedApi = arg1 !== 0;
   };
-  imports.wbg.__wbg_setbackground_94f13d2866b2e31b = function() {
-    return logError(function(arg0, arg1, arg2) {
-      arg0.background = getStringFromWasm0(arg1, arg2);
-    }, arguments);
+  imports.wbg.__wbg_setbackground_94f13d2866b2e31b = function(arg0, arg1, arg2) {
+    arg0.background = getStringFromWasm0(arg1, arg2);
   };
-  imports.wbg.__wbg_setbrightYellow_5858b72099992f03 = function() {
-    return logError(function(arg0, arg1, arg2) {
-      arg0.brightYellow = getStringFromWasm0(arg1, arg2);
-    }, arguments);
+  imports.wbg.__wbg_setbrightYellow_5858b72099992f03 = function(arg0, arg1, arg2) {
+    arg0.brightYellow = getStringFromWasm0(arg1, arg2);
   };
-  imports.wbg.__wbg_setcursorBlink_850e871d6bcda748 = function() {
-    return logError(function(arg0, arg1) {
-      arg0.cursorBlink = arg1 !== 0;
-    }, arguments);
+  imports.wbg.__wbg_setcursorBlink_850e871d6bcda748 = function(arg0, arg1) {
+    arg0.cursorBlink = arg1 !== 0;
   };
-  imports.wbg.__wbg_setcursorWidth_7899d7d19308befe = function() {
-    return logError(function(arg0, arg1) {
-      arg0.cursorWidth = arg1 >>> 0;
-    }, arguments);
+  imports.wbg.__wbg_setcursorWidth_7899d7d19308befe = function(arg0, arg1) {
+    arg0.cursorWidth = arg1 >>> 0;
   };
-  imports.wbg.__wbg_setdrawBoldTextInBrightColors_c3276731d7662d87 = function() {
-    return logError(function(arg0, arg1) {
-      arg0.drawBoldTextInBrightColors = arg1 !== 0;
-    }, arguments);
+  imports.wbg.__wbg_setdrawBoldTextInBrightColors_c3276731d7662d87 = function(arg0, arg1) {
+    arg0.drawBoldTextInBrightColors = arg1 !== 0;
   };
-  imports.wbg.__wbg_setfontFamily_f2837e56dcf1e5a4 = function() {
-    return logError(function(arg0, arg1, arg2) {
-      arg0.fontFamily = getStringFromWasm0(arg1, arg2);
-    }, arguments);
+  imports.wbg.__wbg_setfontFamily_f2837e56dcf1e5a4 = function(arg0, arg1, arg2) {
+    arg0.fontFamily = getStringFromWasm0(arg1, arg2);
   };
-  imports.wbg.__wbg_setfontSize_7d8e3357cbc2a6ac = function() {
-    return logError(function(arg0, arg1) {
-      arg0.fontSize = arg1 >>> 0;
-    }, arguments);
+  imports.wbg.__wbg_setfontSize_7d8e3357cbc2a6ac = function(arg0, arg1) {
+    arg0.fontSize = arg1 >>> 0;
   };
-  imports.wbg.__wbg_setforeground_bbda7a714f8f4254 = function() {
-    return logError(function(arg0, arg1, arg2) {
-      arg0.foreground = getStringFromWasm0(arg1, arg2);
-    }, arguments);
+  imports.wbg.__wbg_setforeground_bbda7a714f8f4254 = function(arg0, arg1, arg2) {
+    arg0.foreground = getStringFromWasm0(arg1, arg2);
   };
-  imports.wbg.__wbg_setrightClickSelectsWord_e15e0a6c7e12c2f4 = function() {
-    return logError(function(arg0, arg1) {
-      arg0.rightClickSelectsWord = arg1 !== 0;
-    }, arguments);
+  imports.wbg.__wbg_setrightClickSelectsWord_e15e0a6c7e12c2f4 = function(arg0, arg1) {
+    arg0.rightClickSelectsWord = arg1 !== 0;
   };
-  imports.wbg.__wbg_setrows_395bb2f6a40be664 = function() {
-    return logError(function(arg0, arg1) {
-      arg0.rows = arg1 >>> 0;
-    }, arguments);
+  imports.wbg.__wbg_setrows_395bb2f6a40be664 = function(arg0, arg1) {
+    arg0.rows = arg1 >>> 0;
   };
-  imports.wbg.__wbg_settheme_1b783323a8d2b858 = function() {
-    return logError(function(arg0, arg1) {
-      arg0.theme = arg1;
-    }, arguments);
+  imports.wbg.__wbg_settheme_1b783323a8d2b858 = function(arg0, arg1) {
+    arg0.theme = arg1;
   };
-  imports.wbg.__wbg_stack_0ed75d68575b0f3c = function() {
-    return logError(function(arg0, arg1) {
-      const ret = arg1.stack;
-      const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-      const len1 = WASM_VECTOR_LEN;
-      getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
-      getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-    }, arguments);
+  imports.wbg.__wbg_stack_0ed75d68575b0f3c = function(arg0, arg1) {
+    const ret = arg1.stack;
+    const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+    getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
   };
   imports.wbg.__wbg_static_accessor_GLOBAL_88a902d13a557d07 = function() {
-    return logError(function() {
-      const ret = typeof global === "undefined" ? null : global;
-      return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
-    }, arguments);
+    const ret = typeof global === "undefined" ? null : global;
+    return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
   };
   imports.wbg.__wbg_static_accessor_GLOBAL_THIS_56578be7e9f832b0 = function() {
-    return logError(function() {
-      const ret = typeof globalThis === "undefined" ? null : globalThis;
-      return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
-    }, arguments);
+    const ret = typeof globalThis === "undefined" ? null : globalThis;
+    return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
   };
-  imports.wbg.__wbg_static_accessor_PACKAGE_NAME_0af717684e189e55 = function() {
-    return logError(function(arg0) {
-      const ret = PACKAGE_NAME;
-      const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-      const len1 = WASM_VECTOR_LEN;
-      getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
-      getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-    }, arguments);
+  imports.wbg.__wbg_static_accessor_PACKAGE_NAME_0af717684e189e55 = function(arg0) {
+    const ret = M;
+    const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+    getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
   };
-  imports.wbg.__wbg_static_accessor_PACKAGE_VERSION_549ba11794cf5003 = function() {
-    return logError(function(arg0) {
-      const ret = PACKAGE_VERSION;
-      const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-      const len1 = WASM_VECTOR_LEN;
-      getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
-      getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-    }, arguments);
+  imports.wbg.__wbg_static_accessor_PACKAGE_VERSION_549ba11794cf5003 = function(arg0) {
+    const ret = G;
+    const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+    getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
   };
   imports.wbg.__wbg_static_accessor_SELF_37c5d418e4bf5819 = function() {
-    return logError(function() {
-      const ret = typeof self === "undefined" ? null : self;
-      return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
-    }, arguments);
+    const ret = typeof self === "undefined" ? null : self;
+    return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
   };
   imports.wbg.__wbg_static_accessor_WINDOW_5de37043a91a9c40 = function() {
-    return logError(function() {
-      const ret = typeof window === "undefined" ? null : window;
-      return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
-    }, arguments);
+    const ret = typeof window === "undefined" ? null : window;
+    return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
   };
-  imports.wbg.__wbg_then_44b73946d2fb3e7d = function() {
-    return logError(function(arg0, arg1) {
-      const ret = arg0.then(arg1);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_then_44b73946d2fb3e7d = function(arg0, arg1) {
+    const ret = arg0.then(arg1);
+    return ret;
   };
-  imports.wbg.__wbg_then_48b406749878a531 = function() {
-    return logError(function(arg0, arg1, arg2) {
-      const ret = arg0.then(arg1, arg2);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_then_48b406749878a531 = function(arg0, arg1, arg2) {
+    const ret = arg0.then(arg1, arg2);
+    return ret;
   };
-  imports.wbg.__wbg_toString_c813bbd34d063839 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.toString();
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_toString_c813bbd34d063839 = function(arg0) {
+    const ret = arg0.toString();
+    return ret;
   };
   imports.wbg.__wbg_tokenize_8a1699f08f37e193 = function() {
     return handleError(function(arg0, arg1, arg2) {
@@ -9195,104 +8826,69 @@ function __wbg_get_imports() {
       return ret;
     }, arguments);
   };
-  imports.wbg.__wbg_totalFileReadsAhead_a8f3246739715872 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.totalFileReadsAhead;
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_totalFileReadsAhead_a8f3246739715872 = function(arg0) {
+    const ret = arg0.totalFileReadsAhead;
+    return ret;
   };
-  imports.wbg.__wbg_totalFileReadsCached_a9d725246d8113de = function() {
-    return logError(function(arg0) {
-      const ret = arg0.totalFileReadsCached;
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_totalFileReadsCached_a9d725246d8113de = function(arg0) {
+    const ret = arg0.totalFileReadsCached;
+    return ret;
   };
-  imports.wbg.__wbg_totalFileReadsCold_969fc4fdc92ba928 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.totalFileReadsCold;
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_totalFileReadsCold_969fc4fdc92ba928 = function(arg0) {
+    const ret = arg0.totalFileReadsCold;
+    return ret;
   };
-  imports.wbg.__wbg_totalFileWrites_a1979d03072ca561 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.totalFileWrites;
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_totalFileWrites_a1979d03072ca561 = function(arg0) {
+    const ret = arg0.totalFileWrites;
+    return ret;
   };
-  imports.wbg.__wbg_totalPageAccesses_d1e0755e7c873650 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.totalPageAccesses;
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_totalPageAccesses_d1e0755e7c873650 = function(arg0) {
+    const ret = arg0.totalPageAccesses;
+    return ret;
   };
-  imports.wbg.__wbg_totalPageLoads_055280bed199c515 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.totalPageLoads;
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_totalPageLoads_055280bed199c515 = function(arg0) {
+    const ret = arg0.totalPageLoads;
+    return ret;
   };
-  imports.wbg.__wbg_type_16f2b8031796512f = function() {
-    return logError(function(arg0, arg1) {
-      const ret = arg1.type;
-      const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-      const len1 = WASM_VECTOR_LEN;
-      getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
-      getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-    }, arguments);
+  imports.wbg.__wbg_type_16f2b8031796512f = function(arg0, arg1) {
+    const ret = arg1.type;
+    const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+    getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
   };
-  imports.wbg.__wbg_types_10068f549973c623 = function() {
-    return logError(function(arg0, arg1) {
-      const ret = arg1.types;
-      const ptr1 = passArray8ToWasm0(ret, wasm.__wbindgen_malloc);
-      const len1 = WASM_VECTOR_LEN;
-      getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
-      getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-    }, arguments);
+  imports.wbg.__wbg_types_10068f549973c623 = function(arg0, arg1) {
+    const ret = arg1.types;
+    const ptr1 = passArray8ToWasm0(ret, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+    getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
   };
-  imports.wbg.__wbg_warn_45a3a6612d9f19fe = function() {
-    return logError(function(arg0, arg1) {
-      console.warn(getStringFromWasm0(arg0, arg1));
-    }, arguments);
+  imports.wbg.__wbg_warn_45a3a6612d9f19fe = function(arg0, arg1) {
+    console.warn(getStringFromWasm0(arg0, arg1));
   };
-  imports.wbg.__wbg_wasmBulkMemory_551502ede47fbf09 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.wasmBulkMemory;
-      _assertBoolean(ret);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_wasmBulkMemory_551502ede47fbf09 = function(arg0) {
+    const ret = arg0.wasmBulkMemory;
+    return ret;
   };
-  imports.wbg.__wbg_wasmExceptions_4f3d6bc9c38eccd4 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.wasmExceptions;
-      _assertBoolean(ret);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_wasmExceptions_4f3d6bc9c38eccd4 = function(arg0) {
+    const ret = arg0.wasmExceptions;
+    return ret;
   };
-  imports.wbg.__wbg_wasmSIMD_6e524010ac1b3712 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.wasmSIMD;
-      _assertBoolean(ret);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_wasmSIMD_6e524010ac1b3712 = function(arg0) {
+    const ret = arg0.wasmSIMD;
+    return ret;
   };
-  imports.wbg.__wbg_wasmThreads_bb92f1f17739f197 = function() {
-    return logError(function(arg0) {
-      const ret = arg0.wasmThreads;
-      _assertBoolean(ret);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_wasmThreads_bb92f1f17739f197 = function(arg0) {
+    const ret = arg0.wasmThreads;
+    return ret;
   };
-  imports.wbg.__wbg_withWebGL_e7b2f98241b8125a = function() {
-    return logError(function(arg0) {
-      const ret = arg0.withWebGL;
-      _assertBoolean(ret);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbg_withWebGL_e7b2f98241b8125a = function(arg0) {
+    const ret = arg0.withWebGL;
+    return ret;
   };
-  imports.wbg.__wbg_write_c3295e1c4c88047e = function() {
-    return logError(function(arg0, arg1, arg2) {
-      arg0.write(getStringFromWasm0(arg1, arg2));
-    }, arguments);
+  imports.wbg.__wbg_write_c3295e1c4c88047e = function(arg0, arg1, arg2) {
+    arg0.write(getStringFromWasm0(arg1, arg2));
   };
   imports.wbg.__wbindgen_cb_drop = function(arg0) {
     const obj = arg0.original;
@@ -9301,20 +8897,15 @@ function __wbg_get_imports() {
       return true;
     }
     const ret = false;
-    _assertBoolean(ret);
     return ret;
   };
-  imports.wbg.__wbindgen_closure_wrapper4427 = function() {
-    return logError(function(arg0, arg1, arg2) {
-      const ret = makeMutClosure(arg0, arg1, 148, __wbg_adapter_29);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbindgen_closure_wrapper356 = function(arg0, arg1, arg2) {
+    const ret = makeMutClosure(arg0, arg1, 110, __wbg_adapter_26);
+    return ret;
   };
-  imports.wbg.__wbindgen_closure_wrapper691 = function() {
-    return logError(function(arg0, arg1, arg2) {
-      const ret = makeMutClosure(arg0, arg1, 37, __wbg_adapter_26);
-      return ret;
-    }, arguments);
+  imports.wbg.__wbindgen_closure_wrapper922 = function(arg0, arg1, arg2) {
+    const ret = makeMutClosure(arg0, arg1, 196, __wbg_adapter_29);
+    return ret;
   };
   imports.wbg.__wbindgen_debug_string = function(arg0, arg1) {
     const ret = debugString(arg1);
@@ -9335,12 +8926,10 @@ function __wbg_get_imports() {
   };
   imports.wbg.__wbindgen_is_function = function(arg0) {
     const ret = typeof arg0 === "function";
-    _assertBoolean(ret);
     return ret;
   };
   imports.wbg.__wbindgen_is_undefined = function(arg0) {
     const ret = arg0 === void 0;
-    _assertBoolean(ret);
     return ret;
   };
   imports.wbg.__wbindgen_json_serialize = function(arg0, arg1) {
@@ -9358,9 +8947,6 @@ function __wbg_get_imports() {
   imports.wbg.__wbindgen_number_get = function(arg0, arg1) {
     const obj = arg1;
     const ret = typeof obj === "number" ? obj : void 0;
-    if (!isLikeNone(ret)) {
-      _assertNum(ret);
-    }
     getDataViewMemory0().setFloat64(arg0 + 8 * 1, isLikeNone(ret) ? 0 : ret, true);
     getDataViewMemory0().setInt32(arg0 + 4 * 0, !isLikeNone(ret), true);
   };
@@ -9546,7 +9132,7 @@ function pickFilesForFileReader(db) {
       for (let i = 0; i < files.length; ++i) {
         const file = files.item(i);
         await db.dropFile(file.name);
-        await db.registerFileHandle(file.name, file, DuckDBDataProtocol.BROWSER_FILEREADER, true);
+        await db.registerFileHandle(file.name, file, w.BROWSER_FILEREADER, true);
       }
       resolve(files.length);
     };
@@ -9619,10 +9205,10 @@ var ShellRuntime = class {
   }
 };
 function formatBytes(value) {
-  const [multiple, k, suffix] = [1e3, "k", "B"];
+  const [multiple, k2, suffix] = [1e3, "k", "B"];
   const exp = Math.log(value) / Math.log(multiple) | 0;
   const size = Number((value / Math.pow(multiple, exp)).toFixed(2));
-  return "".concat(size, " ").concat(exp ? "".concat(k, "MGTPEZY")[exp - 1] + suffix : "byte".concat(size !== 1 ? "s" : ""));
+  return "".concat(size, " ").concat(exp ? "".concat(k2, "MGTPEZY")[exp - 1] + suffix : "byte".concat(size !== 1 ? "s" : ""));
 }
 function extraswaps(input) {
   let res = "";
@@ -9689,15 +9275,15 @@ async function embed2(props) {
   });
 }
 function getJsDelivrModule() {
-  const jsdelivr_dist_url = "https://cdn.jsdelivr.net/npm/".concat(PACKAGE_NAME2, "@").concat(PACKAGE_VERSION2, "/dist/");
+  const jsdelivr_dist_url = "https://cdn.jsdelivr.net/npm/".concat(PACKAGE_NAME, "@").concat(PACKAGE_VERSION, "/dist/");
   return new URL("".concat(jsdelivr_dist_url, "dist/shell_bg.wasm"));
 }
 export {
-  PACKAGE_NAME2 as PACKAGE_NAME,
-  PACKAGE_VERSION2 as PACKAGE_VERSION,
-  PACKAGE_VERSION_MAJOR2 as PACKAGE_VERSION_MAJOR,
-  PACKAGE_VERSION_MINOR2 as PACKAGE_VERSION_MINOR,
-  PACKAGE_VERSION_PATCH2 as PACKAGE_VERSION_PATCH,
+  PACKAGE_NAME,
+  PACKAGE_VERSION,
+  PACKAGE_VERSION_MAJOR,
+  PACKAGE_VERSION_MINOR,
+  PACKAGE_VERSION_PATCH,
   embed2 as embed,
   getJsDelivrModule
 };
