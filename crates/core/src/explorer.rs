@@ -46,6 +46,9 @@ pub struct ExplorerState {
     pub api_base: String,
     /// Human-readable backend name shown in the navbar (e.g. `DuckDB`).
     pub backend_label: String,
+    /// Whether the raw-SQL endpoint (`POST {api_base}/sql`) is enabled.
+    /// Drives the API Query tab's SQL mode.
+    pub sql_enabled: bool,
 }
 
 #[derive(Template)]
@@ -55,6 +58,7 @@ struct IndexTemplate {
     explorer_base: String,
     api_base: String,
     asset_version: &'static str,
+    sql_enabled: bool,
     datasets: Vec<DatasetListItem>,
     datasets_json: String,
 }
@@ -144,6 +148,7 @@ pub fn configure(state: web::Data<ExplorerState>, cfg: &mut web::ServiceConfig) 
                 .route("/terminal", web::get().to(terminal))
                 .route("/assets/explorer.css", web::get().to(asset_explorer_css))
                 .route("/assets/explorer.js", web::get().to(asset_explorer_js))
+                .route("/assets/query-api.js", web::get().to(asset_query_api_js))
                 .route("/assets/terminal.css", web::get().to(asset_terminal_css))
                 .route("/assets/terminal.js", web::get().to(asset_terminal_js))
                 .route(
@@ -198,6 +203,7 @@ async fn index(state: web::Data<ExplorerState>) -> HttpResponse {
         explorer_base: state.explorer_base.clone(),
         api_base: state.api_base.clone(),
         asset_version: env!("CARGO_PKG_VERSION"),
+        sql_enabled: state.sql_enabled,
         datasets: items,
         datasets_json,
     };
@@ -217,6 +223,7 @@ async fn terminal(state: web::Data<ExplorerState>) -> HttpResponse {
 // long-lived cache headers; they carry no per-request state.
 const EXPLORER_CSS: &str = include_str!("../assets/explorer/explorer.css");
 const EXPLORER_JS: &str = include_str!("../assets/explorer/explorer.js");
+const QUERY_API_JS: &str = include_str!("../assets/explorer/query-api.js");
 const TERMINAL_CSS: &str = include_str!("../assets/explorer/terminal.css");
 const TERMINAL_JS: &str = include_str!("../assets/explorer/terminal.js");
 
@@ -233,6 +240,10 @@ async fn asset_explorer_css() -> HttpResponse {
 
 async fn asset_explorer_js() -> HttpResponse {
     asset("application/javascript; charset=utf-8", EXPLORER_JS)
+}
+
+async fn asset_query_api_js() -> HttpResponse {
+    asset("application/javascript; charset=utf-8", QUERY_API_JS)
 }
 
 async fn asset_terminal_css() -> HttpResponse {

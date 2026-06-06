@@ -265,6 +265,7 @@ async fn run_server(
             explorer_base: explorer_cfg.path.clone(),
             api_base: format!("{prefix}/api/v1"),
             backend_label: label.to_string(),
+            sql_enabled: cfg.sql.enabled,
         }))
     } else {
         None

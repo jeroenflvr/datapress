@@ -7,6 +7,10 @@
             type="button" role="tab"><i class="bi bi-search"></i> Discovery</button>
   </li>
   <li class="nav-item" role="presentation">
+    <button class="nav-link" id="api-tab" data-bs-toggle="tab" data-bs-target="#api-pane"
+            type="button" role="tab"><i class="bi bi-braces-asterisk"></i> API Query</button>
+  </li>
+  <li class="nav-item" role="presentation">
     <button class="nav-link" id="duckdb-tab" data-bs-toggle="tab" data-bs-target="#duckdb-pane"
             type="button" role="tab"><i class="bi bi-database"></i> DuckDB</button>
   </li>
@@ -47,6 +51,95 @@
             <span class="spinner-border spinner-border-sm"></span> Loading dataset…
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------------------------------------------------------------- -->
+  <!-- API Query (structured JSON + raw SQL against the live API) -->
+  <!-- ---------------------------------------------------------------- -->
+  <div class="tab-pane fade" id="api-pane" role="tabpanel">
+    <div class="card">
+      <div class="card-header d-flex align-items-center gap-2 flex-wrap">
+        <span><i class="bi bi-braces-asterisk"></i> Query the HTTP API</span>
+        <div class="btn-group btn-group-sm ms-md-3" role="group" aria-label="Query mode">
+          <input type="radio" class="btn-check" name="api-mode" id="api-mode-json" autocomplete="off" checked>
+          <label class="btn btn-outline-secondary" for="api-mode-json"><i class="bi bi-braces"></i> Structured JSON</label>
+          <input type="radio" class="btn-check" name="api-mode" id="api-mode-sql" autocomplete="off">
+          <label class="btn btn-outline-secondary" for="api-mode-sql"><i class="bi bi-code-square"></i> Raw SQL</label>
+        </div>
+        <span id="api-status" class="badge text-bg-secondary ms-auto">idle</span>
+      </div>
+      <div class="card-body">
+        <!-- Structured JSON mode -->
+        <div id="api-json-mode">
+          <div class="row g-2 mb-2">
+            <div class="col-12 col-md-4">
+              <select id="api-dataset" class="form-select form-select-sm" aria-label="Dataset"></select>
+            </div>
+            <div class="col-12 col-md-8 d-flex gap-2 flex-wrap">
+              <button id="api-json-prettify" class="btn btn-sm btn-outline-secondary" type="button"
+                      title="Validate &amp; pretty-print the request body">
+                <i class="bi bi-magic"></i> Check / prettify JSON
+              </button>
+              <button id="api-json-sample" class="btn btn-sm btn-outline-secondary" type="button">sample body</button>
+              <button id="api-json-run" class="btn btn-sm btn-success ms-auto" type="button">
+                <i class="bi bi-play-fill"></i> Run
+              </button>
+            </div>
+          </div>
+          <textarea id="api-json-body" class="form-control mono" rows="9" spellcheck="false"
+                    placeholder='{ "page_size": 100 }'></textarea>
+          <div class="form-text">
+            POSTed to <code id="api-json-url">{{ api_base }}/datasets/&lt;name&gt;/query</code>.
+            Body is a <code>QueryRequest</code> (columns, predicates, group_by, order_by, page, page_size…).
+          </div>
+        </div>
+
+        <!-- Raw SQL mode -->
+        <div id="api-sql-mode" class="d-none">
+          <div class="row g-2 mb-2">
+            <div class="col-12 d-flex gap-2 flex-wrap">
+              <button id="api-sql-check" class="btn btn-sm btn-outline-secondary" type="button"
+                      title="Lightweight read-only SQL syntax check">
+                <i class="bi bi-check2-circle"></i> Check SQL
+              </button>
+              <div class="input-group input-group-sm" style="max-width: 11rem;">
+                <span class="input-group-text">max rows</span>
+                <input id="api-sql-maxrows" class="form-control" type="number" min="1" value="1000">
+              </div>
+              <button id="api-sql-run" class="btn btn-sm btn-success ms-auto" type="button">
+                <i class="bi bi-play-fill"></i> Run
+              </button>
+            </div>
+          </div>
+          <textarea id="api-sql-body" class="form-control mono" rows="9" spellcheck="false"
+                    placeholder="SELECT * FROM dataset LIMIT 100"></textarea>
+          <div class="form-text">
+            POSTed to <code>{{ api_base }}/sql</code>. Read-only single-dataset
+            <code>SELECT</code>/<code>WITH</code>, capped server-side.
+          </div>
+          <div id="api-sql-disabled" class="alert alert-warning mt-2 mb-0 d-none" role="alert">
+            The raw-SQL endpoint is disabled on this server (<code>[sql].enabled = false</code>).
+            You can still check syntax, but queries will return <code>404</code>.
+          </div>
+        </div>
+
+        <div id="api-check" class="alert mt-3 d-none mono" role="status"></div>
+        <div id="api-error" class="alert alert-danger mt-3 d-none mono" role="alert"></div>
+        <div id="api-export" class="d-flex align-items-center gap-2 mt-3 d-none flex-wrap">
+          <span class="text-secondary small">Export results:</span>
+          <button id="api-export-csv" class="btn btn-sm btn-outline-secondary" type="button">
+            <i class="bi bi-filetype-csv"></i> CSV
+          </button>
+          <button id="api-export-json" class="btn btn-sm btn-outline-secondary" type="button">
+            <i class="bi bi-filetype-json"></i> JSON
+          </button>
+          <button id="api-export-parquet" class="btn btn-sm btn-outline-secondary" type="button">
+            <i class="bi bi-file-earmark-binary"></i> Parquet
+          </button>
+        </div>
+        <div id="api-results" class="mt-3 table-responsive"></div>
       </div>
     </div>
   </div>
@@ -123,10 +216,11 @@
   </div>
 </div>
 
-<script id="explorer-config" type="application/json">{ "explorerBase": "{{ explorer_base }}" }</script>
+<script id="explorer-config" type="application/json">{ "explorerBase": "{{ explorer_base }}", "apiBase": "{{ api_base }}", "sqlEnabled": {% if sql_enabled %}true{% else %}false{% endif %} }</script>
 <script id="datasets-data" type="application/json">{{ datasets_json|safe }}</script>
 {% endblock %}
 
 {% block scripts %}
 <script type="module" src="{{ explorer_base }}/assets/explorer.js?v={{ asset_version }}"></script>
+<script type="module" src="{{ explorer_base }}/assets/query-api.js?v={{ asset_version }}"></script>
 {% endblock %}
