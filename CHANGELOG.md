@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.9] - 2026-06-06
+
+### Miscellaneous
+
+- Add more todos re protection against ddos ([0437c63](https://github.com/jeroenflvr/datapress/commit/0437c637204d9d3932a1eed786e57a235a15a77e))
+- Default to datafusion ([a4e7878](https://github.com/jeroenflvr/datapress/commit/a4e78786ab35c2bf05ca76d5bd4721923d6089c8))
+- Update cli binary with updated template ([5181812](https://github.com/jeroenflvr/datapress/commit/5181812628bcbb76dc77be19e4490cc66ffd92fe))
+
 ## [0.4.8] - 2026-06-06
 
 ### Bug Fixes
