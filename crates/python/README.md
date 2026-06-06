@@ -15,8 +15,7 @@
 ![DuckDB](https://img.shields.io/badge/backend-DuckDB-yellow?logo=duckdb)
 ![DataFusion](https://img.shields.io/badge/backend-DataFusion-blue?logo=apache)
 
-[Documentation](https://docs.datap-rs.org) · [Source](https://github.com/jeroenflvr/datapress) · [PyPI](https://pypi.org/project/datap-rs/)
-
+[Documentation](https://docs.datap-rs.org) · [Presentation](https://datap-rs.org) · [Source](https://github.com/jeroenflvr/datapress) · [PyPI](https://pypi.org/project/datap-rs/)
 
 
 

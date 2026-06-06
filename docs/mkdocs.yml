@@ -119,6 +119,7 @@ extra:
 
 nav:
   - Home: index.md
+  - Presentation: https://datap-rs.org
   - Getting started:
       - getting-started/index.md
       - Install: getting-started/install.md

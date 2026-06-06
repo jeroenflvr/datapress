@@ -4,6 +4,9 @@ Apache Arrow + DataFusion-backed implementation of
 [datapress](https://github.com/jeroenflvr/datapress) — a JSON HTTP API over
 Parquet / Delta datasets.
 
+[Overview presentation](https://datap-rs.org) ·
+[Documentation](https://docs.datap-rs.org)
+
 It pairs [`datapress-core`](https://crates.io/crates/datapress-core) with a
 DataFusion `SessionContext`: datasets declared in `datasets.toml` are inferred
 at startup and served over the shared v1 API (list / schema / query / count /

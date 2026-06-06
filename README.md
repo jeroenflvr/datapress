@@ -11,6 +11,9 @@ you can A/B the engines under identical workloads. A Python wheel
 (`datap-rs`, built with maturin + PyO3) bundles both engines and lets you
 configure and launch the server from Python.
 
+**[Overview presentation → datap-rs.org](https://datap-rs.org)** ·
+[Documentation](https://docs.datap-rs.org)
+
 - Built on [actix-web](https://actix.rs/) 4
 - Datasets declared in a single [`datasets.toml`](datasets.toml) (Rust
   binaries) or programmatically (Python wrapper)

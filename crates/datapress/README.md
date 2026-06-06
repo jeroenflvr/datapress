@@ -4,6 +4,9 @@ A single `datapress` binary that bundles **both** dataset HTTP backends —
 DuckDB and DataFusion — and picks the active one at runtime from
 `server.backend` in your `datasets.toml`.
 
+[Overview presentation](https://datap-rs.org) ·
+[Documentation](https://docs.datap-rs.org)
+
 ```sh
 cargo install datapress    # installs the `datapress` binary
 datapress                  # serves using the resolved datasets.toml

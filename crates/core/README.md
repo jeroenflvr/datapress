@@ -3,6 +3,9 @@
 Backend-agnostic core for [datapress](https://github.com/jeroenflvr/datapress) —
 a Rust workspace that exposes Parquet / Delta datasets over a JSON HTTP API.
 
+[Overview presentation](https://datap-rs.org) ·
+[Documentation](https://docs.datap-rs.org)
+
 This crate holds the pieces shared by every backend:
 
 - Configuration model (`datasets.toml` parsing, server/auth/docs/swagger/metrics
