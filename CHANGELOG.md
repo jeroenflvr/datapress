@@ -3,6 +3,36 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.6] - 2026-06-06
+
+### Bug Fixes
+
+- *(style)* Logo and color ([690db8f](https://github.com/jeroenflvr/datapress/commit/690db8fb4fa49aca0b8efcaf993c9722f68df3a8))
+
+### CI
+
+- Add docker build ([5755043](https://github.com/jeroenflvr/datapress/commit/57550432fd7ef694930e2bc8922228df674507e8))
+
+### Documentation
+
+- Remove edit icon ([42c2429](https://github.com/jeroenflvr/datapress/commit/42c24290f602a51dfe45edfc0ca56e880c26a890))
+
+### Features
+
+- Embed json/raw sql interface in explorer ([1af356c](https://github.com/jeroenflvr/datapress/commit/1af356ca426b191c61f784912702bf3bdd2bc189))
+- Branding binary ([186b39b](https://github.com/jeroenflvr/datapress/commit/186b39b71d90e6d8991da0b7f77aee9742adbc4c))
+- *(style)* Duckdb wasm branding ([ad9cfff](https://github.com/jeroenflvr/datapress/commit/ad9cfffc2aac93cc92845fdccc6044e9da86d126))
+- Add export query results from explore endpoint ([fb1b3c4](https://github.com/jeroenflvr/datapress/commit/fb1b3c42f5a2104e2e1061719b0b0edaa90072d5))
+
+### Miscellaneous
+
+- Add sql block to datasets.toml template ([3d32813](https://github.com/jeroenflvr/datapress/commit/3d3281333820b700c4bd043f957dffa172af8951))
+
+### Styling
+
+- Update branding ([47619af](https://github.com/jeroenflvr/datapress/commit/47619afaadb55b8e1746ac9d48de953552b304a5))
+- Update mkdocs theme to match presentation ([04dadbe](https://github.com/jeroenflvr/datapress/commit/04dadbefa1b2494595f4c3747ab7f36b49e145df))
+
 ## [0.4.5] - 2026-06-06
 
 ### CI
