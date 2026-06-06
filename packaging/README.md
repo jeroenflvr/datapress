@@ -80,16 +80,48 @@ Publishing means opening a PR to
 [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) under
 `manifests/d/datap-rs/DataPress/<version>/`.
 
+### First-time bootstrap (required once)
+
+The automated job below uses
+[`winget-releaser`](https://github.com/vedantmgoyal9/winget-releaser), which
+**only updates packages that already exist** in winget-pkgs. Until the first
+version is merged it fails with:
+
+```
+Error: Package datap-rs.DataPress does not exist in the winget-pkgs repository.
+Please add atleast one version of the package before using this action.
+```
+
+Submit the **initial** version by hand once (from a Windows machine with
+[`wingetcreate`](https://github.com/microsoft/winget-create), e.g.
+`winget install wingetcreate`):
+
+```powershell
+wingetcreate new `
+  https://github.com/jeroenflvr/datapress/releases/download/v0.4.4/datapress-v0.4.4-x86_64-pc-windows-msvc.zip `
+  --submit
+```
+
+Follow the prompts (it infers `datap-rs.DataPress`, version, and SHA-256 from
+the release `.zip`). Once that PR is **merged** into winget-pkgs, every later
+`v*` release is handled automatically by the job below.
+
 ### Automating the submission
 
 Add a secret `WINGET_TOKEN` (a classic PAT with `public_repo` that can push to
-**your fork** of `winget-pkgs`). Once it is set, the `update-winget` job runs
-on **every** `v*` release and uses
-[`winget-releaser`](https://github.com/vedantmgoyal9/winget-releaser) to build
-the manifests from the release `.zip` and open the PR automatically. If the
-secret is absent the job logs a warning and skips.
+**your fork** of `winget-pkgs`). Once it is set — **and the bootstrap version
+above has been merged** — the `update-winget` job runs on **every** `v*`
+release and uses `winget-releaser` to build the manifests from the release
+`.zip` and open the PR automatically. If the secret is absent the job logs a
+warning and skips.
 
-To do it manually, install `wingetcreate` and run:
+The job is also gated on a repo **variable** `WINGET_BOOTSTRAPPED` so releases
+stay green before the package exists. While the bootstrap PR is pending, leave
+it unset and the job is skipped entirely. After that PR is merged, enable it
+once: **Settings → Secrets and variables → Actions → Variables → New
+repository variable → `WINGET_BOOTSTRAPPED` = `true`**.
+
+To bump an existing package by hand instead:
 
 ```powershell
 wingetcreate update datap-rs.DataPress `

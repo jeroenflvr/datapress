@@ -359,11 +359,14 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet; then
+          git add Formula/datapress.rb
+          # Use the *staged* diff so a brand-new (untracked) formula on the
+          # first run is detected too — `git diff --quiet` alone ignores
+          # untracked files and would skip the initial bootstrap commit.
+          if git diff --cached --quiet; then
             echo "No formula changes."
             exit 0
           fi
-          git add Formula/datapress.rb
           git commit -m "datapress ${GITHUB_REF_NAME#v}"
           git push
 
@@ -374,11 +377,24 @@ jobs:
   # configured (a classic PAT with `public_repo` that can push to your fork
   # of winget-pkgs). If the secret is absent the job logs a warning and
   # skips. See packaging/README.md.
+  #
+  # NOTE: winget-releaser only *updates* existing packages. The very first
+  # version of datap-rs.DataPress must be submitted manually once (see the
+  # "First-time bootstrap" section in packaging/README.md). Until that PR is
+  # merged this job fails with "Package ... does not exist".
+  #
+  # To avoid red CI runs in the meantime, the job is gated on the repo
+  # variable WINGET_BOOTSTRAPPED. Leave it unset (or anything other than
+  # "true") until the bootstrap PR is merged, then set it once:
+  #   Settings → Secrets and variables → Actions → Variables →
+  #   New repository variable → WINGET_BOOTSTRAPPED = true
   # -----------------------------------------------------------------------
   update-winget:
     name: update-winget
     needs: [github-release]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') &&
+      vars.WINGET_BOOTSTRAPPED == 'true'
     runs-on: windows-latest
     env:
       HAS_TOKEN: ${{ secrets.WINGET_TOKEN != '' }}
