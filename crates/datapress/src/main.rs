@@ -32,7 +32,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Write a commented `datasets.toml.template` you can copy and edit.
+    /// Write a commented `datasets.toml.template` you can copy and edit (specify path, defaults to $HOME).
     Init {
         /// Directory to write `datasets.toml.template` into. Defaults to
         /// your home directory when omitted. The directory is created if

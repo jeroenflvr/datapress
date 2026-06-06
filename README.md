@@ -45,10 +45,28 @@ see [`task --list`](Taskfile.yml) for the full menu.
 
 ### Install the prebuilt binary
 
-If you just want to run a server without cloning the repo, install the
-unified `datapress` binary from crates.io. It bundles **both** backends and
-picks the active one at runtime from `server.backend` in your
-`datasets.toml`:
+The quickest way to get the unified `datapress` binary (both backends bundled,
+selected at runtime via `server.backend`) without a Rust toolchain:
+
+```bash
+# Linux / macOS
+curl -LsSf https://datap-rs.org/install.sh | sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://datap-rs.org/install.ps1 | iex"
+
+# Homebrew (macOS / Linux)
+brew install jeroenflvr/tap/datapress
+
+# winget (Windows)
+winget install datap-rs.DataPress
+```
+
+The install scripts drop the binary in a per-user directory (`~/.local/bin` on
+Unix, `%LOCALAPPDATA%\datapress\bin` on Windows) and tell you how to add it to
+your `PATH`. See [packaging/](packaging/) for details and release automation.
+
+Prefer cargo? Install from crates.io:
 
 ```bash
 cargo install datapress        # both DuckDB + DataFusion

@@ -131,7 +131,14 @@ tasks:
   #   - publishes the Rust crates to crates.io (`cargo install datapress`),
   #   - builds the standalone `datapress` CLI for linux amd64/arm64,
   #     macOS arm64, and Windows amd64 and attaches them to the GitHub
-  #     Release for the tag.
+  #     Release for the tag,
+  #   - updates the Homebrew tap formula (when HOMEBREW_TAP_TOKEN is set),
+  #   - submits the new version to winget (when WINGET_TOKEN is set).
+  #
+  # The Homebrew/winget steps need the release archives + checksums, which
+  # only exist after CI builds them — so they run in CI on the pushed tag,
+  # not locally. Configure the two token secrets once (see packaging/README.md)
+  # and every `task release` updates both package managers automatically.
   # ---------------------------------------------------------------------
   release:
     desc: "Cut a release: bump version, update CHANGELOG, commit, tag, push (triggers PyPI + crates.io + GitHub Release CLI builds). Usage: task release -- v0.2.0"

@@ -1,0 +1,105 @@
+# Packaging & distribution
+
+This directory holds everything needed to distribute the standalone
+`datapress` CLI through common package managers. All channels install the
+**prebuilt** binary from the GitHub release (both DuckDB + DataFusion backends
+bundled) — none of them compile the heavy bundled DuckDB C++ from source.
+
+| Channel        | User command                                              | Source of truth                         |
+|----------------|-----------------------------------------------------------|-----------------------------------------|
+| Install script | `curl -LsSf https://datap-rs.org/install.sh \| sh`        | [`install.sh`](../install.sh)           |
+| Install script | `irm https://datap-rs.org/install.ps1 \| iex` (Windows)   | [`install.ps1`](../install.ps1)         |
+| Homebrew       | `brew install jeroenflvr/tap/datapress`                   | [`homebrew/datapress.rb`](homebrew/datapress.rb) |
+| winget         | `winget install datap-rs.DataPress`                       | [`winget/`](winget/)                    |
+
+The release workflow ([`.github/workflows/publish.yml`](../.github/workflows/publish.yml))
+already builds the CLI for `x86_64`/`aarch64` Linux, `aarch64` macOS, and
+`x86_64` Windows, emits a `.sha256` next to each archive, and attaches the
+archives **plus `install.sh` and `install.ps1`** to the GitHub Release. That
+gives the install scripts a stable URL:
+
+```
+https://github.com/jeroenflvr/datapress/releases/latest/download/install.sh
+```
+
+## Hosting the short install URL (datap-rs.org)
+
+To get the `curl … https://datap-rs.org/install.sh | sh` UX, copy `install.sh`
+and `install.ps1` into the GitHub Pages repo that serves `datap-rs.org` (the
+landing-site repo) so they are published at the apex domain. Re-copy them when
+they change — they are version-agnostic and resolve the latest release at
+runtime, so they rarely need updating.
+
+Until then, the scripts also work directly from the release:
+
+```bash
+curl -LsSf https://github.com/jeroenflvr/datapress/releases/latest/download/install.sh | sh
+```
+
+## Homebrew
+
+The formula lives in a **tap**, not homebrew-core.
+
+1. Create a repo `homebrew-tap` under your account: `jeroenflvr/homebrew-tap`.
+2. Add the formula at `Formula/datapress.rb` (copy [`homebrew/datapress.rb`](homebrew/datapress.rb)).
+3. Users install with:
+
+   ```bash
+   brew tap jeroenflvr/tap
+   brew install datapress
+   # or in one line:
+   brew install jeroenflvr/tap/datapress
+   ```
+
+### Automating the bump
+
+Add a secret `HOMEBREW_TAP_TOKEN` (a fine-grained PAT with **Contents: write**
+on the `homebrew-tap` repo). Once it is set, the `update-homebrew` job runs on
+**every** `v*` release (i.e. every `task release`): it regenerates the formula
+with [`homebrew/update-formula.sh`](homebrew/update-formula.sh) and pushes it.
+If the secret is absent the job logs a warning and skips, so releases never
+fail because of it.
+
+To update by hand:
+
+```bash
+sh packaging/homebrew/update-formula.sh 0.4.4 Formula/datapress.rb
+```
+
+> Note: there is no prebuilt Intel macOS binary, so the formula errors out on
+> Intel Macs with a hint to use `cargo install datapress`. Apple Silicon and
+> Linux (x86_64/aarch64) are covered.
+
+## winget
+
+The manifests in [`winget/`](winget/) target `datap-rs.DataPress` and install
+the Windows `.zip` as a portable command (`datapress`), which winget adds to
+PATH via its portable links mechanism.
+
+Publishing means opening a PR to
+[microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) under
+`manifests/d/datap-rs/DataPress/<version>/`.
+
+### Automating the submission
+
+Add a secret `WINGET_TOKEN` (a classic PAT with `public_repo` that can push to
+**your fork** of `winget-pkgs`). Once it is set, the `update-winget` job runs
+on **every** `v*` release and uses
+[`winget-releaser`](https://github.com/vedantmgoyal9/winget-releaser) to build
+the manifests from the release `.zip` and open the PR automatically. If the
+secret is absent the job logs a warning and skips.
+
+To do it manually, install `wingetcreate` and run:
+
+```powershell
+wingetcreate update datap-rs.DataPress `
+  --version 0.4.4 `
+  --urls https://github.com/jeroenflvr/datapress/releases/download/v0.4.4/datapress-v0.4.4-x86_64-pc-windows-msvc.zip `
+  --submit
+```
+
+## Checksums
+
+Every release archive ships with a matching `<archive>.sha256`. The install
+scripts download and verify it automatically (and warn, rather than fail, only
+for older releases published before checksums were added).

@@ -1,5 +1,49 @@
 # Install
 
+## Install script (Linux / macOS)
+
+The fastest way to get the standalone `datapress` CLI without a Rust
+toolchain. It downloads the prebuilt binary (both backends bundled) for your
+platform, verifies its checksum, and installs it into `~/.local/bin` — no
+`sudo`, and your shell profile is never edited:
+
+```bash
+curl -LsSf https://datap-rs.org/install.sh | sh
+```
+
+If `~/.local/bin` is not already on your `PATH`, the script prints the exact
+line to add. Override the target directory or version with:
+
+```bash
+# Install a specific version into a custom directory.
+DATAPRESS_INSTALL_DIR="$HOME/bin" DATAPRESS_VERSION=0.4.4 \
+  sh -c "$(curl -LsSf https://datap-rs.org/install.sh)"
+```
+
+## Install script (Windows)
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://datap-rs.org/install.ps1 | iex"
+```
+
+This installs into `%LOCALAPPDATA%\datapress\bin` and adds it to your user
+`PATH`. Open a new terminal afterwards.
+
+## Homebrew (macOS / Linux)
+
+```bash
+brew install jeroenflvr/tap/datapress
+```
+
+Apple Silicon macOS and Linux (x86_64 / aarch64) are covered by prebuilt
+bottles. On Intel Macs, use the crates.io install below.
+
+## winget (Windows)
+
+```powershell
+winget install datap-rs.DataPress
+```
+
 ## Prebuilt binary (crates.io)
 
 The quickest way to get a server without cloning the repo. The unified
