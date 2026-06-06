@@ -14,6 +14,14 @@ connect straight to a DataPress server from the prompt.
     SELECT * FROM r.accidents LIMIT 10;
     ```
 
+    For any host other than `localhost`, Quack defaults to **HTTPS**. If the
+    server is plain HTTP (e.g. in development, or no TLS proxy yet), add
+    `disable_ssl true`:
+
+    ```sql
+    ATTACH 'quack:your-server-host' AS r (TOKEN '…', disable_ssl true);
+    ```
+
 <link rel="stylesheet" href="../../assets/vendor/duckdb/xterm.css" />
 
 <div id="dp-shell-card" class="dp-shell-card" markdown>

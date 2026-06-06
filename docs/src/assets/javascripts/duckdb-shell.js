@@ -109,7 +109,7 @@ async function bootShell() {
           await conn.query("INSTALL quack FROM core_nightly;");
           await conn.query("LOAD quack;");
           note = [
-            `DuckDB ${ver} — quack loaded. Connect with: CREATE SECRET (TYPE quack, TOKEN '…'); ATTACH 'quack:host' AS r;`,
+            `DuckDB ${ver} — quack loaded. Connect with: CREATE SECRET (TYPE quack, TOKEN '…'); ATTACH 'quack:host' AS r; (remote host over plain HTTP? add disable_ssl true)`,
             "ok",
           ];
         } catch (e) {

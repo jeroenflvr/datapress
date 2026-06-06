@@ -114,6 +114,15 @@ ATTACH 'quack:localhost' AS datapress (TOKEN 'analytics-token');
 FROM datapress.accidents LIMIT 10;
 ```
 
+For any host other than `localhost`, Quack defaults to **HTTPS**. When the
+server is reached over plain HTTP (development, or before a TLS proxy is in
+place), add `disable_ssl true`:
+
+```sql
+ATTACH 'quack:remote_ip' AS remote_db (TOKEN 'analytics-token', disable_ssl true);
+FROM remote_db.accidents LIMIT 10;
+```
+
 ## When to skip DuckDB
 
 - You need sub-millisecond `eq` / `in` lookups on indexed columns.

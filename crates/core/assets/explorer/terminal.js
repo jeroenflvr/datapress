@@ -9,6 +9,8 @@
 // you can attach this (or any) DataPress server and query it remotely:
 //   CREATE SECRET (TYPE quack, TOKEN '…'); ATTACH 'quack:host' AS r;
 //   SELECT * FROM r.<dataset> LIMIT 10;
+// For a remote host over plain HTTP (no TLS), add disable_ssl true, e.g.
+//   ATTACH 'quack:host' AS r (TOKEN '…', disable_ssl true);
 //
 // Version notes: the DuckDB v1.5.3 engine ships quack's wasm binary; it is
 // bundled by @duckdb/duckdb-wasm@1.11.0. VERSION is only used for the boot
@@ -76,7 +78,7 @@ const showToast = (msg, kind) => {
         try {
           await conn.query("INSTALL quack FROM core_nightly;");
           await conn.query("LOAD quack;");
-          note = [`DuckDB ${ver} \u2014 quack loaded. Connect with: CREATE SECRET (TYPE quack, TOKEN '\u2026'); ATTACH 'quack:host' AS r;`, "ok"];
+          note = [`DuckDB ${ver} \u2014 quack loaded. Connect with: CREATE SECRET (TYPE quack, TOKEN '\u2026'); ATTACH 'quack:host' AS r; (remote host over plain HTTP? add disable_ssl true)`, "ok"];
         } catch (e) {
           note = [`DuckDB ${ver} \u2014 quack not loaded: ${e.message || e}`, "err"];
         }
