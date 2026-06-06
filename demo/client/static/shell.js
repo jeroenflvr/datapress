@@ -79,7 +79,7 @@ function showToast(msg, kind) {
           await conn.query("INSTALL quack FROM core_nightly;");
           await conn.query("LOAD quack;");
           note = [
-            `DuckDB ${ver} — quack loaded. Connect with: CREATE SECRET (TYPE quack, TOKEN '…'); ATTACH 'quack:host' AS r; (remote host over plain HTTP? add disable_ssl true)`,
+            `DuckDB ${ver} — quack loaded. Connect with: CREATE SECRET (TYPE quack, TOKEN '…'); ATTACH 'quack:host' AS r; (remote host over plain HTTP? add DISABLE_SSL true)`,
             "ok",
           ];
         } catch (e) {

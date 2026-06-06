@@ -116,10 +116,10 @@ FROM datapress.accidents LIMIT 10;
 
 For any host other than `localhost`, Quack defaults to **HTTPS**. When the
 server is reached over plain HTTP (development, or before a TLS proxy is in
-place), add `disable_ssl true`:
+place), add `DISABLE_SSL true`:
 
 ```sql
-ATTACH 'quack:remote_ip' AS remote_db (TOKEN 'analytics-token', disable_ssl true);
+ATTACH 'quack:remote_ip' AS remote_db (TOKEN 'analytics-token', DISABLE_SSL true);
 FROM remote_db.accidents LIMIT 10;
 ```
 

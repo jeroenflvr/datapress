@@ -106,14 +106,14 @@ FROM datapress.accidents LIMIT 10;
 For any host other than `localhost`, Quack defaults to **HTTPS**. If the
 server is reached over plain HTTP (for example in development, or before a
 TLS-terminating proxy is in place), the attach will fail unless you pass
-`disable_ssl true`:
+`DISABLE_SSL true`:
 
 ```sql
-ATTACH 'quack:remote_ip' AS remote_db (TOKEN 'analytics-token', disable_ssl true);
+ATTACH 'quack:remote_ip' AS remote_db (TOKEN 'analytics-token', DISABLE_SSL true);
 FROM remote_db.accidents LIMIT 10;
 ```
 
-Omit `disable_ssl true` (the default) when the server is fronted by TLS.
+Omit `DISABLE_SSL true` (the default) when the server is fronted by TLS.
 
 <sup>1</sup> Quack is still highly experimental. Among other things, `SHOW TABLES;` is not yet supported.
 

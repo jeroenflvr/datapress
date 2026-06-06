@@ -16,10 +16,10 @@ connect straight to a DataPress server from the prompt.
 
     For any host other than `localhost`, Quack defaults to **HTTPS**. If the
     server is plain HTTP (e.g. in development, or no TLS proxy yet), add
-    `disable_ssl true`:
+    `DISABLE_SSL true`:
 
     ```sql
-    ATTACH 'quack:your-server-host' AS r (TOKEN '…', disable_ssl true);
+    ATTACH 'quack:your-server-host' AS r (TOKEN '…', DISABLE_SSL true);
     ```
 
 <link rel="stylesheet" href="../../assets/vendor/duckdb/xterm.css" />
