@@ -103,6 +103,45 @@ client's perspective.
 - Backpressure / connection-cap config.
 - Query result cache; ETag / `If-None-Match` support.
 
+#### DDoS resilience & concurrent-query isolation
+
+Goal: survive request floods *and* keep admitted queries fast (one heavy
+query must not starve honest concurrent ones). Two separate problems —
+volumetric attacks belong at the edge, app-layer overload belongs
+in-process. Prioritized:
+
+1. **Edge first (biggest win, zero app CPU):** document + recommend a
+   reverse proxy / CDN (Cloudflare / nginx / Caddy) for TLS, per-IP rate
+   limiting, connection caps, SYN-flood protection. Reuses `server.prefix`.
+   Volumetric DDoS cannot be solved in-process — don't try to out-CPU a
+   flood in Rust.
+2. **Concurrency admission limiter (best in-process change):**
+   `tokio::sync::Semaphore` around the query + `/sql` handlers, sized by a
+   new `server.max_concurrent_queries` knob (0 = unlimited). On saturation
+   fail fast with `503` + `Retry-After` instead of piling up heavy work.
+   Bounds CPU/RAM contention so each admitted query keeps its perf. Also
+   retro-fits DataFusion with the cap DuckDB already gets from its pool
+   (`init_pool` in `crates/duckdb/src/db.rs`); DataFusion `collect()`
+   currently runs unbounded.
+3. **Per-query resource bounds (caps one bad query's blast radius):**
+   DataFusion `RuntimeEnv` with a bounded `MemoryPool`
+   (`GreedyMemoryPool` / `FairSpillPool`) + sane `target_partitions`;
+   DuckDB `PRAGMA memory_limit` per pooled connection (threads already
+   split across the pool).
+4. **actix connection limits:** expose `max_connections` /
+   `max_connection_rate` / backlog on the `HttpServer` builder via config.
+5. **Optional in-app per-IP rate limit** (`governor` token bucket) as
+   defense-in-depth. Caveat: behind a proxy must trust `X-Forwarded-For`
+   correctly or it rate-limits the proxy's single IP — prefer the edge.
+6. **Observability:** under the `metrics` feature, add gauges for
+   in-flight queries, semaphore queue depth, and `503` rejection count to
+   see saturation and tune limits.
+
+Highest value-to-risk first step: #2 + #4 together (no new heavy deps),
+defaults preserving current behavior unless configured. (See also the
+scattered items above and "Rate limiting / per-client quotas" under
+Auth & multi-tenant — fold those in when implementing.)
+
 ### Observability
 
 - Structured logging config (level, JSON vs text).
