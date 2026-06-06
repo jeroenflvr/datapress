@@ -36,6 +36,28 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: wheels-linux-${{ matrix.target }}
+      # Pre-pull the manylinux build image with retries. quay.io occasionally
+      # times out ("context deadline exceeded"); maturin-action has no retry of
+      # its own, so warm the local Docker cache first. Once present, the pull
+      # maturin-action issues is a fast no-op.
+      - name: Pre-pull manylinux image (with retry)
+        run: |
+          case "${{ matrix.target }}" in
+            x86_64)  IMAGE=quay.io/pypa/manylinux2014_x86_64:latest ;;
+            aarch64) IMAGE=quay.io/pypa/manylinux2014_aarch64:latest ;;
+            *)       echo "Unknown target ${{ matrix.target }}"; exit 1 ;;
+          esac
+          echo "Pulling ${IMAGE}"
+          for attempt in 1 2 3 4 5; do
+            if docker pull "${IMAGE}"; then
+              echo "Pulled on attempt ${attempt}"
+              exit 0
+            fi
+            echo "Pull attempt ${attempt} failed; retrying in $((attempt * 15))s"
+            sleep $((attempt * 15))
+          done
+          echo "All pull attempts for ${IMAGE} failed"
+          exit 1
       - uses: PyO3/maturin-action@v1
         with:
           target:         ${{ matrix.target }}
