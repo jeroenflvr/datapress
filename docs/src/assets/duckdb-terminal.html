@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DuckDB-WASM terminal</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css" />
+  <link rel="stylesheet" href="vendor/duckdb/xterm.css" />
   <style>
     html, body { margin: 0; height: 100%; background: #2b2b2b; }
     #shell { position: fixed; inset: 0; padding: 8px; background: #2b2b2b; }
@@ -31,10 +31,11 @@
   <div id="shell"></div>
 
 <script type="module">
-  // Standalone full-page DuckDB-WASM shell. Only the v1.5.3 engine ships
-  // quack's wasm binary, published under the "next" dist-tag.
-  const VERSION = "next";
+  // Standalone full-page DuckDB-WASM shell, fully self-hosted (no CDN).
+  // Engine/shell glue + wasm + workers are served from assets/vendor/duckdb.
+  const VERSION = "1.11.0";
   const RUN_QUACK = true;
+  const vendor = (file) => new URL("vendor/duckdb/" + file, import.meta.url).href;
 
   const boot  = document.getElementById("boot");
   const toast = document.getElementById("toast");
@@ -52,11 +53,14 @@
       }
 
       boot.textContent = "loading engine \u2014 @duckdb/duckdb-wasm@" + VERSION + " \u2026";
-      const duckdb = await import(`https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@${VERSION}/+esm`);
-      const shell  = await import(`https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm-shell@${VERSION}/+esm`);
-      const SHELL_MODULE = `https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm-shell@${VERSION}/dist/shell_bg.wasm`;
+      const duckdb = await import(vendor("duckdb-browser.bundled.mjs"));
+      const shell  = await import(vendor("shell.bundled.mjs"));
+      const SHELL_MODULE = vendor("shell_bg.wasm");
 
-      const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+      const bundle = await duckdb.selectBundle({
+        mvp: { mainModule: vendor("duckdb-mvp.wasm"), mainWorker: vendor("duckdb-browser-mvp.worker.js") },
+        eh:  { mainModule: vendor("duckdb-eh.wasm"),  mainWorker: vendor("duckdb-browser-eh.worker.js") },
+      });
       const workerUrl = URL.createObjectURL(
         new Blob([`importScripts("${bundle.mainWorker}");`], { type: "text/javascript" })
       );

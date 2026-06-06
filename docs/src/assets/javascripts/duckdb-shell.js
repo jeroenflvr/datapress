@@ -2,11 +2,22 @@
 // the `#dp-shell` container, and is safe to re-run under Material's instant
 // navigation (it no-ops if already embedded on the current container).
 //
-// Version notes: only the DuckDB v1.5.3 engine ships quack's wasm binary,
-// published under the "next" dist-tag. If the badge does not report v1.5.3,
-// change VERSION below.
-const VERSION = "next";
+// Version notes: only the DuckDB v1.5.3 engine ships quack's wasm binary.
+// That engine is bundled by @duckdb/duckdb-wasm@1.11.0. VERSION is only used
+// for the boot label now; the actual code is fully self-hosted.
+const VERSION = "1.11.0";
 const RUN_QUACK = true;
+
+// Fully self-hosted DuckDB-WASM. Everything is served from the docs site
+// itself (docs/src/assets/vendor/duckdb) — no CDN at runtime:
+//   - duckdb-browser.bundled.mjs / shell.bundled.mjs : the ESM glue, bundled
+//     from the local docs/external builds with apache-arrow + xterm inlined
+//     (see Taskfile `docs:vendor-duckdb`).
+//   - duckdb-*.wasm + *.worker.js : the engine/shell WebAssembly + workers.
+// Resolved via import.meta.url so they keep working when the site is served
+// under a sub-path (e.g. the embedded `/mkdocs/` route).
+const VENDOR_BASE = new URL("../vendor/duckdb/", import.meta.url);
+const vendor = (file) => new URL(file, VENDOR_BASE).href;
 
 function showToast(container, msg, kind) {
   if (!container) return;
@@ -52,17 +63,25 @@ async function bootShell() {
 
   try {
     boot.textContent = `loading engine — @duckdb/duckdb-wasm@${VERSION} …`;
-    const duckdb = await import(
-      `https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@${VERSION}/+esm`
-    );
-    const shell = await import(
-      `https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm-shell@${VERSION}/+esm`
-    );
-    const SHELL_MODULE = `https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm-shell@${VERSION}/dist/shell_bg.wasm`;
+    const duckdb = await import(vendor("duckdb-browser.bundled.mjs"));
+    const shell = await import(vendor("shell.bundled.mjs"));
+    // Shell terminal wasm, served locally instead of from jsDelivr.
+    const SHELL_MODULE = vendor("shell_bg.wasm");
 
-    // getJsDelivrBundles() pins the wasm URLs to THIS library version, so the
-    // engine matches VERSION. Without COOP/COEP, selectBundle picks eh/mvp.
-    const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+    // Self-hosted bundle: point the engine wasm + worker at the vendored copies
+    // instead of duckdb.getJsDelivrBundles(). selectBundle still picks eh/mvp
+    // based on platform features (coi needs COOP/COEP, which the docs site does
+    // not set, so it falls back to eh and then mvp).
+    const bundle = await duckdb.selectBundle({
+      mvp: {
+        mainModule: vendor("duckdb-mvp.wasm"),
+        mainWorker: vendor("duckdb-browser-mvp.worker.js"),
+      },
+      eh: {
+        mainModule: vendor("duckdb-eh.wasm"),
+        mainWorker: vendor("duckdb-browser-eh.worker.js"),
+      },
+    });
     const workerUrl = URL.createObjectURL(
       new Blob([`importScripts("${bundle.mainWorker}");`], {
         type: "text/javascript",

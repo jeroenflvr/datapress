@@ -14,7 +14,7 @@ connect straight to a DataPress server from the prompt.
     SELECT * FROM r.accidents LIMIT 10;
     ```
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css" />
+<link rel="stylesheet" href="../../assets/vendor/duckdb/xterm.css" />
 
 <div id="dp-shell-card" class="dp-shell-card" markdown>
 
@@ -29,15 +29,17 @@ connect straight to a DataPress server from the prompt.
 
 <div id="dp-shell-toast" class="dp-shell-toast"></div>
 
-The engine and `quack` extension are fetched from jsDelivr on first use, so the
-initial load takes a few seconds. Everything after that runs locally in the
-WebAssembly sandbox.
+The DuckDB engine and shell load from this site (self-hosted WebAssembly), so
+there is no CDN dependency. The `quack` extension is still installed from the
+DuckDB extension repository on first use, so the initial load takes a few
+seconds. Everything after that runs locally in the WebAssembly sandbox.
 
 ## Notes
 
 - **In-memory only.** The database lives in the tab; reloading the page starts
   fresh.
-- **Network access** is needed to download the WASM bundles and to reach any
-  `quack:` server you attach.
+- **Network access** is only needed to install the `quack` extension on first
+  use and to reach any `quack:` server you attach. The engine and shell
+  WebAssembly are served from this site.
 - **Cross-origin isolation** is not required — the shell picks the `eh`/`mvp`
   build automatically when `COOP`/`COEP` headers are absent.

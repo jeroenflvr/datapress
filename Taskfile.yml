@@ -104,6 +104,41 @@ tasks:
     cmds:
       - uv tool run --with 'mkdocs>=1.6,<2' --with 'mkdocs-material>=9.6,<10' mkdocs serve -f docs/mkdocs.yml --dev-addr 127.0.0.1:8001
 
+  docs:vendor-duckdb:
+    desc: >-
+      Sync self-hosted DuckDB-WASM assets from docs/external into
+      docs/src/assets/vendor/duckdb: copy the wasm + worker binaries and bundle
+      the ESM glue (apache-arrow MUST be 17.0.0). Run after a fresh external
+      build drops new files into docs/external.
+    cmds:
+      - |
+        set -e
+        REPO="$PWD"
+        EXT="$REPO/docs/external"
+        OUT="$REPO/docs/src/assets/vendor/duckdb"
+        mkdir -p "$OUT"
+
+        # 1. Copy the self-contained wasm binaries + worker scripts verbatim.
+        cp -v \
+          "$EXT/duckdb-eh.wasm" \
+          "$EXT/duckdb-mvp.wasm" \
+          "$EXT/shell_bg.wasm" \
+          "$EXT/duckdb-browser-eh.worker.js" \
+          "$EXT/duckdb-browser-mvp.worker.js" \
+          "$OUT/"
+
+        # 2. Bundle the ESM glue (inlines apache-arrow 17 + xterm) into
+        #    self-contained browser modules.
+        BUILD=$(mktemp -d)
+        trap 'rm -rf "$BUILD"' EXIT
+        cd "$BUILD"
+        npm init -y >/dev/null 2>&1
+        npm install --no-audit --no-fund \
+          esbuild apache-arrow@17.0.0 xterm@5.3.0 \
+          xterm-addon-fit@0.8.0 xterm-addon-web-links@0.9.0 xterm-addon-webgl@0.16.0
+        DUCKDB_BUNDLE_NM="$BUILD/node_modules" \
+          node "$REPO/docs/scripts/bundle-duckdb.mjs"
+
   # ---------------------------------------------------------------------
   # Changelog (git-cliff)
   # ---------------------------------------------------------------------
