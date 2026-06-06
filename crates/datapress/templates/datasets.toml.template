@@ -13,13 +13,20 @@
 # ---------------------------------------------------------------------------
 
 [server]
-# Engine: "duckdb" or "datafusion". The unified `datapress` binary bundles
-# both, so either value works without rebuilding.
-backend = "duckdb"
-# Loopback by default; set "0.0.0.0" to expose the port.
-listen  = "127.0.0.1"
+backend = "duckdb"      # or datafusion
+listen  = "127.0.0.1"   # Loopback by default; set "0.0.0.0" to expose the port.
 port    = 8080
 # workers = 8            # actix worker threads; omit for "one per CPU".
+
+
+# experimental quack protocol: allows duckdb client/server
+# this may not be faster than the arrow ipc query api, but it will provide a feature-complete sql context
+# [server.quack]                      # DuckDB backend only
+# enabled = true
+# uri = "quack:localhost:9494"       # default port 9494; use literal localhost (CORS), 
+# allow_other_hostname = true        # true for quack:0.0.0.0:9494 behind TLS proxy
+# read_only = true
+# token = "analytics-token"          # set a token the client needs to provide
 
 # Embedded Swagger UI (requires a binary built with the `swagger` feature).
 # [swagger]
