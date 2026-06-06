@@ -3,6 +3,21 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.8] - 2026-06-06
+
+### Bug Fixes
+
+- *(ci)* Add resiliency ([10cd3f6](https://github.com/jeroenflvr/datapress/commit/10cd3f68791150696302bdafb461558771b2f8b6))
+
+### Documentation
+
+- Update disable_ssl to uppercase ([68716ce](https://github.com/jeroenflvr/datapress/commit/68716ce68360af46f1d7a73143823ab8299bb28c))
+- Update disable_ssl for remote hosts in dev envs ([3dec17e](https://github.com/jeroenflvr/datapress/commit/3dec17e95e9a47caead225cc89e595c4c386aa23))
+
+### Miscellaneous
+
+- Update examples ([a858d2c](https://github.com/jeroenflvr/datapress/commit/a858d2c93d03b1a18b6910b6e4388f322e5f95ae))
+
 ## [0.4.7] - 2026-06-06
 
 ### Features
