@@ -7,7 +7,7 @@ description: >-
 
 # DataPress
 
-<img class="datapress-ascii-logo" src="assets/images/datapress-logo.svg" alt="DataPress ASCII wordmark">
+<img class="datapress-ascii-logo" src="assets/images/datapress-logo-yellow.svg" alt="DataPress ASCII wordmark">
 
 Turn Parquet and Delta datasets into fast, typed HTTP APIs without
 standing up a warehouse, writing a service layer, or moving data out of

@@ -6,7 +6,7 @@
       font-family: Menlo, "DejaVu Sans Mono", "Liberation Mono", monospace;
       font-size: 24px;
       font-weight: 400;
-      fill: var(--md-default-fg-color--light, #6b7280);
+      fill: #f7a41d;
       white-space: pre;
     }
   </style>
