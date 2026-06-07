@@ -55,6 +55,13 @@ pub struct ExplorerState {
     /// Whether the raw-SQL endpoint (`POST {api_base}/sql`) is enabled.
     /// Drives the API Query tab's SQL mode.
     pub sql_enabled: bool,
+    /// Target of the navbar "Docs" link: the locally-mounted MkDocs path
+    /// when the docs site is enabled on this server, otherwise the public
+    /// documentation URL.
+    pub docs_url: String,
+    /// Target of the navbar "API" (Swagger UI) link when the Swagger UI is
+    /// enabled on this server; `None` hides the link.
+    pub swagger_url: Option<String>,
 }
 
 #[derive(Template)]
@@ -65,6 +72,8 @@ struct IndexTemplate {
     api_base: String,
     asset_version: &'static str,
     sql_enabled: bool,
+    docs_url: String,
+    swagger_url: Option<String>,
     datasets: Vec<DatasetListItem>,
     datasets_json: String,
 }
@@ -157,6 +166,9 @@ pub fn configure(state: web::Data<ExplorerState>, cfg: &mut web::ServiceConfig) 
                 .route("/assets/query-api.js", web::get().to(asset_query_api_js))
                 .route("/assets/terminal.css", web::get().to(asset_terminal_css))
                 .route("/assets/terminal.js", web::get().to(asset_terminal_js))
+                .route("/assets/pypi.svg", web::get().to(asset_pypi_icon))
+                .route("/assets/book.svg", web::get().to(asset_book_icon))
+                .route("/assets/swagger.svg", web::get().to(asset_swagger_icon))
                 .route(
                     "/assets/vendor/duckdb/{path:.*}",
                     web::get().to(asset_duckdb_vendor),
@@ -214,6 +226,8 @@ async fn index(state: web::Data<ExplorerState>) -> HttpResponse {
         api_base: state.api_base.clone(),
         asset_version: env!("CARGO_PKG_VERSION"),
         sql_enabled: state.sql_enabled,
+        docs_url: state.docs_url.clone(),
+        swagger_url: state.swagger_url.clone(),
         datasets: items,
         datasets_json,
     };
@@ -236,6 +250,11 @@ const EXPLORER_JS: &str = include_str!("../assets/explorer/explorer.js");
 const QUERY_API_JS: &str = include_str!("../assets/explorer/query-api.js");
 const TERMINAL_CSS: &str = include_str!("../assets/explorer/terminal.css");
 const TERMINAL_JS: &str = include_str!("../assets/explorer/terminal.js");
+// Navbar link icons (PyPI / Docs), embedded from the docs asset tree.
+const PYPI_ICON_SVG: &str =
+    include_str!("../../../docs/src/assets/images/python-logo-only.svg");
+const BOOK_ICON_SVG: &str = include_str!("../../../docs/src/assets/images/book.svg");
+const SWAGGER_ICON_SVG: &str = include_str!("../../../docs/src/assets/images/swagger.svg");
 
 fn asset(content_type: &'static str, body: &'static str) -> HttpResponse {
     HttpResponse::Ok()
@@ -262,6 +281,18 @@ async fn asset_terminal_css() -> HttpResponse {
 
 async fn asset_terminal_js() -> HttpResponse {
     asset("application/javascript; charset=utf-8", TERMINAL_JS)
+}
+
+async fn asset_pypi_icon() -> HttpResponse {
+    asset("image/svg+xml; charset=utf-8", PYPI_ICON_SVG)
+}
+
+async fn asset_book_icon() -> HttpResponse {
+    asset("image/svg+xml; charset=utf-8", BOOK_ICON_SVG)
+}
+
+async fn asset_swagger_icon() -> HttpResponse {
+    asset("image/svg+xml; charset=utf-8", SWAGGER_ICON_SVG)
 }
 
 /// Serve a vendored DuckDB-WASM asset (wasm binary, worker script, bundled

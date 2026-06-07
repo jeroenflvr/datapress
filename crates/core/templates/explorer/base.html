@@ -15,7 +15,15 @@
 <body>
   <nav class="navbar navbar-expand bg-body-tertiary border-bottom px-3">
     <span class="navbar-brand mb-0 h1"><i class="bi bi-compass-fill"></i> DataPress|datap-rs Explorer</span>
-    <span class="badge text-bg-secondary ms-auto">{{ backend_label }}</span>
+    <a class="navbar-link link-secondary ms-auto me-3 text-decoration-none d-inline-flex align-items-center" href="https://pypi.org/project/datap-rs/"
+       target="_blank" rel="noopener noreferrer" title="datap-rs on PyPI"><img src="{{ explorer_base }}/assets/pypi.svg?v={{ asset_version }}" alt="" width="16" height="16" class="me-1"> PyPI</a>
+    <a class="navbar-link link-secondary me-3 text-decoration-none d-inline-flex align-items-center" href="{{ docs_url }}"
+       target="_blank" rel="noopener noreferrer" title="Documentation"><img src="{{ explorer_base }}/assets/book.svg?v={{ asset_version }}" alt="" width="16" height="16" class="me-1"> Docs</a>
+    {% if let Some(swagger_url) = swagger_url %}
+    <a class="navbar-link link-secondary me-3 text-decoration-none d-inline-flex align-items-center" href="{{ swagger_url }}"
+       target="_blank" rel="noopener noreferrer" title="API reference (Swagger UI)"><img src="{{ explorer_base }}/assets/swagger.svg?v={{ asset_version }}" alt="" width="16" height="16" class="me-1"> API</a>
+    {% endif %}
+    <span class="badge text-bg-secondary">{{ backend_label }}</span>
     <span class="badge text-bg-secondary ms-2" title="DataPress version">v{{ asset_version }}</span>
   </nav>
   <main class="container-fluid py-3">

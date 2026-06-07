@@ -259,6 +259,38 @@ async fn run_server(
     // Built once here; each worker clones the `web::Data` handle.
     #[cfg(feature = "explorer")]
     let explorer_state = if explorer_cfg.enabled {
+        // "Docs" link target: the locally-mounted MkDocs site when it is
+        // both compiled in and enabled, otherwise the public docs site.
+        let docs_url = {
+            #[cfg(feature = "docs")]
+            {
+                if docs_cfg.enabled {
+                    docs_cfg.path.clone()
+                } else {
+                    "https://docs.datap-rs.org".to_string()
+                }
+            }
+            #[cfg(not(feature = "docs"))]
+            {
+                "https://docs.datap-rs.org".to_string()
+            }
+        };
+        // "API" link target: the locally-mounted Swagger UI when it is both
+        // compiled in and enabled; `None` hides the link.
+        let swagger_url = {
+            #[cfg(feature = "swagger")]
+            {
+                if swagger_cfg.enabled {
+                    Some(format!("{}/", swagger_cfg.path))
+                } else {
+                    None
+                }
+            }
+            #[cfg(not(feature = "swagger"))]
+            {
+                None::<String>
+            }
+        };
         Some(web::Data::new(crate::explorer::ExplorerState {
             backend: backend.clone(),
             datasets: cfg.datasets.clone(),
@@ -266,6 +298,8 @@ async fn run_server(
             api_base: format!("{prefix}/api/v1"),
             backend_label: label.to_string(),
             sql_enabled: cfg.sql.enabled,
+            docs_url,
+            swagger_url,
         }))
     } else {
         None
