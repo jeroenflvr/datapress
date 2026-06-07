@@ -411,3 +411,23 @@ Both backends support Arrow IPC:
 Empty results still produce a valid stream (schema message only).
 `Compress` middleware applies normally. `count`, `schema`, and the
 dataset-listing endpoints are JSON-only.
+
+## Reading Arrow IPC in the browser
+
+The built-in explorer UI (served at `/explore` when DataPress is built
+with the `explorer` feature) decodes Arrow IPC responses directly in the
+browser on its **API Query** tab, using a vendored Apache Arrow JS bundle.
+
+DataFusion emits Arrow `Utf8View` for Parquet string columns. Published
+`apache-arrow` npm releases (through 21.x) cannot decode `Utf8View` and
+fail with `Unrecognized type: "undefined" (24)`. Read support for
+`Utf8View`/`BinaryView` was added in
+[apache/arrow-js#320](https://github.com/apache/arrow-js/pull/320), which
+is merged on `main` but not yet in any published release.
+
+Because of this, DataPress currently **builds the Apache Arrow JS bundle
+from source** (from a pinned `apache/arrow-js` commit) rather than
+downloading a published npm release. See the `docs:vendor-arrow` task in
+`Taskfile.yml`. Once a release including #320 ships, the pinned commit
+can be bumped to that release.
+

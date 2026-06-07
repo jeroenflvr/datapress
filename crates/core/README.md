@@ -31,6 +31,16 @@ typically depend on one of those rather than on this crate directly.
 | `swagger`    | Embed Swagger UI + OpenAPI spec.                              |
 | `metrics`    | Expose a Prometheus `/metrics` endpoint.                      |
 | `auth`       | OIDC bearer-token authentication + scope enforcement.         |
+| `explorer`   | Embed and serve the browser explorer UI at `/explore`.        |
+
+> **Note:** The explorer's API Query tab decodes Arrow IPC responses in the
+> browser using a vendored Apache Arrow JS bundle. We currently build this
+> bundle from source (`apache/arrow-js`, pinned commit) rather than using a
+> published `apache-arrow` npm release, because DataFusion emits `Utf8View` for
+> Parquet string columns and `Utf8View`/`BinaryView` read support
+> ([apache/arrow-js#320](https://github.com/apache/arrow-js/pull/320)) is merged
+> on `main` but not yet in any published release. See the `docs:vendor-arrow`
+> task. Bump the pinned commit to a release once one ships including #320.
 
 ## License
 
