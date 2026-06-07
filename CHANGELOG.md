@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.10] - 2026-06-07
+
+### Bug Fixes
+
+- To include utf8View support in js, build and vendor from https://github.com/apache/arrow-js/pull/320 ([2347494](https://github.com/jeroenflvr/datapress/commit/2347494c099af5530b2fc74f53505de949d6556a))
+
 ## [0.4.9] - 2026-06-06
 
 ### Miscellaneous
