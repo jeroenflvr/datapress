@@ -135,6 +135,10 @@
                       title="Lightweight read-only SQL syntax check">
                 <i class="bi bi-check2-circle"></i> Check SQL
               </button>
+              <button id="api-sql-tojson" class="btn btn-sm btn-outline-secondary" type="button"
+                      title="Translate this SQL into a structured JSON query — handy when the raw-SQL endpoint is disabled">
+                <i class="bi bi-arrow-left-right"></i> To JSON query
+              </button>
               <div class="input-group input-group-sm" style="max-width: 11rem;">
                 <span class="input-group-text">max rows</span>
                 <input id="api-sql-maxrows" class="form-control" type="number" min="1" value="1000">
@@ -152,7 +156,9 @@
           </div>
           <div id="api-sql-disabled" class="alert alert-warning mt-2 mb-0 d-none" role="alert">
             The raw-SQL endpoint is disabled on this server (<code>[sql].enabled = false</code>).
-            You can still check syntax, but queries will return <code>404</code>.
+            You can still check syntax, but queries will return <code>404</code>. Use
+            <strong>To JSON query</strong> to convert simple SQL into a structured
+            request that runs without the raw-SQL endpoint.
           </div>
         </div>
 

@@ -1,4 +1,4 @@
-/* ── DataPress brand palette — aligned with the datap-rs.org deck ─────── */
+/*  DataPress brand palette — aligned with the datap-rs.org deck  */
 :root {
   --dp-orange: #f5a623;
   --dp-orange-dark: #d2860f;
@@ -101,7 +101,7 @@
   white-space: nowrap;
 }
 
-/* ── DuckDB-WASM terminal ──────────────────────────────────────────────── */
+/*  DuckDB-WASM terminal  */
 .dp-shell-card {
   position: relative;
   margin: 1.2rem 0;

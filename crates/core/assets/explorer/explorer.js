@@ -124,7 +124,7 @@ function loadSampleQuery(name) {
   sqlEl.value = `SELECT * FROM ${ident} LIMIT 100`;
 }
 
-// ── Result export (CSV / JSON / Parquet) ──────────────────────────────────
+//  Result export (CSV / JSON / Parquet) 
 function downloadBlob(data, filename, mime) {
   const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
   const url = URL.createObjectURL(blob);

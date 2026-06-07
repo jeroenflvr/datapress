@@ -20,7 +20,7 @@ use tempfile::TempDir;
 use datapress_core::config::{
     AppConfig, DatasetConfig, IndexConfig, ServerConfig, SourceConfig, SourceKind,
 };
-use datapress_core::models::{Predicate, QueryRequest};
+use datapress_core::models::{Aggregation, Predicate, QueryRequest};
 use datapress_datafusion::store::Store;
 
 // ---------------------------------------------------------------------------
@@ -33,6 +33,7 @@ fn empty_req() -> QueryRequest {
         predicates: vec![],
         group_by: vec![],
         aggregations: vec![],
+        having: vec![],
         distinct: false,
         order_by: vec![],
         limit: None,
@@ -526,4 +527,43 @@ async fn predicate_numeric_range() {
     let req = req_with(vec![pred("score", "gte", serde_json::json!(25.0))]);
     let rows = parse_rows(&store.query("people", &req).await.unwrap());
     assert_eq!(rows.len(), 2, "scores 30 and 40 are >= 25");
+}
+
+/// `having` filters groups after aggregation. The same shared
+/// `having_plan` resolver and clause builder feed both backends, so this
+/// confirms the DataFusion SQL dialect accepts the emitted
+/// `HAVING <agg-expr> <op> ?` form.
+#[actix_web::test]
+async fn group_by_with_having_filters_groups() {
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("g.parquet");
+    // Two "a" rows, one "b" row: grouping by name gives counts 2 and 1.
+    write_parquet(&file, &[1, 2, 3], &["a", "a", "b"], &[10.0, 20.0, 30.0]);
+    let store = make_store(&file.display().to_string(), true).await;
+
+    // HAVING on the implicit COUNT(*) alias keeps only the "a" group.
+    let mut req = empty_req();
+    req.group_by = vec!["name".into()];
+    req.having = vec![pred("count", "gt", serde_json::json!(1))];
+    let rows = parse_rows(&store.query("people", &req).await.unwrap());
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["name"], Value::from("a"));
+    assert_eq!(rows[0]["count"], Value::from(2));
+
+    // HAVING on a named SUM alias: a -> 30, b -> 30; keep >= 30 returns both.
+    let mut req = empty_req();
+    req.group_by = vec!["name".into()];
+    req.aggregations = vec![Aggregation {
+        col: Some("score".into()),
+        op: "sum".into(),
+        alias: Some("total".into()),
+    }];
+    req.having = vec![pred("total", "gte", serde_json::json!(30))];
+    let rows = parse_rows(&store.query("people", &req).await.unwrap());
+    assert_eq!(rows.len(), 2);
+
+    // HAVING without group_by is rejected.
+    let mut req = empty_req();
+    req.having = vec![pred("count", "gt", serde_json::json!(1))];
+    assert!(store.query("people", &req).await.is_err());
 }

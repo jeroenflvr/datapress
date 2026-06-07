@@ -95,7 +95,7 @@ async function bootShell() {
 
     await db.open({ path: ":memory:", allowUnsignedExtensions: true });
 
-    // ── version check + quack ─────────────────────────────────────────────
+    //  version check + quack 
     let note = null;
     {
       const conn = await db.connect();

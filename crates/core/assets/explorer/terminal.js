@@ -67,7 +67,7 @@ const showToast = (msg, kind) => {
     URL.revokeObjectURL(workerUrl);
     await db.open({ path: ":memory:", allowUnsignedExtensions: true });
 
-    // ── version check + quack extension ──────────────────────────────
+    //  version check + quack extension 
     let note = null;
     {
       const conn = await db.connect();

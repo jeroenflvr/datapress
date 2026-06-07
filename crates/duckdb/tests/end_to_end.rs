@@ -31,6 +31,7 @@ fn empty_req() -> QueryRequest {
         predicates: vec![],
         group_by: vec![],
         aggregations: vec![],
+        having: vec![],
         distinct: false,
         order_by: vec![],
         limit: None,
@@ -455,6 +456,60 @@ async fn group_by_with_default_count_and_named_aggs() {
     assert_eq!(nyc["total"].as_f64().unwrap(), 50.5);
     assert_eq!(la["min_score"].as_f64().unwrap(), 20.0);
     assert_eq!(nyc["max_score"].as_f64().unwrap(), 40.0);
+}
+
+#[actix_web::test]
+async fn group_by_with_having_filters_groups() {
+    let tmp = TempDir::new().unwrap();
+    let parquet = write_sample_parquet(tmp.path());
+    let reg = make_registry(&parquet);
+
+    // HAVING on the implicit COUNT(*) alias: keep only groups with > 2 rows.
+    // NYC has 3 rows, LA has 2 — only NYC survives.
+    let mut req = empty_req();
+    req.group_by = vec!["city".into()];
+    req.having = vec![Predicate {
+        col: "count".into(),
+        op: "gt".into(),
+        val: Some(Value::from(2)),
+    }];
+    let rows = parse_rows(&reg.query("people", &req).await.unwrap());
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["city"], Value::from("NYC"));
+    assert_eq!(rows[0]["count"], Value::from(3));
+
+    // HAVING on a named aggregation alias, combined with ORDER BY. Keep
+    // groups whose summed score is >= 60 — LA (70.5) qualifies, NYC (50.5)
+    // does not.
+    let mut req = empty_req();
+    req.group_by = vec!["city".into()];
+    req.aggregations = vec![Aggregation {
+        col: Some("score".into()),
+        op: "sum".into(),
+        alias: Some("total".into()),
+    }];
+    req.having = vec![Predicate {
+        col: "total".into(),
+        op: "gte".into(),
+        val: Some(Value::from(60)),
+    }];
+    req.order_by = vec![OrderBy {
+        col: "total".into(),
+        dir: Some("desc".into()),
+    }];
+    let rows = parse_rows(&reg.query("people", &req).await.unwrap());
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["city"], Value::from("LA"));
+    assert_eq!(rows[0]["total"].as_f64().unwrap(), 70.5);
+
+    // HAVING without group_by is rejected.
+    let mut req = empty_req();
+    req.having = vec![Predicate {
+        col: "count".into(),
+        op: "gt".into(),
+        val: Some(Value::from(1)),
+    }];
+    assert!(reg.query("people", &req).await.is_err());
 }
 
 #[actix_web::test]

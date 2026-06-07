@@ -54,6 +54,13 @@ pub struct QueryRequest {
     /// this is empty, an implicit `{ op: "count" }` is added.
     #[serde(default)]
     pub aggregations: Vec<Aggregation>,
+    /// Post-aggregation row filters, ANDed together (SQL `HAVING`). Each
+    /// predicate's `col` references a `group_by` column or an aggregation
+    /// alias; requires a non-empty `group_by`. Same op vocabulary as
+    /// `predicates` (`eq | neq | gt | gte | lt | lte | like | ilike | in |
+    /// is_null | is_not_null`).
+    #[serde(default)]
+    pub having: Vec<Predicate>,
     /// Return only distinct rows over the projected columns. Mutually
     /// exclusive with `group_by` / `aggregations`.
     #[serde(default)]
@@ -168,6 +175,25 @@ impl AggPlan {
         v.extend(self.aggs.iter().map(|a| a.alias.clone()));
         v
     }
+
+    /// Resolve a `HAVING` reference name to the SQL expression it filters
+    /// on. A group-by column maps to its quoted identifier; an aggregation
+    /// alias maps to the underlying aggregate expression (`COUNT(*)`,
+    /// `SUM("amount")`, …). Emitting the expression rather than the alias
+    /// keeps both backends happy — DataFusion does not allow aliases in
+    /// `HAVING`, while DuckDB does.
+    pub fn having_lhs(&self, name: &str) -> Result<String, AppError> {
+        let lc = name.to_lowercase();
+        if let Some(g) = self.group_cols.iter().find(|c| c.to_lowercase() == lc) {
+            return Ok(DatasetSchema::quote_ident(g));
+        }
+        if let Some(a) = self.aggs.iter().find(|a| a.alias.to_lowercase() == lc) {
+            return a.sql_expr();
+        }
+        Err(AppError::UnknownColumn(format!(
+            "{name} (must be a group_by column or aggregation alias)"
+        )))
+    }
 }
 
 impl QueryRequest {
@@ -239,6 +265,31 @@ impl QueryRequest {
         }
 
         Ok(Some(AggPlan { group_cols, aggs }))
+    }
+
+    /// Resolve `having` against the aggregation `plan`, pairing each
+    /// predicate with the SQL expression its `col` references. Returns an
+    /// empty vec when no `HAVING` was requested.
+    ///
+    /// Errors if `having` is set without a `GROUP BY` (there is nothing to
+    /// filter post-aggregation), or if a predicate references a name that
+    /// is neither a group column nor an aggregation alias. The returned
+    /// expressions are bound by the backend, which appends the values to
+    /// the same parameter list it built for `WHERE`.
+    pub fn having_plan<'a>(
+        &'a self,
+        plan: Option<&AggPlan>,
+    ) -> Result<Vec<(String, &'a Predicate)>, AppError> {
+        if self.having.is_empty() {
+            return Ok(Vec::new());
+        }
+        let plan = plan.ok_or_else(|| {
+            AppError::InvalidValue("having requires a non-empty group_by".into())
+        })?;
+        self.having
+            .iter()
+            .map(|p| Ok((plan.having_lhs(&p.col)?, p)))
+            .collect()
     }
 
     /// Translate `order_by` into a validated SQL fragment, e.g.
@@ -386,6 +437,7 @@ mod tests {
             predicates: vec![],
             group_by: vec![],
             aggregations: vec![],
+            having: vec![],
             distinct: false,
             order_by: vec![],
             limit: None,
@@ -490,6 +542,86 @@ mod tests {
         r.group_by = vec!["name".into()];
         let err = r.agg_plan(&schema()).err().expect("expected error");
         assert!(matches!(err, AppError::InvalidValue(_)));
+    }
+
+    // ---- having_plan --------------------------------------------------------
+
+    #[test]
+    fn having_empty_returns_empty() {
+        let r = empty_req();
+        assert!(r.having_plan(None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn having_requires_group_by() {
+        let mut r = empty_req();
+        r.having = vec![Predicate {
+            col: "count".into(),
+            op: "gt".into(),
+            val: Some(serde_json::json!(1)),
+        }];
+        let err = r.having_plan(None).err().expect("expected error");
+        assert!(matches!(err, AppError::InvalidValue(m) if m.contains("group_by")));
+    }
+
+    #[test]
+    fn having_resolves_implicit_count_alias_to_expr() {
+        let mut r = empty_req();
+        r.group_by = vec!["name".into()];
+        r.having = vec![Predicate {
+            col: "count".into(),
+            op: "gt".into(),
+            val: Some(serde_json::json!(5)),
+        }];
+        let plan = r.agg_plan(&schema()).unwrap().unwrap();
+        let resolved = r.having_plan(Some(&plan)).unwrap();
+        assert_eq!(resolved.len(), 1);
+        // The implicit COUNT(*) alias resolves to the aggregate expression,
+        // not the alias name.
+        assert_eq!(resolved[0].0, "COUNT(*)");
+    }
+
+    #[test]
+    fn having_resolves_named_alias_and_group_col() {
+        let mut r = empty_req();
+        r.group_by = vec!["name".into()];
+        r.aggregations = vec![Aggregation {
+            col: Some("score".into()),
+            op: "sum".into(),
+            alias: Some("total".into()),
+        }];
+        r.having = vec![
+            Predicate {
+                col: "total".into(),
+                op: "gte".into(),
+                val: Some(serde_json::json!(100)),
+            },
+            Predicate {
+                col: "name".into(),
+                op: "eq".into(),
+                val: Some(serde_json::json!("x")),
+            },
+        ];
+        let plan = r.agg_plan(&schema()).unwrap().unwrap();
+        let resolved = r.having_plan(Some(&plan)).unwrap();
+        assert_eq!(resolved.len(), 2);
+        assert_eq!(resolved[0].0, "SUM(\"score\")");
+        // A group column resolves to its quoted identifier.
+        assert_eq!(resolved[1].0, "\"name\"");
+    }
+
+    #[test]
+    fn having_unknown_reference_errors() {
+        let mut r = empty_req();
+        r.group_by = vec!["name".into()];
+        r.having = vec![Predicate {
+            col: "nope".into(),
+            op: "gt".into(),
+            val: Some(serde_json::json!(1)),
+        }];
+        let plan = r.agg_plan(&schema()).unwrap().unwrap();
+        let err = r.having_plan(Some(&plan)).err().expect("expected error");
+        assert!(matches!(err, AppError::UnknownColumn(_)));
     }
 
     // ---- order_by_sql -------------------------------------------------------

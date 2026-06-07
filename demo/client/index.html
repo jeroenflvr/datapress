@@ -31,7 +31,7 @@
   <div id="shell"></div>
 
 <script type="module">
-  // ── Version ──────────────────────────────────────────────────────────────
+  //  Version 
   // The npm "latest"/dev builds are currently on DuckDB v1.5.1, where quack's
   // wasm binary is NOT published — only v1.5.3 has it. So we must land on a
   // 1.5.3 engine. Builds are also published under the "next" dist-tag, which is
@@ -86,7 +86,7 @@
 
       await db.open({ path: ":memory:", allowUnsignedExtensions: true });
 
-      // ── version check + quack ───────────────────────────────────────────
+      //  version check + quack 
       let note = null;
       {
         const conn = await db.connect();

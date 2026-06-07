@@ -37,7 +37,7 @@ const compressOffEl = el("api-compress-off");
 let lastRows = [];
 let lastCols = [];
 
-// ── small helpers ──────────────────────────────────────────────────────────
+//  small helpers 
 const setStatus = (text, cls) => {
   statusEl.textContent = text;
   statusEl.className = `badge ms-auto text-bg-${cls || "secondary"}`;
@@ -54,7 +54,7 @@ function clearMessages() {
   errEl.classList.add("d-none");
 }
 
-// ── timing / size readout ────────────────────────────────────────────────────
+//  timing / size readout 
 function formatMs(ms) {
   if (ms < 1) return `${ms.toFixed(2)} ms`;
   if (ms < 1000) return `${ms.toFixed(1)} ms`;
@@ -102,7 +102,7 @@ function selectedDataset() {
   return datasetEl.value || (datasets[0] && datasets[0].name) || "";
 }
 
-// ── request headers (custom + format-derived Accept) ─────────────────────────
+//  request headers (custom + format-derived Accept) 
 const ARROW_ACCEPT = "application/vnd.apache.arrow.stream";
 
 function parseHeaderLines() {
@@ -155,7 +155,7 @@ function updateJsonUrl() {
   jsonUrlEl.textContent = `${apiBase}/datasets/${name}/query`;
 }
 
-// ── populate dataset select + defaults ──────────────────────────────────────
+//  populate dataset select + defaults 
 for (const d of datasets) {
   const opt = document.createElement("option");
   opt.value = d.name;
@@ -169,7 +169,7 @@ if (datasets.length) {
 }
 if (!sqlEnabled) sqlDisabledEl.classList.remove("d-none");
 
-// ── mode toggle ─────────────────────────────────────────────────────────────
+//  mode toggle 
 function setMode(mode) {
   const json = mode === "json";
   jsonModeEl.classList.toggle("d-none", !json);
@@ -179,7 +179,7 @@ function setMode(mode) {
 el("api-mode-json").addEventListener("change", () => setMode("json"));
 el("api-mode-sql").addEventListener("change", () => setMode("sql"));
 
-// ── JSON validate / prettify ────────────────────────────────────────────────
+//  JSON validate / prettify 
 function prettifyJson() {
   clearMessages();
   const raw = jsonBodyEl.value.trim();
@@ -199,7 +199,7 @@ function prettifyJson() {
   }
 }
 
-// ── SQL syntax check (lightweight, read-only oriented) ───────────────────────
+//  SQL syntax check (lightweight, read-only oriented) 
 // Not a full parser: strips comments + string/identifier literals, then checks
 // balanced parens, quote termination, single statement and read-only intent.
 const WRITE_KEYWORDS = [
@@ -282,7 +282,366 @@ function runSqlCheck() {
   return true;
 }
 
-// ── table rendering ──────────────────────────────────────────────────────────
+//  SQL → structured QueryRequest translator 
+// Best-effort conversion of the SQL subset the structured /query endpoint can
+// express: a single table, ANDed predicates, optional group_by + simple
+// aggregates, order_by and limit. Anything outside that subset throws an Error
+// whose message explains what couldn't be represented. Handy when the raw-SQL
+// endpoint is disabled but you still want a runnable request body.
+const AGG_FUNCS = ["count", "sum", "avg", "min", "max"];
+const UNSUPPORTED_KEYWORDS = {
+  join: "joins aren't supported — the structured query reads a single dataset",
+  inner: "joins aren't supported — the structured query reads a single dataset",
+  left: "joins aren't supported — the structured query reads a single dataset",
+  right: "joins aren't supported — the structured query reads a single dataset",
+  full: "joins aren't supported — the structured query reads a single dataset",
+  cross: "joins aren't supported — the structured query reads a single dataset",
+  union: "UNION/INTERSECT/EXCEPT can't be expressed as a structured query",
+  intersect: "UNION/INTERSECT/EXCEPT can't be expressed as a structured query",
+  except: "UNION/INTERSECT/EXCEPT can't be expressed as a structured query",
+  having: "HAVING requires GROUP BY",
+  over: "window functions can't be expressed as a structured query",  offset: "OFFSET isn't supported — use page / page_size in the JSON body",
+};
+
+function tokenizeSqlStmt(sql) {
+  const tokens = [];
+  let i = 0;
+  const n = sql.length;
+  while (i < n) {
+    const c = sql[i];
+    if (/\s/.test(c)) { i += 1; continue; }
+    if (c === "-" && sql[i + 1] === "-") { while (i < n && sql[i] !== "\n") i += 1; continue; }
+    if (c === "/" && sql[i + 1] === "*") {
+      i += 2;
+      while (i < n && !(sql[i] === "*" && sql[i + 1] === "/")) i += 1;
+      if (i >= n) throw new Error("unterminated /* block comment */");
+      i += 2; continue;
+    }
+    if (c === "'") {
+      let j = i + 1, s = "";
+      while (j < n) {
+        if (sql[j] === "'") { if (sql[j + 1] === "'") { s += "'"; j += 2; continue; } break; }
+        s += sql[j]; j += 1;
+      }
+      if (j >= n) throw new Error("unterminated string literal");
+      tokens.push({ t: "str", v: s }); i = j + 1; continue;
+    }
+    if (c === '"') {
+      let j = i + 1, s = "";
+      while (j < n) {
+        if (sql[j] === '"') { if (sql[j + 1] === '"') { s += '"'; j += 2; continue; } break; }
+        s += sql[j]; j += 1;
+      }
+      if (j >= n) throw new Error("unterminated quoted identifier");
+      tokens.push({ t: "id", v: s, quoted: true }); i = j + 1; continue;
+    }
+    if (/[0-9]/.test(c) || (c === "." && /[0-9]/.test(sql[i + 1] || ""))) {
+      let j = i;
+      while (j < n && /[0-9.]/.test(sql[j])) j += 1;
+      if (sql[j] === "e" || sql[j] === "E") {
+        j += 1;
+        if (sql[j] === "+" || sql[j] === "-") j += 1;
+        while (j < n && /[0-9]/.test(sql[j])) j += 1;
+      }
+      tokens.push({ t: "num", v: sql.slice(i, j) }); i = j; continue;
+    }
+    const two = sql.slice(i, i + 2);
+    if (["<=", ">=", "<>", "!="].includes(two)) { tokens.push({ t: "op", v: two === "!=" ? "<>" : two }); i += 2; continue; }
+    if ("=<>(),*.;+-".includes(c)) { tokens.push({ t: "op", v: c }); i += 1; continue; }
+    if (/[A-Za-z_]/.test(c)) {
+      let j = i;
+      while (j < n && /[A-Za-z0-9_]/.test(sql[j])) j += 1;
+      tokens.push({ t: "id", v: sql.slice(i, j) }); i = j; continue;
+    }
+    throw new Error(`unexpected character '${c}'`);
+  }
+  return tokens;
+}
+
+function sqlToQueryRequest(sql) {
+  const trimmed = sql.trim().replace(/;+\s*$/, "");
+  if (!trimmed) throw new Error("the SQL box is empty");
+  const toks = tokenizeSqlStmt(trimmed);
+  if (toks.some((t) => t.t === "op" && t.v === ";")) {
+    throw new Error("only a single statement can be translated");
+  }
+
+  let p = 0;
+  const peek = (o = 0) => toks[p + o];
+  const isKw = (tk, w) => tk && tk.t === "id" && !tk.quoted && tk.v.toLowerCase() === w;
+  const atKw = (w, o = 0) => isKw(peek(o), w);
+  const isOp = (v, o = 0) => { const tk = peek(o); return tk && tk.t === "op" && tk.v === v; };
+  const eat = () => toks[p++];
+  const expectOp = (v) => { if (!isOp(v)) throw new Error(`expected '${v}'`); p += 1; };
+  const ident = () => {
+    const tk = peek();
+    if (!tk || tk.t !== "id") throw new Error("expected an identifier");
+    p += 1;
+    if (isOp(".")) throw new Error("table-qualified columns (t.col) aren't supported");
+    return tk.v;
+  };
+
+  const notes = [];
+  const columns = [];
+  const aggregations = [];
+  const aggSignatures = new Map(); // "op:col" -> effective output alias
+  const predicates = [];
+  const having = [];
+  const groupBy = [];
+  const orderBy = [];
+  let star = false;
+  let distinct = false;
+  let limit = null;
+
+  const parseValue = () => {
+    let sign = 1;
+    if (isOp("-")) { sign = -1; eat(); } else if (isOp("+")) eat();
+    const v = peek();
+    if (!v) throw new Error("expected a value");
+    if (v.t === "num") { eat(); return sign * Number(v.v); }
+    if (v.t === "str") { if (sign === -1) throw new Error("unexpected '-' before a string"); eat(); return v.v; }
+    if (v.t === "id" && !v.quoted) {
+      const low = v.v.toLowerCase();
+      if (low === "true") { eat(); return true; }
+      if (low === "false") { eat(); return false; }
+      if (low === "null") { eat(); return null; }
+    }
+    throw new Error("expected a literal value (string, number, true/false/null)");
+  };
+
+  const parsePredicate = () => {
+    const col = ident();
+    if (atKw("is")) {
+      eat();
+      if (atKw("not")) {
+        eat();
+        if (!atKw("null")) throw new Error("expected NULL after IS NOT");
+        eat(); predicates.push({ col, op: "is_not_null" }); return;
+      }
+      if (!atKw("null")) throw new Error("expected NULL after IS");
+      eat(); predicates.push({ col, op: "is_null" }); return;
+    }
+    let negate = false;
+    if (atKw("not")) { negate = true; eat(); }
+    if (atKw("like") || atKw("ilike")) {
+      const op = eat().v.toLowerCase();
+      if (negate) throw new Error(`NOT ${op.toUpperCase()} isn't supported by the structured API`);
+      predicates.push({ col, op, val: parseValue() }); return;
+    }
+    if (atKw("in")) {
+      if (negate) throw new Error("NOT IN isn't supported by the structured API");
+      eat(); expectOp("(");
+      const vals = [parseValue()];
+      while (isOp(",")) { eat(); vals.push(parseValue()); }
+      expectOp(")");
+      predicates.push({ col, op: "in", val: vals }); return;
+    }
+    if (atKw("between")) {
+      if (negate) throw new Error("NOT BETWEEN isn't supported by the structured API");
+      eat();
+      const lo = parseValue();
+      if (!atKw("and")) throw new Error("expected AND in BETWEEN");
+      eat();
+      const hi = parseValue();
+      predicates.push({ col, op: "gte", val: lo });
+      predicates.push({ col, op: "lte", val: hi });
+      notes.push(`expanded '${col} BETWEEN …' into gte + lte predicates`);
+      return;
+    }
+    if (negate) throw new Error("NOT before this operator isn't supported");
+    const tk = peek();
+    if (!tk || tk.t !== "op") throw new Error(`expected a comparison operator after '${col}'`);
+    const opMap = { "=": "eq", "<>": "neq", ">": "gt", ">=": "gte", "<": "lt", "<=": "lte" };
+    const mapped = opMap[tk.v];
+    if (!mapped) throw new Error(`unsupported operator '${tk.v}'`);
+    eat();
+    predicates.push({ col, op: mapped, val: parseValue() });
+  };
+
+  const parsePredicateList = () => {
+    parsePredicate();
+    while (atKw("and")) { eat(); parsePredicate(); }
+    if (atKw("or")) throw new Error("OR in WHERE can't be expressed — predicates are ANDed only");
+  };
+
+  // HAVING references an aggregation (by its SELECT expression) or a group
+  // column. Aggregate expressions are matched back to the alias the
+  // structured request will expose, so `HAVING COUNT(*) > 5` becomes a
+  // predicate on that aggregation's alias.
+  const parseHavingItem = () => {
+    const tk = peek();
+    let col;
+    if (tk && tk.t === "id" && !tk.quoted && AGG_FUNCS.includes(tk.v.toLowerCase()) && isOp("(", 1)) {
+      const op = tk.v.toLowerCase(); eat(); expectOp("(");
+      let acol = null;
+      if (isOp("*")) { eat(); if (op !== "count") throw new Error(`${op.toUpperCase()}(*) isn't valid — use a column`); }
+      else {
+        if (atKw("distinct")) throw new Error("COUNT(DISTINCT …) isn't supported by the structured API");
+        acol = ident();
+      }
+      expectOp(")");
+      const sig = `${op}:${acol == null ? "*" : acol.toLowerCase()}`;
+      col = aggSignatures.get(sig);
+      if (!col) throw new Error(`HAVING uses ${op.toUpperCase()}(${acol ?? "*"}) which isn't in the SELECT list — add it as an aggregation first`);
+    } else {
+      col = ident(); // an aggregation alias or a group column
+    }
+    const optk = peek();
+    if (!optk || optk.t !== "op") throw new Error(`expected a comparison operator in HAVING after '${col}'`);
+    const opMap = { "=": "eq", "<>": "neq", ">": "gt", ">=": "gte", "<": "lt", "<=": "lte" };
+    const mapped = opMap[optk.v];
+    if (!mapped) throw new Error(`unsupported operator '${optk.v}' in HAVING`);
+    eat();
+    having.push({ col, op: mapped, val: parseValue() });
+  };
+
+  const parseHavingList = () => {
+    parseHavingItem();
+    while (atKw("and")) { eat(); parseHavingItem(); }
+    if (atKw("or")) throw new Error("OR in HAVING can't be expressed — predicates are ANDed only");
+  };
+
+  const parseSelectItem = () => {
+    if (isOp("*")) { eat(); star = true; return; }
+    const tk = peek();
+    if (tk && tk.t === "id" && !tk.quoted && AGG_FUNCS.includes(tk.v.toLowerCase()) && isOp("(", 1)) {
+      const op = tk.v.toLowerCase(); eat(); expectOp("(");
+      let col = null;
+      if (isOp("*")) { eat(); if (op !== "count") throw new Error(`${op.toUpperCase()}(*) isn't valid — use a column`); }
+      else {
+        if (atKw("distinct")) throw new Error("COUNT(DISTINCT …) isn't supported by the structured API");
+        col = ident();
+      }
+      expectOp(")");
+      if (atKw("over")) throw new Error("window functions can't be expressed as a structured query");
+      const agg = { op };
+      if (col != null) agg.col = col;
+      if (atKw("as")) { eat(); agg.alias = ident(); }
+      else if (peek() && peek().t === "id" && !atKw("from")) { agg.alias = ident(); }
+      aggregations.push(agg);
+      const effAlias = agg.alias || (col == null ? "count" : `${op}_${col.toLowerCase()}`);
+      aggSignatures.set(`${op}:${col == null ? "*" : col.toLowerCase()}`, effAlias);
+      return;
+    }
+    const col = ident();
+    if (atKw("as") || (peek() && peek().t === "id" && !atKw("from"))) {
+      throw new Error(`column alias on '${col}' isn't supported — the structured API returns names verbatim`);
+    }
+    columns.push(col);
+  };
+
+  if (atKw("with")) throw new Error("CTEs (WITH …) can't be expressed as a structured query");
+  if (!atKw("select")) throw new Error("only SELECT statements can be translated");
+  eat();
+  if (atKw("distinct")) { distinct = true; eat(); } else if (atKw("all")) eat();
+
+  parseSelectItem();
+  while (isOp(",")) { eat(); parseSelectItem(); }
+
+  if (!atKw("from")) throw new Error("expected FROM");
+  eat();
+  const ftk = peek();
+  if (!ftk || ftk.t !== "id") throw new Error("expected a table name after FROM");
+  const table = ftk.v; eat();
+  if (isOp(".")) throw new Error("schema-qualified tables aren't supported");
+  if (isOp(",")) throw new Error("joins aren't supported — the structured query reads a single dataset");
+  if (peek() && peek().t === "id") {
+    const w = peek().v.toLowerCase();
+    if (UNSUPPORTED_KEYWORDS[w]) throw new Error(UNSUPPORTED_KEYWORDS[w]);
+    if (!["where", "group", "order", "limit"].includes(w)) {
+      throw new Error(`table alias '${peek().v}' isn't supported — drop it`);
+    }
+  }
+
+  if (atKw("where")) { eat(); parsePredicateList(); }
+
+  if (atKw("group")) {
+    eat();
+    if (!atKw("by")) throw new Error("expected BY after GROUP");
+    eat();
+    groupBy.push(ident());
+    while (isOp(",")) { eat(); groupBy.push(ident()); }
+  }
+  if (atKw("having")) { eat(); parseHavingList(); }
+
+  if (atKw("order")) {
+    eat();
+    if (!atKw("by")) throw new Error("expected BY after ORDER");
+    eat();
+    const parseSort = () => {
+      const col = ident();
+      const o = { col };
+      if (atKw("asc")) { o.dir = "asc"; eat(); } else if (atKw("desc")) { o.dir = "desc"; eat(); }
+      orderBy.push(o);
+    };
+    parseSort();
+    while (isOp(",")) { eat(); parseSort(); }
+  }
+
+  if (atKw("limit")) {
+    eat();
+    const v = peek();
+    if (!v || v.t !== "num") throw new Error("expected a number after LIMIT");
+    eat();
+    limit = Math.trunc(Number(v.v));
+    if (atKw("offset")) throw new Error("OFFSET isn't supported — use page / page_size in the JSON body");
+  }
+
+  if (p < toks.length) {
+    const lt = peek();
+    const w = lt.t === "id" ? lt.v.toLowerCase() : lt.v;
+    if (UNSUPPORTED_KEYWORDS[w]) throw new Error(UNSUPPORTED_KEYWORDS[w]);
+    throw new Error(`unexpected '${lt.v}' — this part can't be translated`);
+  }
+
+  const hasAgg = aggregations.length > 0;
+  if (hasAgg && groupBy.length === 0) {
+    throw new Error("aggregates require GROUP BY in the structured API (use the /count endpoint for a bare COUNT(*))");
+  }
+  if (hasAgg && distinct) throw new Error("DISTINCT can't be combined with aggregates here");
+
+  const request = {};
+  if (groupBy.length) {
+    request.group_by = groupBy;
+    if (aggregations.length) request.aggregations = aggregations;
+    if (having.length) request.having = having;
+    const extra = columns.filter((c) => !groupBy.some((g) => g.toLowerCase() === c.toLowerCase()));
+    if (extra.length) notes.push(`ignored non-grouped select column(s): ${extra.join(", ")}`);
+    if (star) notes.push("ignored '*' — group_by drives the projection");
+  } else {
+    if (having.length) throw new Error("HAVING requires GROUP BY");
+    if (distinct) request.distinct = true;
+    if (!star && columns.length) request.columns = columns;
+  }
+  if (predicates.length) request.predicates = predicates;
+  if (orderBy.length) request.order_by = orderBy;
+  if (limit != null) { request.limit = limit; request.page_size = Math.max(1, limit); }
+
+  return { request, table, notes };
+}
+
+function translateSqlToJson() {
+  clearMessages();
+  let result;
+  try {
+    result = sqlToQueryRequest(sqlBodyEl.value);
+  } catch (e) {
+    showCheck(`Can't translate to a structured query:\n  • ${e.message}`, "warn");
+    return;
+  }
+  const { request, table, notes } = result;
+  const match = datasets.find((d) => d.name.toLowerCase() === table.toLowerCase());
+  if (match) { datasetEl.value = match.name; updateJsonUrl(); }
+  else notes.unshift(`dataset '${table}' isn't registered here — pick one from the dropdown`);
+
+  jsonBodyEl.value = JSON.stringify(request, null, 2);
+  el("api-mode-json").checked = true;
+  setMode("json");
+  const tail = notes.length ? "\n  • " + notes.join("\n  • ") : "";
+  showCheck(`Translated to a structured query ✓ — switched to JSON mode.${tail}`, "ok");
+}
+
+//  table rendering 
 function columnsOf(rows) {
   const seen = new Set();
   const cols = [];
@@ -324,7 +683,7 @@ function renderTable(rows) {
   exportEl.classList.remove("d-none");
 }
 
-// ── run against the API ──────────────────────────────────────────────────────
+//  run against the API 
 async function runJson() {
   clearMessages();
   exportEl.classList.add("d-none");
@@ -419,7 +778,7 @@ async function runRequest(url, body) {
   }
 }
 
-// ── export: CSV / JSON / Parquet ─────────────────────────────────────────────
+//  export: CSV / JSON / Parquet 
 function downloadBlob(data, filename, mime) {
   const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -530,12 +889,13 @@ async function exportParquet() {
   }
 }
 
-// ── wiring ───────────────────────────────────────────────────────────────────
+//  wiring 
 datasetEl.addEventListener("change", updateJsonUrl);
 el("api-json-prettify").addEventListener("click", prettifyJson);
 el("api-json-sample").addEventListener("click", () => { jsonBodyEl.value = sampleJsonBody(); clearMessages(); });
 el("api-json-run").addEventListener("click", runJson);
 el("api-sql-check").addEventListener("click", runSqlCheck);
+el("api-sql-tojson").addEventListener("click", translateSqlToJson);
 el("api-sql-run").addEventListener("click", runSql);
 el("api-export-csv").addEventListener("click", exportCsv);
 el("api-export-json").addEventListener("click", exportJson);

@@ -199,6 +199,50 @@ whole (capped) result in one response.
     }
     ```
 
+=== "Window function"
+
+    Window functions run over a single dataset. This ranks states by
+    accident count without a self-join:
+
+    ```json
+    {
+      "sql": "SELECT state, COUNT(*) AS n, RANK() OVER (ORDER BY COUNT(*) DESC) AS rnk FROM accidents GROUP BY state ORDER BY rnk LIMIT 10"
+    }
+    ```
+
+=== "CASE buckets"
+
+    Use `CASE` to derive categories on the fly, then aggregate by them:
+
+    ```json
+    {
+      "sql": "SELECT CASE WHEN severity >= 3 THEN 'serious' WHEN severity = 2 THEN 'moderate' ELSE 'minor' END AS band, COUNT(*) AS n FROM accidents GROUP BY band ORDER BY n DESC"
+    }
+    ```
+
+=== "Multiple CTEs"
+
+    Several CTEs can be chained and joined together. None of the CTE names
+    (`by_state`, `totals`) count as datasets, so the query still references
+    only `accidents`:
+
+    ```json
+    {
+      "sql": "WITH by_state AS (SELECT state, COUNT(*) AS n FROM accidents GROUP BY state), totals AS (SELECT SUM(n) AS total FROM by_state) SELECT s.state, s.n, ROUND(100.0 * s.n / t.total, 2) AS pct FROM by_state s CROSS JOIN totals t ORDER BY s.n DESC LIMIT 10"
+    }
+    ```
+
+=== "CTE + window"
+
+    A CTE feeds a window function to keep, per state, only the worst
+    severity rows above the state's own average:
+
+    ```json
+    {
+      "sql": "WITH ranked AS (SELECT state, severity, AVG(severity) OVER (PARTITION BY state) AS avg_sev FROM accidents) SELECT state, severity, ROUND(avg_sev, 2) AS avg_sev FROM ranked WHERE severity > avg_sev ORDER BY state, severity DESC LIMIT 50"
+    }
+    ```
+
 === "Scalar expressions"
 
     ```json

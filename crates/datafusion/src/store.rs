@@ -364,6 +364,7 @@ impl Store {
             predicates: Vec::new(),
             group_by: Vec::new(),
             aggregations: Vec::new(),
+            having: Vec::new(),
             distinct: false,
             order_by: Vec::new(),
             limit: None,
@@ -1574,12 +1575,24 @@ fn build_query_sql_with_suffix(
         ),
         None => String::new(),
     };
+    let having_clause = {
+        let resolved = req.having_plan(agg_plan.as_ref())?;
+        if resolved.is_empty() {
+            String::new()
+        } else {
+            let clauses: Vec<String> = resolved
+                .iter()
+                .map(|(lhs, p)| pred_to_sql_with_lhs(lhs, p, &mut params))
+                .collect::<Result<_, _>>()?;
+            format!(" HAVING {}", clauses.join(" AND "))
+        }
+    };
     let order_clause = match req.order_by_sql(schema, agg_plan.as_ref())? {
         Some(s) => format!(" ORDER BY {s}"),
         None => String::new(),
     };
     let sql =
-        format!("SELECT {cols} FROM {table}{where_clause}{group_clause}{order_clause}{suffix}");
+        format!("SELECT {cols} FROM {table}{where_clause}{group_clause}{having_clause}{order_clause}{suffix}");
     Ok((sql, params.into_values()))
 }
 
@@ -1609,7 +1622,19 @@ fn pred_to_sql(
 ) -> Result<String, AppError> {
     let info = schema.find(&pred.col)?;
     let col = DatasetSchema::quote_ident(&info.name);
+    pred_to_sql_with_lhs(&col, pred, params)
+}
 
+/// Render a predicate against a pre-resolved left-hand-side SQL
+/// expression. The dataset-`WHERE` path resolves a quoted column name as
+/// the LHS (see [`pred_to_sql`]); the `HAVING` path passes an aggregate
+/// expression such as `COUNT(*)` instead. Both share the operator and
+/// value-binding logic here.
+fn pred_to_sql_with_lhs(
+    col: &str,
+    pred: &Predicate,
+    params: &mut Params,
+) -> Result<String, AppError> {
     match pred.op.as_str() {
         "is_null" => return Ok(format!("{col} IS NULL")),
         "is_not_null" => return Ok(format!("{col} IS NOT NULL")),

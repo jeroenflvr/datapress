@@ -724,28 +724,28 @@ For a deeper benchmark catalogue (light load + CPU/memory stress tests), see
 Cargo.toml                          # workspace manifest
 pyproject.toml                      # maturin / PyO3 build
 crates/
-├── core/                           # datapress-core: config, schema, errors, admin
-│   └── src/
-│       ├── admin.rs                # X-Admin-Token verification (constant-time)
-│       ├── config.rs               # datasets.toml parsing + validation
-│       ├── schema.rs               # backend-agnostic schema model
-│       ├── models.rs               # Predicate / QueryRequest
-│       └── errors.rs               # AppError + actix ResponseError
-├── duckdb/                         # datapress-duckdb
-│   └── src/
-│       ├── lib.rs                  # pub async fn serve(cfg) -> io::Result<()>
-│       ├── db.rs                   # Registry: pool + schemas + reload
-│       ├── repository.rs           # DatasetRepository (SQL builder)
-│       ├── handlers.rs             # actix routes
-│       └── bin/datapress-duckdb.rs # entrypoint binary
-├── datafusion/                     # datapress-datafusion
-│   └── src/
-│       ├── lib.rs                  # pub async fn serve(cfg) -> io::Result<()>
-│       ├── store.rs                # Store: RecordBatch + eq-index + reload
-│       ├── handlers.rs             # actix routes
-│       └── bin/datapress-datafusion.rs
-└── python/                         # datapress (Python wheel, cdylib)
-    └── src/lib.rs                  # PyO3 bindings — DataPress, DataPressConfig, ...
+├ core/                           # datapress-core: config, schema, errors, admin
+│   └ src/
+│       ├ admin.rs                # X-Admin-Token verification (constant-time)
+│       ├ config.rs               # datasets.toml parsing + validation
+│       ├ schema.rs               # backend-agnostic schema model
+│       ├ models.rs               # Predicate / QueryRequest
+│       └ errors.rs               # AppError + actix ResponseError
+├ duckdb/                         # datapress-duckdb
+│   └ src/
+│       ├ lib.rs                  # pub async fn serve(cfg) -> io::Result<()>
+│       ├ db.rs                   # Registry: pool + schemas + reload
+│       ├ repository.rs           # DatasetRepository (SQL builder)
+│       ├ handlers.rs             # actix routes
+│       └ bin/datapress-duckdb.rs # entrypoint binary
+├ datafusion/                     # datapress-datafusion
+│   └ src/
+│       ├ lib.rs                  # pub async fn serve(cfg) -> io::Result<()>
+│       ├ store.rs                # Store: RecordBatch + eq-index + reload
+│       ├ handlers.rs             # actix routes
+│       └ bin/datapress-datafusion.rs
+└ python/                         # datapress (Python wheel, cdylib)
+    └ src/lib.rs                  # PyO3 bindings — DataPress, DataPressConfig, ...
 ```
 
 Core re-exports compile without any backend; each backend crate adds the

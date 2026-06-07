@@ -236,6 +236,7 @@ impl<'a> DatasetRepository<'a> {
         }
 
         let where_clause = build_where(&conditions);
+        let having_clause = self.having_clause(req, agg_plan.as_ref(), &mut bind_vals)?;
         let order_clause = match req.order_by_sql(self.schema, agg_plan.as_ref())? {
             Some(s) => format!(" ORDER BY {s}"),
             None => String::new(),
@@ -260,7 +261,7 @@ impl<'a> DatasetRepository<'a> {
             format!(
                 "SELECT json_object({pairs}) FROM (\
                     SELECT {inner_select} FROM {table}{where_clause} \
-                    GROUP BY {group_by}{order_clause} \
+                    GROUP BY {group_by}{having_clause}{order_clause} \
                     LIMIT {limit} OFFSET {offset}\
                  ) sub"
             )
@@ -397,6 +398,7 @@ impl<'a> DatasetRepository<'a> {
             ),
             None => String::new(),
         };
+        let having_clause = self.having_clause(req, agg_plan.as_ref(), &mut bind_vals)?;
         let order_clause = match req.order_by_sql(self.schema, agg_plan.as_ref())? {
             Some(s) => format!(" ORDER BY {s}"),
             None => String::new(),
@@ -409,7 +411,7 @@ impl<'a> DatasetRepository<'a> {
             )
         } else {
             format!(
-                "SELECT {projection} FROM {table}{where_clause}{group_clause}{order_clause}{limit_clause}"
+                "SELECT {projection} FROM {table}{where_clause}{group_clause}{having_clause}{order_clause}{limit_clause}"
             )
         };
 
@@ -494,54 +496,89 @@ impl<'a> DatasetRepository<'a> {
     ) -> Result<(), AppError> {
         let col = self.schema.find(&pred.col)?;
         let cref = DatasetSchema::quote_ident(&col.name);
+        predicate_to_condition(&cref, &col.name, pred, conditions, bind_vals)
+    }
 
-        match pred.op.as_str() {
-            "is_null" => {
-                conditions.push(format!("{cref} IS NULL"));
-            }
-            "is_not_null" => {
-                conditions.push(format!("{cref} IS NOT NULL"));
-            }
-            "in" => {
-                let arr = pred
-                    .val
-                    .as_ref()
-                    .and_then(|v| v.as_array())
-                    .filter(|a| !a.is_empty())
-                    .ok_or_else(|| {
-                        AppError::InvalidValue(format!(
-                            "'in' requires a non-empty array for column {}",
-                            col.name
-                        ))
-                    })?;
-                let placeholders = arr.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-                conditions.push(format!("{cref} IN ({placeholders})"));
-                for v in arr {
-                    bind_vals.push(json_to_param(v)?);
-                }
-            }
-            op => {
-                let sql_op = match op {
-                    "eq" => "=",
-                    "neq" => "<>",
-                    "gt" => ">",
-                    "gte" => ">=",
-                    "lt" => "<",
-                    "lte" => "<=",
-                    "like" => "LIKE",
-                    "ilike" => "ILIKE",
-                    other => return Err(AppError::UnknownOperator(other.into())),
-                };
-                let val = pred.val.as_ref().ok_or_else(|| {
+    /// Build the ` HAVING …` clause for a grouped query, binding any
+    /// literal values onto `bind_vals` (which must already hold the
+    /// `WHERE` bindings, since `HAVING` placeholders follow them in the
+    /// statement). Returns an empty string when no `HAVING` was requested;
+    /// errors if `having` is set without grouping.
+    fn having_clause(
+        &self,
+        req: &QueryRequest,
+        plan: Option<&AggPlan>,
+        bind_vals: &mut Vec<ParamVal>,
+    ) -> Result<String, AppError> {
+        let resolved = req.having_plan(plan)?;
+        if resolved.is_empty() {
+            return Ok(String::new());
+        }
+        let mut conditions: Vec<String> = Vec::new();
+        for (lhs, p) in &resolved {
+            predicate_to_condition(lhs, &p.col, p, &mut conditions, bind_vals)?;
+        }
+        Ok(format!(" HAVING {}", conditions.join(" AND ")))
+    }
+}
+
+/// Render one predicate as a SQL condition (pushed onto `conditions`) plus
+/// its bound values (pushed onto `bind_vals`), against a pre-resolved
+/// left-hand-side expression `lhs`. The dataset-`WHERE` path passes a
+/// quoted column name; the `HAVING` path passes an aggregate expression
+/// such as `COUNT(*)`. `label` is the human-readable name used in error
+/// messages.
+fn predicate_to_condition(
+    lhs: &str,
+    label: &str,
+    pred: &Predicate,
+    conditions: &mut Vec<String>,
+    bind_vals: &mut Vec<ParamVal>,
+) -> Result<(), AppError> {
+    match pred.op.as_str() {
+        "is_null" => {
+            conditions.push(format!("{lhs} IS NULL"));
+        }
+        "is_not_null" => {
+            conditions.push(format!("{lhs} IS NOT NULL"));
+        }
+        "in" => {
+            let arr = pred
+                .val
+                .as_ref()
+                .and_then(|v| v.as_array())
+                .filter(|a| !a.is_empty())
+                .ok_or_else(|| {
                     AppError::InvalidValue(format!(
-                        "operator '{op}' requires a value for column {}",
-                        col.name
+                        "'in' requires a non-empty array for column {label}"
                     ))
                 })?;
-                conditions.push(format!("{cref} {sql_op} ?"));
-                bind_vals.push(json_to_param(val)?);
+            let placeholders = arr.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            conditions.push(format!("{lhs} IN ({placeholders})"));
+            for v in arr {
+                bind_vals.push(json_to_param(v)?);
             }
         }
-        Ok(())
+        op => {
+            let sql_op = match op {
+                "eq" => "=",
+                "neq" => "<>",
+                "gt" => ">",
+                "gte" => ">=",
+                "lt" => "<",
+                "lte" => "<=",
+                "like" => "LIKE",
+                "ilike" => "ILIKE",
+                other => return Err(AppError::UnknownOperator(other.into())),
+            };
+            let val = pred.val.as_ref().ok_or_else(|| {
+                AppError::InvalidValue(format!(
+                    "operator '{op}' requires a value for column {label}"
+                ))
+            })?;
+            conditions.push(format!("{lhs} {sql_op} ?"));
+            bind_vals.push(json_to_param(val)?);
+        }
     }
+    Ok(())
 }
