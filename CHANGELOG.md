@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.11] - 2026-06-07
+
+### Features
+
+- Add having and sql-to-json request ([091aa42](https://github.com/jeroenflvr/datapress/commit/091aa42189cbac54542024099b3637a386bbf12f))
+
+### Styling
+
+- *(docs)* Update links, add having ([7eb1437](https://github.com/jeroenflvr/datapress/commit/7eb1437cdcf0d163f549cfc6c5dbfc807949a3c8))
+
 ## [0.4.10] - 2026-06-07
 
 ### Bug Fixes
