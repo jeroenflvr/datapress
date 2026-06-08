@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.14] - 2026-06-08
+
+### Bug Fixes
+
+- *(ci)* Deduplicate embedded duckdb wasm ([353e351](https://github.com/jeroenflvr/datapress/commit/353e35111a4b81ed3ce23ab100851b99f6d38cf3))
+
 ## [0.4.13] - 2026-06-08
 
 ### Bug Fixes
