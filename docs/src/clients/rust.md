@@ -30,7 +30,7 @@ datapress-client = { version = "0.4", default-features = false }
 
 ## Async
 
-```rust,no_run
+```rust
 use datapress_client::{Client, QueryRequest, Predicate};
 
 # async fn run() -> datapress_client::Result<()> {
