@@ -2614,6 +2614,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "datapress-cli"
+version = "0.4.11"
+dependencies = [
+ "anyhow",
+ "arrow",
+ "clap",
+ "datapress-client",
+ "serde_json",
+]
+
+[[package]]
+name = "datapress-client"
+version = "0.4.11"
+dependencies = [
+ "arrow",
+ "bytes",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "datapress-client-py"
+version = "0.4.11"
+dependencies = [
+ "datapress-client",
+ "pyo3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "datapress-core"
 version = "0.4.11"
 dependencies = [

@@ -1,0 +1,34 @@
+[package]
+name        = "datapress-client"
+version.workspace      = true
+edition.workspace      = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+documentation.workspace = true
+description = "Async + blocking Rust client for a running DataPress dataset server (JSON and Arrow IPC)."
+keywords    = ["datapress", "client", "arrow", "http", "parquet"]
+categories  = ["api-bindings", "web-programming::http-client"]
+
+[features]
+default = ["arrow", "blocking"]
+# Decode Arrow IPC stream responses into `arrow::record_batch::RecordBatch`
+# values. Off keeps the dependency tree to reqwest + serde.
+arrow = ["dep:arrow"]
+# Provide a synchronous, blocking client (`blocking::Client`) backed by a
+# private current-thread Tokio runtime. Off keeps the crate async-only.
+blocking = ["dep:tokio"]
+
+[dependencies]
+reqwest = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+thiserror  = { workspace = true }
+bytes      = { workspace = true }
+
+arrow = { workspace = true, optional = true, features = ["ipc"] }
+tokio = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

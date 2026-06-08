@@ -149,6 +149,11 @@ nav:
       - DuckDB: backends/duckdb.md
       - Arrow + DataFusion: backends/datafusion.md
       - Comparison: backends/comparison.md
+  - Clients:
+      - clients/index.md
+      - Command line: clients/cli.md
+      - Python: clients/python.md
+      - Rust: clients/rust.md
   - Python:
       - python/index.md
       - Config classes: python/config.md

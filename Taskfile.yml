@@ -12,6 +12,11 @@ version: '3'
 #   task check               # cargo check the whole workspace
 #   task py:develop          # build + install the Python wheel into the venv
 #   task py:build            # build a release wheel
+#   task build:client        # build the Rust HTTP client library
+#   task build:client-cli    # build the datapress-cli binary
+#   task build:client-py     # build the datap-rs-client Python wheel
+#   task build:clients       # build all three clients (release)
+#   task publish:clients     # publish all clients to crates.io + PyPI
 # ---------------------------------------------------------------------------
 
 vars:
@@ -38,6 +43,56 @@ tasks:
     deps: [docs:build]
     cmds:
       - cargo build {{.RELEASE}} -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer
+
+  # ---------------------------------------------------------------------
+  # Clients (HTTP client crate, CLI client, Python bindings) — release only
+  # ---------------------------------------------------------------------
+  build:client:
+    desc: Build the Rust HTTP client library `datapress-client` (release)
+    cmds:
+      - cargo build {{.RELEASE}} -p datapress-client
+
+  build:client-cli:
+    desc: Build the `datapress-cli` command-line client (release)
+    cmds:
+      - cargo build {{.RELEASE}} -p datapress-cli --bin datapress-cli
+
+  build:client-py:
+    desc: Build the `datap-rs-client` Python wheel into ./target/wheels/ (release)
+    cmds:
+      - uv tool run --with maturin maturin build --release -m crates/client-py/Cargo.toml
+
+  build:clients:
+    desc: Build all clients (Rust library, CLI, Python wheel) — release
+    deps: [build:client, build:client-cli, build:client-py]
+
+  # ---------------------------------------------------------------------
+  # Publish clients (manual/local). CI does this automatically on `v*`
+  # tags via .github/workflows/publish-clients.yml; these are for local
+  # one-off publishing. Requires CARGO_REGISTRY_TOKEN (crates.io) and a
+  # PyPI token (maturin publish prompts / reads MATURIN_PYPI_TOKEN).
+  # ---------------------------------------------------------------------
+  publish:client:
+    desc: Publish the `datapress-client` crate to crates.io
+    cmds:
+      - cargo publish -p datapress-client --locked
+
+  publish:client-cli:
+    desc: Publish the `datapress-cli` crate to crates.io (run after publish:client)
+    cmds:
+      - cargo publish -p datapress-cli --locked
+
+  publish:client-py:
+    desc: Build and publish the `datap-rs-client` wheel to PyPI
+    cmds:
+      - uv tool run --with maturin maturin publish -m crates/client-py/Cargo.toml
+
+  publish:clients:
+    desc: "Publish all clients (crate lib, then CLI, then Python wheel) to crates.io + PyPI"
+    cmds:
+      - task: publish:client
+      - task: publish:client-cli
+      - task: publish:client-py
 
   build:
     desc: Build both Rust binaries

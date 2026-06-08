@@ -1,0 +1,25 @@
+[package]
+name             = "datapress-client-py"
+version.workspace      = true
+edition.workspace      = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+description = "PyO3 bindings for datapress-client (published to PyPI as `datap-rs-client`, not crates.io)."
+# Distributed as a Python wheel via maturin/PyPI, not as a crates.io crate.
+publish = false
+
+[lib]
+# Python submodule name: `datap_rs_client._datapress_client`. The cdylib
+# basename must match the rightmost path component of `module-name` in
+# pyproject.toml, so the .so lands at
+# `datap_rs_client/_datapress_client.abi3.so` inside the wheel.
+name       = "_datapress_client"
+crate-type = ["cdylib"]
+
+[dependencies]
+datapress-client = { workspace = true, features = ["blocking", "arrow"] }
+pyo3.workspace   = true
+serde.workspace      = true
+serde_json.workspace = true

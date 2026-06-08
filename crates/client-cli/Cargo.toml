@@ -1,0 +1,25 @@
+[package]
+name             = "datapress-cli"
+version.workspace      = true
+edition.workspace      = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+keywords.workspace     = true
+categories.workspace   = true
+description = "Command-line client for a DataPress dataset server, built on datapress-client."
+documentation = "https://docs.datap-rs.org"
+readme = "README.md"
+
+[[bin]]
+name = "datapress-cli"
+path = "src/main.rs"
+
+[dependencies]
+datapress-client = { workspace = true, features = ["blocking", "arrow"] }
+
+clap = { workspace = true, features = ["env"] }
+serde_json.workspace = true
+anyhow.workspace     = true
+arrow = { workspace = true, features = ["prettyprint"] }

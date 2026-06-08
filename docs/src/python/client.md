@@ -4,6 +4,12 @@
 DataPress server. It uses only the Python stdlib plus a lazy
 `pyarrow` import (only loaded when you call `query()` for Arrow IPC).
 
+!!! tip "Standalone alternative"
+    This client ships inside the embedded `datap-rs` wheel. If you only need
+    to talk to a server (not run one), the standalone
+    [`datap-rs-client`](../clients/python.md) package is lighter and uses a
+    native Rust transport.
+
 ```python
 from datap_rs import DataPressClient
 

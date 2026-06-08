@@ -123,6 +123,44 @@ Build the wheel with `task py:develop` (uses `uv` + `maturin`).
 
 ---
 
+## Standalone clients
+
+The `datapress` wheel above can both *run* a server and talk to it. If you only
+need to **talk to** an already-running server, three standalone clients share
+one lightweight Rust core (`datapress-client`) and pull in no server engines:
+
+| Client          | Package            | Install                                   |
+| --------------- | ------------------ | ----------------------------------------- |
+| Command line    | `datapress-cli`    | install script · `cargo install datapress-cli` |
+| Python          | `datap-rs-client`  | `uv pip install datap-rs-client[arrow]`   |
+| Rust library    | `datapress-client` | `cargo add datapress-client`              |
+
+```bash
+# CLI: install script (Linux / macOS)
+curl -LsSf https://datap-rs.org/install-cli.sh | sh
+# CLI: install script (Windows)
+powershell -ExecutionPolicy ByPass -c "irm https://datap-rs.org/install-cli.ps1 | iex"
+
+datapress-cli datasets
+datapress-cli query accidents --select State,Severity --where Severity:gte:3 --page-size 1000
+```
+
+```python
+# Python: dict in, dict out; query_arrow() returns a pyarrow.Table for
+# Polars / pandas / DuckDB / PySpark / DataFusion.
+from datap_rs_client import DataPressClient
+
+client = DataPressClient("http://127.0.0.1:8000")
+table = client.query_arrow("accidents", columns=["State", "Severity"], page_size=100_000)
+```
+
+See the [clients documentation](https://docs.datap-rs.org/clients/) for the
+full reference. The CLI install scripts behave like the server's — per-user
+directory, checksum-verified, no `PATH` edits — using `DATAPRESS_CLI_VERSION` /
+`DATAPRESS_CLI_INSTALL_DIR` overrides.
+
+---
+
 ## The two backends
 
 | Aspect              | `datapress-duckdb`                             | `datapress-datafusion`                               |

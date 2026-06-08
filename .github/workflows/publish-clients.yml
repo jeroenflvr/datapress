@@ -1,0 +1,256 @@
+name: Publish clients (PyPI + crates.io + CLI binaries)
+
+# Build and publish the DataPress *client* artifacts on `v*` tags (and on
+# manual dispatch):
+#   - datap-rs-client  → PyPI   (Python bindings wheel, package datap-rs-client)
+#   - datapress-client → crates.io (Rust HTTP client library)
+#   - datapress-cli    → crates.io (Rust CLI) + standalone release binaries
+#
+# The client crates form an independent dependency island (they do NOT
+# depend on datapress-core/duckdb/datafusion), so this workflow is separate
+# from publish.yml and never needs the DuckDB C++ build or the MkDocs site.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # -----------------------------------------------------------------------
+  # datap-rs-client wheels. abi3, lightweight (reqwest + pyo3, no DuckDB),
+  # so no manylinux ABI workaround and no docs site are needed.
+  # -----------------------------------------------------------------------
+  wheels-linux:
+    name: client-wheels-linux-${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64
+            runner: ubuntu-latest
+          - target: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.12' }
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: client-wheels-linux-${{ matrix.target }}
+      - uses: PyO3/maturin-action@v1
+        with:
+          target:         ${{ matrix.target }}
+          manylinux:      auto
+          args:           --release --out dist -m crates/client-py/Cargo.toml
+          rust-toolchain: stable
+          sccache:        'true'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: client-wheels-linux-${{ matrix.target }}
+          path: dist
+
+  wheels-macos:
+    name: client-wheels-macos-aarch64
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.12' }
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: client-wheels-macos-aarch64
+      - uses: PyO3/maturin-action@v1
+        with:
+          target:         aarch64
+          args:           --release --out dist -m crates/client-py/Cargo.toml
+          rust-toolchain: stable
+          sccache:        'true'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: client-wheels-macos-aarch64
+          path: dist
+
+  wheels-windows:
+    name: client-wheels-windows-x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.12' }
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: client-wheels-windows-x64
+      - uses: PyO3/maturin-action@v1
+        with:
+          target:         x64
+          args:           --release --out dist -m crates/client-py/Cargo.toml
+          rust-toolchain: stable
+          sccache:        'true'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: client-wheels-windows-x64
+          path: dist
+
+  sdist:
+    name: client-sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args:    --out dist -m crates/client-py/Cargo.toml
+      - uses: actions/upload-artifact@v7
+        with:
+          name: client-sdist
+          path: dist
+
+  # -----------------------------------------------------------------------
+  # Publish datap-rs-client to PyPI. Runs only on `v*` tags.
+  # Auth: PyPI API token in repo secret PYPI_API_TOKEN_CLIENT. Create a
+  #   project-scoped token at https://pypi.org/manage/account/token/ once
+  #   the project exists (for the very first release use an account-scoped
+  #   token), then add it under GitHub → Settings → Secrets and variables
+  #   → Actions → New secret.
+  # -----------------------------------------------------------------------
+  pypi:
+    name: publish-client-to-pypi
+    needs: [wheels-linux, wheels-macos, wheels-windows, sdist]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path:    dist
+          pattern: 'client-wheels-*'
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: client-sdist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          password: ${{ secrets.PYPI_API_TOKEN_CLIENT }}
+
+  # -----------------------------------------------------------------------
+  # Publish the client crates to crates.io (so `cargo install datapress-cli`
+  # works). Runs only on `v*` tags. Order matters: datapress-cli depends on
+  # datapress-client, so the library must land first. Both are
+  # dependency-light, so a full `--verify` compile is cheap.
+  #
+  # Auth: crates.io API token in repo secret CARGO_REGISTRY_TOKEN (shared
+  #   with publish.yml).
+  # -----------------------------------------------------------------------
+  crates-io:
+    name: publish-clients-to-crates-io
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: publish-clients-crates-io
+      - name: Publish client crates in dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          for crate in datapress-client datapress-cli; do
+            echo "::group::cargo publish -p ${crate}"
+            cargo publish -p "${crate}" --locked
+            echo "::endgroup::"
+          done
+
+  # -----------------------------------------------------------------------
+  # Standalone `datapress-cli` binaries, one per supported target, built
+  # natively (no cross-compiling). Each is uploaded as a workflow artifact;
+  # the release job below attaches them to the GitHub Release for the tag.
+  # -----------------------------------------------------------------------
+  cli:
+    name: client-cli-${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            runner: macos-14
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: client-cli-${{ matrix.target }}
+      - name: Build datapress-cli
+        run: cargo build --release -p datapress-cli --bin datapress-cli --target ${{ matrix.target }}
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          archive="datapress-cli-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
+          tar -czf "${archive}" -C "target/${{ matrix.target }}/release" datapress-cli
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${archive}" > "${archive}.sha256"
+          else
+            shasum -a 256 "${archive}" > "${archive}.sha256"
+          fi
+          echo "ASSET=${archive}" >> "${GITHUB_ENV}"
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archive = "datapress-cli-${{ github.ref_name }}-${{ matrix.target }}.zip"
+          Compress-Archive -Path "target/${{ matrix.target }}/release/datapress-cli.exe" -DestinationPath $archive
+          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
+          "$hash  $archive" | Out-File -Encoding ascii -NoNewline "$archive.sha256"
+          "ASSET=$archive" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - uses: actions/upload-artifact@v7
+        with:
+          name: client-cli-${{ matrix.target }}
+          path: |
+            ${{ env.ASSET }}
+            ${{ env.ASSET }}.sha256
+
+  # -----------------------------------------------------------------------
+  # Attach the datapress-cli binaries + install scripts to the GitHub
+  # Release for the tag. Runs only on `v*` tags, after all CLI builds.
+  #
+  # `generate_release_notes: false` so this never clobbers the notes that
+  # publish.yml's github-release job writes for the same tag; both jobs add
+  # distinct files to the one release.
+  # -----------------------------------------------------------------------
+  github-release:
+    name: client-github-release
+    needs: [cli]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          path:    cli-dist
+          pattern: 'client-cli-*'
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            cli-dist/*
+            install-cli.sh
+            install-cli.ps1
+          fail_on_unmatched_files: true
+          generate_release_notes: false
