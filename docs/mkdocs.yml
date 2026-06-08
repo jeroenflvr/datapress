@@ -96,7 +96,7 @@ markdown_extensions:
 
 extra:
   # Shown as a badge next to the repository link in the header.
-  datapress_version: 0.4.12
+  datapress_version: 0.4.13
   # Used by the `extrahead` override (overrides/main.html) for Open Graph,
   # Twitter cards, and JSON-LD structured data.
   og_image: assets/images/datapress-card.png

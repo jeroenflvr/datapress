@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.13] - 2026-06-08
+
+### Bug Fixes
+
+- *(client-py)* Use valid pypi troveclassifier ([e0b66f9](https://github.com/jeroenflvr/datapress/commit/e0b66f9aee8f6afffdf87dbd4c2eed4420124a01))
+
 ## [0.4.12] - 2026-06-08
 
 ### Features
