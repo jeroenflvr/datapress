@@ -2661,6 +2661,7 @@ dependencies = [
  "bytes",
  "datafusion",
  "duckdb",
+ "flate2",
  "futures-util",
  "glob",
  "include_dir",

@@ -135,6 +135,7 @@ jobs:
         with:
           packages-dir: dist
           password: ${{ secrets.PYPI_API_TOKEN_CLIENT }}
+          skip-existing: true
 
   # -----------------------------------------------------------------------
   # Publish the client crates to crates.io (so `cargo install datapress-cli`

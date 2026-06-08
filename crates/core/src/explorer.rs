@@ -26,15 +26,6 @@ use crate::backend::Backend;
 use crate::config::DatasetConfig;
 use crate::schema::LogicalType;
 
-/// Self-hosted DuckDB-WASM assets, embedded at compile time.
-///
-/// `$CARGO_MANIFEST_DIR` is `crates/core/`; the vendored wasm binaries,
-/// worker scripts and bundled ESM live two levels up under
-/// `docs/src/assets/vendor/duckdb/` (refreshed by `task docs:vendor-duckdb`).
-/// Embedding them lets the explorer terminal run the shell with no CDN.
-static DUCKDB_VENDOR: Dir<'_> =
-    include_dir!("$CARGO_MANIFEST_DIR/../../docs/src/assets/vendor/duckdb");
-
 /// Self-hosted Apache Arrow (UMD) bundle, embedded at compile time. Used by
 /// the API Query tab to decode Arrow IPC responses in the browser without a
 /// CDN. Refreshed by `task docs:vendor-arrow`.
@@ -296,23 +287,16 @@ async fn asset_swagger_icon() -> HttpResponse {
 }
 
 /// Serve a vendored DuckDB-WASM asset (wasm binary, worker script, bundled
-/// ESM, or xterm CSS) from the binary-embedded directory. The large wasm
-/// binaries are immutable per release, so they carry a long-lived cache header.
+/// ESM, or xterm CSS) from the shared binary-embedded store. The large wasm
+/// binaries are stored pre-gzipped and served with `Content-Encoding: gzip`;
+/// see [`crate::duckdb_vendor`].
 async fn asset_duckdb_vendor(req: HttpRequest) -> HttpResponse {
     let path: String = req.match_info().query("path").into();
-    match DUCKDB_VENDOR.get_file(&path) {
-        Some(f) => HttpResponse::Ok()
-            .content_type(
-                mime_guess::from_path(&path)
-                    .first_or_octet_stream()
-                    .as_ref(),
-            )
-            .insert_header((header::CACHE_CONTROL, "public, max-age=86400"))
-            .body(f.contents()),
-        None => HttpResponse::NotFound()
+    crate::duckdb_vendor::serve(&path).unwrap_or_else(|| {
+        HttpResponse::NotFound()
             .content_type("text/plain; charset=utf-8")
-            .body("Not Found"),
-    }
+            .body("Not Found")
+    })
 }
 
 /// Serve the vendored Apache Arrow UMD bundle from the binary-embedded

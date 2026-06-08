@@ -62,7 +62,7 @@ jobs:
         with:
           target:         ${{ matrix.target }}
           manylinux:      auto
-          args:           --release --features docs,swagger,auth,metrics,explorer --out dist
+          args:           --release --strip --features docs,swagger,auth,metrics,explorer --out dist
           rust-toolchain: stable
           # The rust-cross manylinux2014 images ship GCC 4.8 (CentOS 7
           # base), which trips DuckDB's `__GNUC__ < 5` ABI guard in
@@ -109,7 +109,7 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           target:         aarch64
-          args:           --release --features docs,swagger,auth,metrics,explorer --out dist
+          args:           --release --strip --features docs,swagger,auth,metrics,explorer --out dist
           rust-toolchain: stable
           sccache:        'false'
       - uses: actions/upload-artifact@v7
@@ -136,7 +136,7 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           target:         x64
-          args:           --release --features docs,swagger,auth,metrics,explorer --out dist
+          args:           --release --strip --features docs,swagger,auth,metrics,explorer --out dist
           rust-toolchain: stable
           sccache:        'false'
       - uses: actions/upload-artifact@v7
@@ -186,6 +186,9 @@ jobs:
         with:
           packages-dir: dist
           password: ${{ secrets.PYPI_API_TOKEN }}
+          # Tolerate re-runs after a partial upload (e.g. one wheel landed
+          # before another was rejected): skip files already on PyPI.
+          skip-existing: true
 
   # -----------------------------------------------------------------------
   # Publish the Rust crates to crates.io (so `cargo install datapress`

@@ -75,6 +75,11 @@ reqwest           = { workspace = true, optional = true }
 arc-swap          = { workspace = true, optional = true }
 askama            = { workspace = true, optional = true }
 
+[build-dependencies]
+# Used only by build.rs to pre-gzip the embedded DuckDB-WASM assets (explorer
+# feature) so the binary / PyPI wheel stays under PyPI's 100 MB file limit.
+flate2 = "1"
+
 [dev-dependencies]
 arrow = { workspace = true }
 actix-rt = "2"
