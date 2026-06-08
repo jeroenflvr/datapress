@@ -50,7 +50,7 @@ println!("{} rows", resp.data.len());
 
 ## Blocking
 
-```rust,no_run
+```rust
 use datapress_client::blocking::Client;
 
 # fn run() -> datapress_client::Result<()> {
@@ -63,7 +63,7 @@ println!("{count} rows");
 
 ## Arrow
 
-```rust,no_run
+```rust
 # use datapress_client::{Client, QueryRequest};
 # async fn run(client: Client, req: QueryRequest) -> datapress_client::Result<()> {
 let batches = client.query_arrow("accidents", &req).await?;
