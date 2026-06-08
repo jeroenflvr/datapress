@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.12] - 2026-06-08
+
+### Features
+
+- Add client ([5a69f79](https://github.com/jeroenflvr/datapress/commit/5a69f7977c8b0424fbec2bf96568bd6fb935bae4))
+
 ## [0.4.11] - 2026-06-07
 
 ### Features
