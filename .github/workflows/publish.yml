@@ -232,15 +232,50 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -euo pipefail
+
+          # `cargo publish` returns once the new version is queryable, but the
+          # crates.io sparse index is CDN-cached and can still serve a stale
+          # file for a short while. The next crate in the chain then fails to
+          # resolve its just-published path dependency (e.g.
+          # "failed to select a version for `datapress-datafusion = ^0.4.15`").
+          # Retry each publish with backoff so a lagging index self-heals.
+          #
+          # Also tolerant of re-runs: if a crate version is already on
+          # crates.io (a previous run published it before a later crate
+          # failed), treat it as success instead of erroring out.
+          publish() {
+            crate="$1"; shift
+            attempt=1; max=6
+            while :; do
+              out="$(cargo publish -p "${crate}" --locked "$@" 2>&1)" && { echo "${out}"; return 0; }
+              echo "${out}"
+              if echo "${out}" | grep -qiE 'already (uploaded|exists)'; then
+                echo "::notice::${crate} version already on crates.io — skipping"
+                return 0
+              fi
+              if [ "${attempt}" -ge "${max}" ]; then
+                echo "::error::cargo publish -p ${crate} failed after ${max} attempts"
+                return 1
+              fi
+              delay=$((attempt * 30))
+              echo "::warning::publish of ${crate} failed (attempt ${attempt}/${max}); \
+                    retrying in ${delay}s to let the crates.io index propagate"
+              sleep "${delay}"
+              # Drop the cached index so the retry re-fetches the registry.
+              rm -rf ~/.cargo/registry/index || true
+              attempt=$((attempt + 1))
+            done
+          }
+
           for crate in datapress-core datapress-duckdb datapress-datafusion datapress; do
             echo "::group::cargo publish -p ${crate}"
             # datapress-duckdb bundles the full DuckDB C++ amalgamation
             # (~1.5 GB debug build). Skip --verify for it: the wheel CI
             # jobs already prove it compiles on every target platform.
             if [ "${crate}" = "datapress-duckdb" ]; then
-              cargo publish -p "${crate}" --locked --no-verify
+              publish "${crate}" --no-verify
             else
-              cargo publish -p "${crate}" --locked
+              publish "${crate}"
             fi
             echo "::endgroup::"
           done
