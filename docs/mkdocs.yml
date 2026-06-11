@@ -173,3 +173,5 @@ nav:
       - Endpoints: reference/endpoints.md
       - Errors: reference/errors.md
       - Changelog: reference/changelog.md
+  - Resources:
+      - resources/index.md
