@@ -524,6 +524,10 @@ impl PyDatasetConfig {
 ///         (1 MiB).
 ///     max_page_size (int): Maximum rows returned by one query page.
 ///         Larger ``page_size`` values are clamped. Default ``100_000``.
+///     force_lazy_above_mb (int): When ``> 0``, datasets whose local
+///         backing files exceed this many MiB are forced into lazy mode
+///         (streamed, not held in RAM) at startup. ``0`` (default)
+///         disables. Local sources only. Default ``0``.
 ///     request_timeout_ms (int): Per-request handler timeout, in
 ///         milliseconds. ``0`` disables the timeout. Default ``30_000``.
 ///     shutdown_timeout_secs (int): Grace period for in-flight requests
@@ -567,6 +571,9 @@ pub struct PyDataPressConfig {
     /// Max rows returned by one query page.
     #[pyo3(get, set)]
     pub max_page_size: u64,
+    /// `>0`: force lazy for datasets larger than this many MiB. `0` off.
+    #[pyo3(get, set)]
+    pub force_lazy_above_mb: u64,
     /// Per-request handler timeout, in ms. `0` = disabled.
     #[pyo3(get, set)]
     pub request_timeout_ms: u64,
@@ -655,6 +662,8 @@ impl PyDataPressConfig {
     ///         Default ``1_048_576``.
     ///     max_page_size (int): Max rows returned by one query page.
     ///         Default ``100_000``.
+    ///     force_lazy_above_mb (int): ``>0`` forces lazy mode for datasets
+    ///         larger than this many MiB. ``0`` disables. Default ``0``.
     ///     request_timeout_ms (int): Per-request handler timeout, in ms.
     ///         ``0`` disables. Default ``30_000``.
     ///     shutdown_timeout_secs (int): Grace period for in-flight
@@ -694,6 +703,7 @@ impl PyDataPressConfig {
         compress           = true,
         max_body_bytes     = 1_048_576,
         max_page_size      = 100_000,
+        force_lazy_above_mb = 0,
         request_timeout_ms = 30_000,
         shutdown_timeout_secs = 30,
         quack_enabled     = false,
@@ -725,6 +735,7 @@ impl PyDataPressConfig {
         compress: bool,
         max_body_bytes: usize,
         max_page_size: u64,
+        force_lazy_above_mb: u64,
         request_timeout_ms: u64,
         shutdown_timeout_secs: u64,
         quack_enabled: bool,
@@ -755,6 +766,7 @@ impl PyDataPressConfig {
             compress,
             max_body_bytes,
             max_page_size,
+            force_lazy_above_mb,
             request_timeout_ms,
             shutdown_timeout_secs,
             quack_enabled,
@@ -816,6 +828,7 @@ impl PyDataPressConfig {
             compress: self.compress,
             max_body_bytes: self.max_body_bytes,
             max_page_size: self.max_page_size,
+            force_lazy_above_mb: self.force_lazy_above_mb,
             request_timeout_ms: self.request_timeout_ms,
             shutdown_timeout_secs: self.shutdown_timeout_secs,
             quack: datapress_core::config::QuackConfig {
@@ -1189,6 +1202,7 @@ impl PyDataPress {
                 explorer,
                 auth,
                 sql,
+                datafusion: datapress_core::config::DataFusionConfig::default(),
                 datasets,
             },
         })
@@ -1272,6 +1286,7 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
             compress: cfg.server.compress,
             max_body_bytes: cfg.server.max_body_bytes,
             max_page_size: cfg.server.max_page_size,
+            force_lazy_above_mb: cfg.server.force_lazy_above_mb,
             request_timeout_ms: cfg.server.request_timeout_ms,
             shutdown_timeout_secs: cfg.server.shutdown_timeout_secs,
             quack: cfg.server.quack.clone(),
@@ -1282,6 +1297,7 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
         explorer: cfg.explorer.clone(),
         auth: cfg.auth.clone(),
         sql: cfg.sql.clone(),
+        datafusion: cfg.datafusion.clone(),
         datasets: cfg.datasets.clone(),
     }
 }

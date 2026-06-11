@@ -19,13 +19,16 @@ and queries it with [Apache DataFusion](https://datafusion.apache.org/).
   stream. Resident no-filter streams can reuse existing batches directly;
   SQL fallback paths may still collect DataFusion execution batches
   before DataPress encodes them.
-- **Lazy parquet mode.** `lazy = true` registers a `ListingTable`
-  pointing at parquet files; DataFusion handles projection &
-  predicate pushdown for datasets too big to materialise.
+- **Lazy mode.** `lazy = true` streams the dataset from disk / S3
+  instead of materialising it into RAM. Parquet registers a
+  `ListingTable`; delta registers deltalake's own DataFusion provider
+  (transaction log read once for the file list, then row groups stream
+  per query). DataFusion handles projection & predicate pushdown for
+  datasets too big to materialise.
 - **Delta tables.** `kind = "delta"` reads the table (local or S3) via
-  the [`deltalake`](https://crates.io/crates/deltalake) crate and
-  materialises it into the same resident Arrow chunks. Eager only —
-  `lazy = true` is rejected for delta sources at startup.
+  the [`deltalake`](https://crates.io/crates/deltalake) crate. By default
+  it materialises into the resident Arrow chunks; with `lazy = true` it is
+  streamed via the deltalake DataFusion provider instead.
 - **Hot reload.** `POST /api/v1/datasets/{name}/reload` swaps the
   resident chunks atomically using an `ArcSwap` double buffer; queries
   in flight see the old data, queries arriving after the swap see the

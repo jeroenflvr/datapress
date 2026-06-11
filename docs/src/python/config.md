@@ -14,6 +14,7 @@ cfg = DataPressConfig(
     compress=True,
     max_body_bytes=1_048_576,     # 413 above this
     max_page_size=100_000,        # clamp query page_size above this
+    force_lazy_above_mb=0,        # >0: force lazy for datasets larger than this (MiB)
     request_timeout_ms=30_000,    # 504 above this; 0 disables
     shutdown_timeout_secs=30,     # SIGTERM/SIGINT grace period
     swagger_enabled=True,
@@ -130,7 +131,7 @@ ds = DatasetConfig(
 | `mode`                 | DataFusion eq-index policy: `"auto"` (default), `"none"`, `"list"`.  |
 | `index_columns`        | Required when `mode="list"`.                                         |
 | `index_max_cardinality`| Auto-mode cardinality cap. Default 100_000.                          |
-| `lazy`                 | DataFusion+parquet only. Stream from disk instead of materialising.  |
+| `lazy`                 | Stream from disk instead of materialising (parquet + delta).         |
 | `description`          | Free-form metadata; surfaced by `/api/v1/datasets`.                  |
 | `s3`                   | `S3Config` — only for `s3://` sources.                               |
 

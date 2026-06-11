@@ -93,6 +93,10 @@ async fn write_delta(dir: &std::path::Path, ids: &[i64], names: &[&str], scores:
 
 /// Build a `Store` over a single Delta-table dataset named `people`.
 async fn make_delta_store(location: &str) -> Store {
+    make_delta_store_lazy(location, false).await
+}
+
+async fn make_delta_store_lazy(location: &str, lazy: bool) -> Store {
     let cfg = AppConfig {
         server: ServerConfig::default(),
         docs: datapress_core::config::DocsConfig::default(),
@@ -101,6 +105,7 @@ async fn make_delta_store(location: &str) -> Store {
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
+        datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets: vec![DatasetConfig {
             name: "people".into(),
             source: SourceConfig {
@@ -111,7 +116,7 @@ async fn make_delta_store(location: &str) -> Store {
             index: IndexConfig::default(),
             columns: vec![],
             dict_encode: true,
-            lazy: false,
+            lazy,
         }],
     };
     Store::load(&cfg).await.expect("Store::load")
@@ -155,6 +160,7 @@ async fn make_store_with_max_page_size(location: &str, lazy: bool, max_page_size
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
+        datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets: vec![DatasetConfig {
             name: "people".into(),
             source: SourceConfig {
@@ -262,6 +268,38 @@ async fn delta_local_reads_and_filters() {
     assert!(store.names().contains(&"people".to_string()));
 
     // Predicate pushdown filters through the materialised table.
+    let filtered = parse_rows(
+        &store
+            .query("people", &req_with(vec![pred("name", "eq", Value::from("Bob"))]))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0]["id"], Value::from(2));
+}
+
+#[actix_web::test]
+async fn delta_local_lazy_reads_and_filters() {
+    let tmp = TempDir::new().unwrap();
+    write_delta(
+        tmp.path(),
+        &[1, 2, 3, 4],
+        &["Anna", "Bob", "Cara", "Dan"],
+        &[10.0, 20.0, 30.0, 40.0],
+    )
+    .await;
+    let store = make_delta_store_lazy(tmp.path().to_str().unwrap(), true).await;
+
+    // Lazy delta streams via the deltalake DataFusion provider; full scan
+    // still returns every row.
+    let rows = parse_rows(&store.query("people", &empty_req()).await.unwrap());
+    assert_eq!(rows.len(), 4);
+
+    // Discovery surfaces the delta table under its dataset name.
+    assert!(store.names().contains(&"people".to_string()));
+
+    // Predicate pushdown filters through the lazy provider (Delta file
+    // skipping + parquet row-group pruning).
     let filtered = parse_rows(
         &store
             .query("people", &req_with(vec![pred("name", "eq", Value::from("Bob"))]))

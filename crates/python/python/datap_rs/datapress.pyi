@@ -151,6 +151,7 @@ class DataPressConfig:
     compress: bool
     max_body_bytes: int
     max_page_size: int
+    force_lazy_above_mb: int
     request_timeout_ms: int
     shutdown_timeout_secs: int
     quack_enabled: bool
@@ -182,6 +183,7 @@ class DataPressConfig:
         compress: bool = True,
         max_body_bytes: int = 1_048_576,
         max_page_size: int = 100_000,
+        force_lazy_above_mb: int = 0,
         request_timeout_ms: int = 30_000,
         shutdown_timeout_secs: int = 30,
         quack_enabled: bool = False,
@@ -223,6 +225,10 @@ class DataPressConfig:
                 Larger bodies are rejected with ``413``. Default ``1_048_576``.
             max_page_size: Maximum rows returned by one query page. Larger
                 ``page_size`` values are clamped. Default ``100_000``.
+            force_lazy_above_mb: When ``> 0``, datasets whose local backing
+                files exceed this many MiB are forced into lazy mode
+                (streamed, not held in RAM) at startup. ``0`` (default)
+                disables. Local sources only. Default ``0``.
             request_timeout_ms: Per-request handler timeout, in ms.
                 ``0`` disables the timeout. Default ``30_000``.
             shutdown_timeout_secs: Grace period for in-flight requests after

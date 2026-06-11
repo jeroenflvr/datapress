@@ -102,7 +102,7 @@ Seven public classes, no module-level state:
 
 | Class             | Purpose                                                              |
 |-------------------|----------------------------------------------------------------------|
-| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `max_page_size`, `request_timeout_ms`, `shutdown_timeout_secs`, `metrics_enabled`, `metrics_path`, `sql_enabled`, `sql_max_rows`, `admin_token`. |
+| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `max_page_size`, `force_lazy_above_mb`, `request_timeout_ms`, `shutdown_timeout_secs`, `metrics_enabled`, `metrics_path`, `sql_enabled`, `sql_max_rows`, `admin_token`. |
 | `DatasetConfig`   | One dataset: `name`, `source`, `format`, `mode`, optional S3 + index.|
 | `S3Config`        | S3 / S3-compatible credentials and endpoint config.                  |
 | `HMACKeyPair`     | Access/secret key pair returned by an `S3Config` credentials provider. |
@@ -198,6 +198,7 @@ DataPressConfig(
     port=8000,
     max_body_bytes=1_048_576,    # 413 above this; default 1 MiB
     max_page_size=100_000,       # clamp query page_size above this
+    force_lazy_above_mb=0,       # >0: force lazy for datasets larger than this (MiB)
     request_timeout_ms=30_000,   # 504 above this; 0 disables; default 30s
     shutdown_timeout_secs=30,    # SIGTERM/SIGINT grace period, in seconds
 )

@@ -87,16 +87,19 @@ kind     = "parquet"
 location = "data/sales/2024/*/*.parquet"
 ```
 
-## 4. Lazy mode for very large parquet datasets
+## 4. Lazy mode for very large parquet / delta datasets
 
 When the decompressed Arrow size would not fit in RAM (or the index is
 too expensive to build), enable `lazy = true`. Both backends keep the
 dataset on disk and stream it at query time instead of materialising it
 into RAM at startup:
 
-- **DataFusion** registers a `ListingTable` against the source and streams
-  row groups; column-projection pushdown and parquet row-group skipping
-  happen automatically.
+- **DataFusion** registers a streaming provider against the source and
+  streams row groups; column-projection pushdown and parquet row-group
+  skipping happen automatically. Parquet uses a `ListingTable`; delta uses
+  deltalake's own DataFusion provider (transaction log read once for the
+  file list, then row groups stream per query with predicate pushdown and
+  Delta file skipping).
 - **DuckDB** registers the dataset as a *view* over the source scan
   (`read_parquet(...)` / `delta_scan(...)`) instead of a materialised
   table, so each query streams row groups from disk / S3 with predicate
@@ -139,11 +142,74 @@ region = "eu-west-1"
 ```
 
 > Lazy mode works on both `backend = "datafusion"` and
-> `backend = "duckdb"`. On DataFusion it requires `kind = "parquet"` and
-> lazy delta is rejected at startup (deltalake reads the transaction log
-> eagerly to know which files are current, so it can't map onto
-> `ListingTable` cleanly). On DuckDB lazy works for parquet and delta
-> sources alike, since the view defers all reading to query time.
+> `backend = "duckdb"`, for `kind = "parquet"` and `kind = "delta"`. On
+> DataFusion, lazy delta uses deltalake's own DataFusion provider rather
+> than a `ListingTable`, so the transaction log is read once at startup to
+> resolve the current file set and the schema, then parquet row groups
+> stream per query. The `[datafusion]` `list_files_cache` knob does not
+> apply to delta (its file list comes from the transaction log, not an
+> object-store `LIST`), but the parquet `pushdown_filters` / `reorder_filters`
+> knobs still affect the underlying scan.
+
+### Force lazy by size (`[server] force_lazy_above_mb`)
+
+Instead of marking each large dataset `lazy = true` by hand, set a single
+server-level size threshold. Any dataset whose backing files exceed it is
+streamed from disk instead of being materialised into RAM at startup —
+exactly as if you'd set `lazy = true` on that dataset.
+
+```toml
+[server]
+force_lazy_above_mb = 512   # datasets over 512 MiB are forced lazy
+```
+
+- `0` (default) disables the check; only datasets with an explicit
+  `lazy = true` stream.
+- A dataset that already sets `lazy = true` is unaffected (it stays lazy).
+- **Local sources only.** S3-backed datasets can't be measured without a
+  network round-trip, so they're never auto-forced — use an explicit
+  `lazy = true` for those.
+- **Delta** tables are measured by summing their `*.parquet` data files
+  under the table root, and forcing works because lazy delta is supported
+  on both backends.
+- Works on both `backend = "datafusion"` and `backend = "duckdb"`.
+
+### DataFusion performance tuning (`[datafusion]`)
+
+The DataFusion backend runs with stock defaults unless you opt in via a
+top-level `[datafusion]` block. Every knob is **off by default**, so this
+block changes nothing until you set it. It mainly helps lazy parquet
+datasets (especially on S3); the DuckDB backend ignores it.
+
+```toml
+[datafusion]
+# Evaluate row filters *during* the parquet decode so rows failing a
+# predicate are never materialised (on top of the row-group / page-index
+# pruning that always happens). Best for selective filters over large row
+# groups. Default false.
+pushdown_filters = true
+
+# Let the scan reorder pushed-down predicates by selectivity. Only has an
+# effect together with pushdown_filters. Default false.
+reorder_filters = true
+
+# Cache object-store file listings so repeated lazy queries reuse LIST
+# results instead of re-listing the source prefix every time — the dominant
+# per-query cost on S3. Default false.
+list_files_cache = true
+
+# Memory budget for the listing cache, in MiB. Default 64.
+list_files_cache_mb = 64
+
+# How long a cached listing stays valid, in seconds. Bounds how long newly
+# written files take to become visible without a reload. 0 = never expires.
+# Default 60.
+list_files_cache_ttl_secs = 60
+```
+
+> Row-group / page-index / bloom-filter pruning and the parquet footer
+> `metadata_size_hint` are already on by DataFusion's defaults, so there is
+> nothing to toggle for those.
 
 ## 5. Delta table — local
 
