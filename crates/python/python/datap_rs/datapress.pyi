@@ -225,10 +225,13 @@ class DataPressConfig:
                 Larger bodies are rejected with ``413``. Default ``1_048_576``.
             max_page_size: Maximum rows returned by one query page. Larger
                 ``page_size`` values are clamped. Default ``100_000``.
-            force_lazy_above_mb: When ``> 0``, datasets whose local backing
+            force_lazy_above_mb: When ``> 0``, datasets whose backing
                 files exceed this many MiB are forced into lazy mode
                 (streamed, not held in RAM) at startup. ``0`` (default)
-                disables. Local sources only. Default ``0``.
+                disables. Local sources are stat'd; on the ``datafusion``
+                backend S3 sources are sized by listing the object store
+                (the ``duckdb`` backend sizes local sources only).
+                Default ``0``.
             request_timeout_ms: Per-request handler timeout, in ms.
                 ``0`` disables the timeout. Default ``30_000``.
             shutdown_timeout_secs: Grace period for in-flight requests after

@@ -204,6 +204,9 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
             d.source.location
         );
         // Force lazy when the source exceeds the server size threshold.
+        // Local sources only on the DuckDB backend — S3 sizing requires an
+        // object-store client that lives in the DataFusion backend, so S3
+        // datasets here are only forced lazy when explicitly configured.
         let d: std::borrow::Cow<'_, DatasetConfig> = match d.force_lazy_bytes(&cfg.server) {
             Some(bytes) => {
                 log::info!(

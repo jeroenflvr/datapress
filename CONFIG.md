@@ -166,13 +166,18 @@ force_lazy_above_mb = 512   # datasets over 512 MiB are forced lazy
 - `0` (default) disables the check; only datasets with an explicit
   `lazy = true` stream.
 - A dataset that already sets `lazy = true` is unaffected (it stays lazy).
-- **Local sources only.** S3-backed datasets can't be measured without a
-  network round-trip, so they're never auto-forced — use an explicit
-  `lazy = true` for those.
+- **Local sources** are sized with a cheap filesystem stat.
+- **S3 sources** are sized on the `datafusion` backend by listing the object
+  store under the source prefix and summing the `*.parquet` objects — this is
+  the main use case, since remote datasets are easy to oversize accidentally.
+  The `duckdb` backend only measures local sources; S3 datasets there must opt
+  in with an explicit `lazy = true`. An S3 listing error is logged and treated
+  as "don't force" so a transient failure never blocks startup.
 - **Delta** tables are measured by summing their `*.parquet` data files
-  under the table root, and forcing works because lazy delta is supported
-  on both backends.
-- Works on both `backend = "datafusion"` and `backend = "duckdb"`.
+  under the table root (locally or on S3), and forcing works because lazy
+  delta is supported on both backends.
+- Works on both `backend = "datafusion"` and `backend = "duckdb"` (with the
+  S3 caveat above).
 
 ### DataFusion performance tuning (`[datafusion]`)
 

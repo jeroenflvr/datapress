@@ -97,10 +97,12 @@ pub struct ServerConfig {
     /// When > 0, any dataset whose backing files exceed this many
     /// megabytes is forced into `lazy` mode at startup (streamed from
     /// disk instead of materialised into RAM), even if `lazy` was not set
-    /// on the dataset. `0` (default) disables the size check. Only local
-    /// sources can be measured — S3-backed datasets are never auto-forced
-    /// (use an explicit `lazy = true`). Delta tables are measured by
-    /// summing their parquet data files.
+    /// on the dataset. `0` (default) disables the size check. Local
+    /// sources are sized with a filesystem stat; on the DataFusion backend
+    /// S3 sources are sized by listing the object store under their prefix
+    /// (the DuckDB backend only sizes local sources — S3 datasets there
+    /// must opt in with an explicit `lazy = true`). Delta tables are
+    /// measured by summing their parquet data files.
     pub force_lazy_above_mb: u64,
     /// Per-request handler timeout, in milliseconds. If a handler hasn't
     /// produced a response within this budget the request is aborted with

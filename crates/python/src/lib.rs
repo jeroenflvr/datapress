@@ -524,10 +524,12 @@ impl PyDatasetConfig {
 ///         (1 MiB).
 ///     max_page_size (int): Maximum rows returned by one query page.
 ///         Larger ``page_size`` values are clamped. Default ``100_000``.
-///     force_lazy_above_mb (int): When ``> 0``, datasets whose local
-///         backing files exceed this many MiB are forced into lazy mode
+///     force_lazy_above_mb (int): When ``> 0``, datasets whose backing
+///         files exceed this many MiB are forced into lazy mode
 ///         (streamed, not held in RAM) at startup. ``0`` (default)
-///         disables. Local sources only. Default ``0``.
+///         disables. Local sources are stat'd; on the ``datafusion``
+///         backend S3 sources are sized by listing the object store (the
+///         ``duckdb`` backend sizes local sources only). Default ``0``.
 ///     request_timeout_ms (int): Per-request handler timeout, in
 ///         milliseconds. ``0`` disables the timeout. Default ``30_000``.
 ///     shutdown_timeout_secs (int): Grace period for in-flight requests

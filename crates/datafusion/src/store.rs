@@ -37,7 +37,7 @@ use datapress_core::backend::{
 };
 use datapress_core::config::{
     AddressingStyle, AppConfig, DataFusionConfig, DatasetConfig, IndexConfig, IndexMode,
-    Partitioning, ResolvedCreds, S3Config, SourceKind,
+    Partitioning, ResolvedCreds, S3Config, ServerConfig, SourceKind,
 };
 use datapress_core::errors::AppError;
 use datapress_core::models::{CountRequest, Predicate, QueryRequest};
@@ -132,7 +132,11 @@ impl Store {
                 d.source.location
             );
             // Force lazy when the source exceeds the server size threshold.
-            let d: std::borrow::Cow<'_, DatasetConfig> = match d.force_lazy_bytes(&cfg.server) {
+            // S3-aware: local sources are stat'd, S3 sources are sized by
+            // listing the object store under their prefix.
+            let d: std::borrow::Cow<'_, DatasetConfig> = match should_force_lazy(d, &cfg.server)
+                .await
+            {
                 Some(bytes) => {
                     log::info!(
                         "dataset '{}': {:.1} MiB exceeds force_lazy_above_mb = {} → forcing lazy",
@@ -1494,6 +1498,88 @@ fn register_s3_object_store(d: &DatasetConfig, ctx: &SessionContext) -> Result<(
         .map_err(|e| AppError::Internal(format!("invalid s3 URL for bucket {bucket}: {e}")))?;
     ctx.register_object_store(&url, Arc::new(store));
     Ok(())
+}
+
+/// Decide whether dataset `d` should be forced lazy because its backing data
+/// exceeds `server.force_lazy_above_mb`. Returns `Some(measured_bytes)` when it
+/// should be forced, `None` otherwise.
+///
+/// Local sources are sized with a cheap filesystem stat (`estimate_local_bytes`);
+/// S3 sources are sized by listing the object store under their prefix. S3
+/// sizing is best-effort: a listing failure logs a warning and returns `None`
+/// (don't force) so a transient S3 error never blocks startup.
+async fn should_force_lazy(d: &DatasetConfig, server: &ServerConfig) -> Option<u64> {
+    if d.lazy || server.force_lazy_above_mb == 0 {
+        return None;
+    }
+    let threshold = server.force_lazy_above_mb.saturating_mul(1024 * 1024);
+
+    let bytes = if d.source.is_s3() {
+        match estimate_s3_bytes(d).await {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!(
+                    "dataset '{}': could not measure S3 size for force_lazy_above_mb: {e}",
+                    d.name
+                );
+                return None;
+            }
+        }
+    } else {
+        d.estimate_local_bytes()?
+    };
+
+    (bytes > threshold).then_some(bytes)
+}
+
+/// Sum the byte size of a dataset's S3 backing data by listing the object
+/// store under the source prefix and adding up every `.parquet` object.
+///
+/// Works for both parquet and delta sources: delta data files are parquet
+/// objects under the table root, so listing the root and counting parquet
+/// gives a coarse (possibly over-counting un-vacuumed files) but cheap size
+/// suitable for the force-lazy gate. Any glob wildcard tail is stripped so the
+/// listing starts at the non-wildcard base prefix.
+async fn estimate_s3_bytes(d: &DatasetConfig) -> Result<u64, AppError> {
+    use futures_util::StreamExt;
+    use object_store::ObjectStore;
+
+    let (bucket, _key) = d.source.s3_bucket()?;
+    let creds = d.resolved_creds();
+    let region = d.resolved_region();
+    let s3 = d.s3.clone().unwrap_or_default();
+    let store = build_s3(bucket, &region, &s3, &creds).map_err(|e| {
+        AppError::Internal(format!(
+            "dataset '{}': build S3 store for '{bucket}': {e}",
+            d.name
+        ))
+    })?;
+
+    // Strip any glob wildcard tail, then reduce the base to a bucket-relative
+    // key for object_store's `list` (which takes a key prefix, not a URL).
+    let (base, _keys) = split_glob_base_keys(&d.source.location);
+    let prefix_key = base
+        .strip_prefix("s3://")
+        .and_then(|rest| rest.split_once('/').map(|(_bucket, key)| key))
+        .unwrap_or("")
+        .trim_end_matches('/');
+    let prefix =
+        (!prefix_key.is_empty()).then(|| object_store::path::Path::from(prefix_key));
+
+    let mut total: u64 = 0;
+    let mut stream = store.list(prefix.as_ref());
+    while let Some(meta) = stream.next().await {
+        let meta = meta.map_err(|e| {
+            AppError::Internal(format!(
+                "dataset '{}': s3 list under '{prefix_key}': {e}",
+                d.name
+            ))
+        })?;
+        if meta.location.as_ref().ends_with(".parquet") {
+            total = total.saturating_add(meta.size);
+        }
+    }
+    Ok(total)
 }
 
 fn build_s3(
