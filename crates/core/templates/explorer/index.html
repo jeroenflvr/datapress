@@ -23,10 +23,22 @@
   <div class="tab-pane fade show active" id="discovery-pane" role="tabpanel">
     <div class="row g-3">
       <div class="col-12 col-lg-4">
+        <div class="btn-group btn-group-sm w-100 mb-2 dataset-sort" role="group" aria-label="Sort datasets">
+          <button type="button" class="btn btn-outline-secondary active" data-sort-key="name" data-sort-dir="asc">
+            Name <i class="bi bi-caret-up-fill sort-caret"></i>
+          </button>
+          <button type="button" class="btn btn-outline-secondary" data-sort-key="rows" data-sort-dir="desc">
+            Rows <i class="bi bi-caret-down-fill sort-caret"></i>
+          </button>
+          <button type="button" class="btn btn-outline-secondary" data-sort-key="cols" data-sort-dir="desc">
+            Cols <i class="bi bi-caret-down-fill sort-caret"></i>
+          </button>
+        </div>
         <div class="list-group dataset-list">
           {% for d in datasets %}
           <a class="list-group-item list-group-item-action{% if loop.first %} active{% endif %}"
              href="#" role="button"
+             data-name="{{ d.name }}" data-rows="{{ d.rows }}" data-cols="{{ d.columns }}"
              hx-get="{{ explorer_base }}/datasets/{{ d.name }}"
              hx-target="#dataset-detail"
              hx-swap="innerHTML"
@@ -219,6 +231,61 @@
       if (!frame.getAttribute("src")) {
         frame.src = "{{ explorer_base }}/terminal";
       }
+    });
+  })();
+</script>
+<script>
+  // Sort the dataset list by name, row count, or column count. Reordering the
+  // existing DOM nodes preserves their htmx bindings and active state.
+  (function () {
+    const list = document.querySelector(".dataset-list");
+    const group = document.querySelector(".dataset-sort");
+    if (!list || !group) return;
+
+    const buttons = Array.from(group.querySelectorAll("button[data-sort-key]"));
+
+    function valueFor(el, key) {
+      if (key === "name") return (el.dataset.name || "").toLowerCase();
+      const n = Number(el.dataset[key === "cols" ? "cols" : "rows"]);
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function apply(key, dir) {
+      const items = Array.from(list.querySelectorAll(".list-group-item"));
+      items.sort(function (a, b) {
+        const va = valueFor(a, key);
+        const vb = valueFor(b, key);
+        let cmp;
+        if (typeof va === "string") cmp = va.localeCompare(vb);
+        else cmp = va - vb;
+        return dir === "asc" ? cmp : -cmp;
+      });
+      items.forEach(function (el) { list.appendChild(el); });
+    }
+
+    buttons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        const key = btn.dataset.sortKey;
+        // Toggle direction when re-clicking the active key.
+        let dir = btn.dataset.sortDir || "asc";
+        if (btn.classList.contains("active")) {
+          dir = dir === "asc" ? "desc" : "asc";
+        }
+        btn.dataset.sortDir = dir;
+
+        buttons.forEach(function (b) { b.classList.remove("active"); });
+        btn.classList.add("active");
+
+        buttons.forEach(function (b) {
+          const caret = b.querySelector(".sort-caret");
+          if (!caret) return;
+          const up = b === btn ? dir === "asc" : (b.dataset.sortDir || "asc") === "asc";
+          caret.classList.toggle("bi-caret-up-fill", up);
+          caret.classList.toggle("bi-caret-down-fill", !up);
+        });
+
+        apply(key, dir);
+      });
     });
   })();
 </script>

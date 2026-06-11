@@ -10,7 +10,7 @@ Each `[[dataset]]` block declares one table that DataPress will expose.
 | `source` | yes      | —              | Sub-table: `{ kind = "parquet" \| "delta", location = "..." }`.                                  |
 | `s3`     | no       | absent         | Only meaningful when `location` starts with `s3://`. See [S3 / object storage](s3.md).           |
 | `index`  | no       | `mode="auto"`  | Equality-index policy (DataFusion only). See [Indexing](indexing.md).                            |
-| `lazy`   | no       | `false`        | DataFusion + parquet only. Skip materialisation; stream row groups at query time.                |
+| `lazy`   | no       | `false`        | Skip materialisation; stream row groups at query time. DataFusion + DuckDB, parquet + delta.     |
 
 ## `source` reference
 

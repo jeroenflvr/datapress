@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use arrow::array::{
@@ -22,7 +23,10 @@ use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
 use datafusion::datasource::{MemTable, TableProvider};
-use datafusion::prelude::SessionContext;
+use datafusion::execution::cache::DefaultListFilesCache;
+use datafusion::execution::cache::cache_manager::CacheManagerConfig;
+use datafusion::execution::runtime_env::RuntimeEnvBuilder;
+use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion::scalar::ScalarValue;
 
 use object_store::aws::AmazonS3Builder;
@@ -32,8 +36,8 @@ use datapress_core::backend::{
     ArrowIpcStream, Backend, DatasetSummary, ReloadStats, arrow_ipc_stream_channel,
 };
 use datapress_core::config::{
-    AddressingStyle, AppConfig, DatasetConfig, IndexConfig, IndexMode, Partitioning, ResolvedCreds,
-    S3Config, SourceKind,
+    AddressingStyle, AppConfig, DataFusionConfig, DatasetConfig, IndexConfig, IndexMode,
+    Partitioning, ResolvedCreds, S3Config, ServerConfig, SourceKind,
 };
 use datapress_core::errors::AppError;
 use datapress_core::models::{CountRequest, Predicate, QueryRequest};
@@ -116,7 +120,7 @@ impl Store {
         // names before execution (see `query_sql`). DataFusion's default
         // identifier normalization is left ON so unquoted *aliases* and
         // CTE names stay case-insensitive, matching DuckDB.
-        let ctx = SessionContext::new();
+        let ctx = build_tuned_context(&cfg.datafusion);
         let mut datasets = HashMap::with_capacity(cfg.datasets.len());
         let mut configs = HashMap::with_capacity(cfg.datasets.len());
 
@@ -127,6 +131,26 @@ impl Store {
                 d.source.kind.as_str(),
                 d.source.location
             );
+            // Force lazy when the source exceeds the server size threshold.
+            // S3-aware: local sources are stat'd, S3 sources are sized by
+            // listing the object store under their prefix.
+            let d: std::borrow::Cow<'_, DatasetConfig> = match should_force_lazy(d, &cfg.server)
+                .await
+            {
+                Some(bytes) => {
+                    log::info!(
+                        "dataset '{}': {:.1} MiB exceeds force_lazy_above_mb = {} → forcing lazy",
+                        d.name,
+                        bytes as f64 / (1024.0 * 1024.0),
+                        cfg.server.force_lazy_above_mb
+                    );
+                    let mut forced = d.clone();
+                    forced.lazy = true;
+                    std::borrow::Cow::Owned(forced)
+                }
+                None => std::borrow::Cow::Borrowed(d),
+            };
+            let d = d.as_ref();
             let (state, provider) = build_dataset(d, &ctx).await?;
             ctx.register_table(d.name.as_str(), provider)?;
             datasets.insert(d.name.clone(), Arc::new(state));
@@ -593,25 +617,68 @@ impl Store {
 // Dataset loading
 // ---------------------------------------------------------------------------
 
+/// Build a tuned `SessionContext` for the whole `Store`.
+///
+/// Everything here is opt-in via the `[datafusion]` config block; with the
+/// defaults this is equivalent to a plain `SessionContext::new()`. Lazy
+/// datasets (`ListingTable` over parquet, possibly on S3) benefit most:
+///
+/// * `pushdown_filters` — evaluate predicates *during* the parquet decode
+///   so filtered-out rows in a surviving row group are never materialised.
+/// * `reorder_filters` — let the scan reorder pushed-down predicates by
+///   selectivity (only meaningful with `pushdown_filters`).
+/// * `list_files_cache` — a `ListFilesCache` on the `RuntimeEnv` so repeated
+///   lazy queries reuse object-store `LIST` results instead of re-listing the
+///   prefix every time — the dominant per-query cost on S3.
+///
+/// Row-group / page-index / bloom-filter pruning and `metadata_size_hint`
+/// are already on by default in this DataFusion version, so they are left
+/// untouched.
+fn build_tuned_context(cfg: &DataFusionConfig) -> SessionContext {
+    let mut config = SessionConfig::new();
+    {
+        let opts = config.options_mut();
+        opts.execution.parquet.pushdown_filters = cfg.pushdown_filters;
+        opts.execution.parquet.reorder_filters = cfg.reorder_filters;
+    }
+
+    if !cfg.list_files_cache {
+        return SessionContext::new_with_config(config);
+    }
+
+    // Cache object-store listings so repeated lazy/S3 queries skip the
+    // LIST round-trips. A zero TTL means infinite (never expires).
+    let ttl = (cfg.list_files_cache_ttl_secs > 0)
+        .then(|| Duration::from_secs(cfg.list_files_cache_ttl_secs));
+    let list_cache = Arc::new(DefaultListFilesCache::new(
+        cfg.list_files_cache_mb.saturating_mul(1024 * 1024),
+        ttl,
+    ));
+    let cache_manager = CacheManagerConfig::default().with_list_files_cache(Some(list_cache));
+
+    let runtime = RuntimeEnvBuilder::new()
+        .with_cache_manager(cache_manager)
+        .build_arc()
+        .expect("failed to build DataFusion runtime env");
+
+    SessionContext::new_with_config_rt(config, runtime)
+}
+
 async fn build_dataset(
     d: &DatasetConfig,
     ctx: &SessionContext,
 ) -> Result<(DatasetState, Arc<dyn TableProvider>), AppError> {
-    // Lazy datasets: register a ListingTable straight against the source
-    // and skip the materialise / index / partition pipeline below. Delta
-    // is rejected — deltalake reads the transaction log eagerly to know
-    // which parquet files are current, so "lazy delta" doesn't map onto
-    // ListingTable cleanly.
+    // Lazy datasets: register a streaming provider straight against the
+    // source and skip the materialise / index / partition pipeline below.
+    // Parquet uses a `ListingTable`; delta uses deltalake's own DataFusion
+    // `TableProvider` (which reads the transaction log once for the file
+    // list, then streams parquet row groups per query with predicate
+    // pushdown + file skipping).
     if d.lazy {
         match (d.source.kind, d.source.is_s3()) {
             (SourceKind::Parquet, false) => return build_lazy_local_parquet(d, ctx).await,
             (SourceKind::Parquet, true) => return build_lazy_s3_parquet(d, ctx).await,
-            (SourceKind::Delta, _) => {
-                return Err(AppError::Internal(format!(
-                    "dataset '{}': lazy mode is not supported for delta sources",
-                    d.name
-                )));
-            }
+            (SourceKind::Delta, _) => return build_lazy_delta(d, ctx).await,
         }
     }
 
@@ -1273,13 +1340,15 @@ async fn read_s3_parquet(
     Ok(df.collect().await?)
 }
 
-/// Open a Delta table (local or S3) and stream every row back as a Vec of
-/// `RecordBatch`. We materialise eagerly so the rest of the backend can
-/// treat all datasets uniformly (single in-memory batch + eq-index).
-async fn read_delta(
+/// Open a Delta table (local or S3) and return its DataFusion
+/// `TableProvider`. The provider reads the transaction log to resolve the
+/// current file list and registers the table's object store on the session
+/// `RuntimeEnv` lazily at scan time, so callers don't need to register a
+/// store themselves.
+async fn open_delta_provider(
     d: &DatasetConfig,
     opts: HashMap<String, String>,
-) -> Result<Vec<RecordBatch>, AppError> {
+) -> Result<Arc<dyn TableProvider>, AppError> {
     let url = deltalake::ensure_table_uri(&d.source.location).map_err(|e| {
         AppError::Internal(format!(
             "dataset '{}': bad delta location '{}': {e}",
@@ -1294,9 +1363,29 @@ async fn read_delta(
                 d.name, d.source.location
             ))
         })?;
-    let provider = table.table_provider().await.map_err(|e| {
+    table.table_provider().await.map_err(|e| {
         AppError::Internal(format!("dataset '{}': delta table_provider: {e}", d.name))
-    })?;
+    })
+}
+
+/// Resolve the deltalake storage-options for a dataset: empty for local
+/// tables, S3 credentials/endpoint for S3-backed ones.
+fn delta_storage_options(d: &DatasetConfig) -> Result<HashMap<String, String>, AppError> {
+    if d.source.is_s3() {
+        delta_s3_options(d)
+    } else {
+        Ok(HashMap::new())
+    }
+}
+
+/// Open a Delta table (local or S3) and stream every row back as a Vec of
+/// `RecordBatch`. We materialise eagerly so the rest of the backend can
+/// treat all datasets uniformly (single in-memory batch + eq-index).
+async fn read_delta(
+    d: &DatasetConfig,
+    opts: HashMap<String, String>,
+) -> Result<Vec<RecordBatch>, AppError> {
+    let provider = open_delta_provider(d, opts).await?;
     // Drive a full scan via a throwaway SessionContext so we end up with
     // an in-memory Vec<RecordBatch> the shared materialise path can use.
     let scan_ctx = SessionContext::new();
@@ -1304,6 +1393,54 @@ async fn read_delta(
         .read_table(provider)
         .map_err(|e| AppError::Internal(format!("dataset '{}': delta read_table: {e}", d.name)))?;
     Ok(df.collect().await?)
+}
+
+/// Build a lazy state + deltalake `TableProvider` for a Delta dataset
+/// (local or S3). The table is never read into RAM: deltalake reads the
+/// transaction log once here to resolve the file list and discovery schema,
+/// then streams parquet row groups on each query (with predicate pushdown
+/// and Delta file skipping). The returned `DatasetState.data` is empty.
+async fn build_lazy_delta(
+    d: &DatasetConfig,
+    _ctx: &SessionContext,
+) -> Result<(DatasetState, Arc<dyn TableProvider>), AppError> {
+    let provider = open_delta_provider(d, delta_storage_options(d)?).await?;
+
+    // The provider's schema is the full logical schema (data + partition
+    // columns), which is exactly the discovery schema we want.
+    let arrow_sch = provider.schema();
+    let columns: Vec<ColumnInfo> = arrow_sch
+        .fields()
+        .iter()
+        .map(|f| {
+            let dt = f.data_type();
+            ColumnInfo {
+                name: f.name().clone(),
+                logical: arrow_to_logical(dt),
+                sql_type: format!("{dt:?}"),
+                nullable: f.is_nullable(),
+            }
+        })
+        .collect();
+    let schema = DatasetSchema::new(&d.name, columns);
+
+    log::info!(
+        "dataset '{}' [{}, lazy]: {} cols, no materialise, no index",
+        d.name,
+        d.source.kind.as_str(),
+        schema.columns.len()
+    );
+
+    Ok((
+        DatasetState {
+            schema,
+            data: Vec::new(),
+            arrow_schema: arrow_sch,
+            index: EqIndex::default(),
+            lazy: true,
+        },
+        provider,
+    ))
 }
 
 /// Build the storage-options HashMap that `deltalake::open_table_with_storage_options`
@@ -1361,6 +1498,88 @@ fn register_s3_object_store(d: &DatasetConfig, ctx: &SessionContext) -> Result<(
         .map_err(|e| AppError::Internal(format!("invalid s3 URL for bucket {bucket}: {e}")))?;
     ctx.register_object_store(&url, Arc::new(store));
     Ok(())
+}
+
+/// Decide whether dataset `d` should be forced lazy because its backing data
+/// exceeds `server.force_lazy_above_mb`. Returns `Some(measured_bytes)` when it
+/// should be forced, `None` otherwise.
+///
+/// Local sources are sized with a cheap filesystem stat (`estimate_local_bytes`);
+/// S3 sources are sized by listing the object store under their prefix. S3
+/// sizing is best-effort: a listing failure logs a warning and returns `None`
+/// (don't force) so a transient S3 error never blocks startup.
+async fn should_force_lazy(d: &DatasetConfig, server: &ServerConfig) -> Option<u64> {
+    if d.lazy || server.force_lazy_above_mb == 0 {
+        return None;
+    }
+    let threshold = server.force_lazy_above_mb.saturating_mul(1024 * 1024);
+
+    let bytes = if d.source.is_s3() {
+        match estimate_s3_bytes(d).await {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!(
+                    "dataset '{}': could not measure S3 size for force_lazy_above_mb: {e}",
+                    d.name
+                );
+                return None;
+            }
+        }
+    } else {
+        d.estimate_local_bytes()?
+    };
+
+    (bytes > threshold).then_some(bytes)
+}
+
+/// Sum the byte size of a dataset's S3 backing data by listing the object
+/// store under the source prefix and adding up every `.parquet` object.
+///
+/// Works for both parquet and delta sources: delta data files are parquet
+/// objects under the table root, so listing the root and counting parquet
+/// gives a coarse (possibly over-counting un-vacuumed files) but cheap size
+/// suitable for the force-lazy gate. Any glob wildcard tail is stripped so the
+/// listing starts at the non-wildcard base prefix.
+async fn estimate_s3_bytes(d: &DatasetConfig) -> Result<u64, AppError> {
+    use futures_util::StreamExt;
+    use object_store::ObjectStore;
+
+    let (bucket, _key) = d.source.s3_bucket()?;
+    let creds = d.resolved_creds();
+    let region = d.resolved_region();
+    let s3 = d.s3.clone().unwrap_or_default();
+    let store = build_s3(bucket, &region, &s3, &creds).map_err(|e| {
+        AppError::Internal(format!(
+            "dataset '{}': build S3 store for '{bucket}': {e}",
+            d.name
+        ))
+    })?;
+
+    // Strip any glob wildcard tail, then reduce the base to a bucket-relative
+    // key for object_store's `list` (which takes a key prefix, not a URL).
+    let (base, _keys) = split_glob_base_keys(&d.source.location);
+    let prefix_key = base
+        .strip_prefix("s3://")
+        .and_then(|rest| rest.split_once('/').map(|(_bucket, key)| key))
+        .unwrap_or("")
+        .trim_end_matches('/');
+    let prefix =
+        (!prefix_key.is_empty()).then(|| object_store::path::Path::from(prefix_key));
+
+    let mut total: u64 = 0;
+    let mut stream = store.list(prefix.as_ref());
+    while let Some(meta) = stream.next().await {
+        let meta = meta.map_err(|e| {
+            AppError::Internal(format!(
+                "dataset '{}': s3 list under '{prefix_key}': {e}",
+                d.name
+            ))
+        })?;
+        if meta.location.as_ref().ends_with(".parquet") {
+            total = total.saturating_add(meta.size);
+        }
+    }
+    Ok(total)
 }
 
 fn build_s3(

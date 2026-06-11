@@ -29,8 +29,8 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*; \
     if [ -z "${VERSION:-}" ]; then echo "VERSION build-arg is required" >&2; exit 1; fi; \
     case "$TARGETARCH" in \
-      amd64) triple="x86_64-unknown-linux-gnu" ;; \
-      arm64) triple="aarch64-unknown-linux-gnu" ;; \
+      amd64) triple="x86_64-unknown-linux-musl" ;; \
+      arm64) triple="aarch64-unknown-linux-musl" ;; \
       *) echo "unsupported TARGETARCH: $TARGETARCH" >&2; exit 1 ;; \
     esac; \
     base="https://github.com/${REPO}/releases/download/v${VERSION}"; \

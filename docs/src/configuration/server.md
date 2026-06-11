@@ -13,6 +13,7 @@ port    = 8080
 # compress = true
 # max_body_bytes        = 1048576    # 413 above this
 # max_page_size         = 100000     # clamp query page_size above this
+# force_lazy_above_mb   = 0          # >0: force lazy for datasets larger than this
 # request_timeout_ms    = 30000      # 504 above this; 0 disables
 # shutdown_timeout_secs = 30         # SIGTERM grace period
 
@@ -36,6 +37,7 @@ read_only = true                    # allow reads plus Quack attach handshake
 | `compress`              | `true`      | Negotiate gzip / brotli / zstd via `Accept-Encoding`.                                     |
 | `max_body_bytes`        | `1048576`   | Max accepted JSON request body. Larger → `413 Payload Too Large`.                         |
 | `max_page_size`         | `100000`    | Max rows returned by one `/query` page. Larger `page_size` values are clamped.             |
+| `force_lazy_above_mb`   | `0`         | `>0`: datasets whose backing files exceed this many MiB are forced into `lazy` mode at startup. `0` disables. Local sources are stat'd; S3 sources are sized on the `datafusion` backend by listing the object store (the `duckdb` backend sizes local sources only). Delta is measured by its parquet data files. |
 | `request_timeout_ms`    | `30000`     | Per-request handler timeout (ms). Long handlers are cancelled and the client gets `504`. `0` disables. |
 | `shutdown_timeout_secs` | `30`        | Grace period for in-flight requests after `SIGTERM` / `SIGINT`.                           |
 

@@ -34,11 +34,11 @@ class Datapress < Formula
 
   on_linux do
     on_arm do
-      url "https://github.com/jeroenflvr/datapress/releases/download/v#{version}/datapress-v#{version}-aarch64-unknown-linux-gnu.tar.gz"
+      url "https://github.com/jeroenflvr/datapress/releases/download/v#{version}/datapress-v#{version}-aarch64-unknown-linux-musl.tar.gz"
       sha256 "d1245dd374c62b44c617c4b6d6091396170aee51f65dd2336f4f558b0b6ab660"
     end
     on_intel do
-      url "https://github.com/jeroenflvr/datapress/releases/download/v#{version}/datapress-v#{version}-x86_64-unknown-linux-gnu.tar.gz"
+      url "https://github.com/jeroenflvr/datapress/releases/download/v#{version}/datapress-v#{version}-x86_64-unknown-linux-musl.tar.gz"
       sha256 "ebe497d5744eecb9221232ebdaa8dfb2c17c3f8f3d18ed363636580c287c1bb6"
     end
   end

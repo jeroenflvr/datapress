@@ -55,6 +55,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub sql: SqlConfig,
     #[serde(default)]
+    pub datafusion: DataFusionConfig,
+    #[serde(default)]
     pub auth: AuthConfig,
     #[serde(rename = "dataset", default)]
     pub datasets: Vec<DatasetConfig>,
@@ -92,6 +94,16 @@ pub struct ServerConfig {
     /// `page_size` values are clamped before the backend runs.
     /// Default `100_000`.
     pub max_page_size: u64,
+    /// When > 0, any dataset whose backing files exceed this many
+    /// megabytes is forced into `lazy` mode at startup (streamed from
+    /// disk instead of materialised into RAM), even if `lazy` was not set
+    /// on the dataset. `0` (default) disables the size check. Local
+    /// sources are sized with a filesystem stat; on the DataFusion backend
+    /// S3 sources are sized by listing the object store under their prefix
+    /// (the DuckDB backend only sizes local sources — S3 datasets there
+    /// must opt in with an explicit `lazy = true`). Delta tables are
+    /// measured by summing their parquet data files.
+    pub force_lazy_above_mb: u64,
     /// Per-request handler timeout, in milliseconds. If a handler hasn't
     /// produced a response within this budget the request is aborted with
     /// `504 Gateway Timeout`. Default `30_000` (30 s). Set `0` to disable.
@@ -117,6 +129,7 @@ impl Default for ServerConfig {
             compress: true,
             max_body_bytes: 1024 * 1024,
             max_page_size: 100_000,
+            force_lazy_above_mb: 0,
             request_timeout_ms: 30_000,
             shutdown_timeout_secs: 30,
             quack: QuackConfig::default(),
@@ -400,6 +413,50 @@ impl Default for SqlConfig {
         Self {
             enabled: false,
             max_rows: 100_000,
+        }
+    }
+}
+
+/// DataFusion backend performance tuning (`[datafusion]` block).
+///
+/// Every knob is **off / stock by default**, so the backend behaves exactly
+/// like DataFusion out of the box unless you opt in. These mainly help lazy
+/// (`lazy = true`) parquet datasets, especially on object storage. Ignored by
+/// the DuckDB backend.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DataFusionConfig {
+    /// Push row-level filters down into the parquet decoder so rows that fail
+    /// a predicate are never materialised (in addition to the row-group /
+    /// page-index pruning that always happens). DataFusion default is `false`
+    /// because for some workloads the extra per-row evaluation is not worth
+    /// it; turn it on for selective filters over large row groups.
+    pub pushdown_filters: bool,
+    /// Let the parquet scan reorder pushed-down predicates by estimated
+    /// selectivity. Only has an effect together with `pushdown_filters`.
+    /// DataFusion default is `false`.
+    pub reorder_filters: bool,
+    /// Cache object-store file listings on the shared runtime so repeated
+    /// lazy queries reuse `LIST` results instead of re-listing the source
+    /// prefix every time — the dominant per-query cost on S3. Default `false`.
+    pub list_files_cache: bool,
+    /// Memory budget for the file-listing cache, in MiB. Only used when
+    /// `list_files_cache = true`. Default `64`.
+    pub list_files_cache_mb: usize,
+    /// How long a cached listing stays valid, in seconds. Bounds how long it
+    /// takes for newly written files to become visible without an explicit
+    /// reload. `0` means no expiry (infinite). Default `60`.
+    pub list_files_cache_ttl_secs: u64,
+}
+
+impl Default for DataFusionConfig {
+    fn default() -> Self {
+        Self {
+            pushdown_filters: false,
+            reorder_filters: false,
+            list_files_cache: false,
+            list_files_cache_mb: 64,
+            list_files_cache_ttl_secs: 60,
         }
     }
 }
@@ -1196,6 +1253,63 @@ impl DatasetConfig {
         Ok(files)
     }
 
+    /// Estimate the on-disk byte size of this dataset's local backing
+    /// files. Returns `None` for S3 sources (sizing would require a
+    /// network round-trip) or when nothing can be measured.
+    ///
+    /// * `parquet` sums the resolved `.parquet` files (single file,
+    ///   directory, or glob).
+    /// * `delta` sums every `*.parquet` data file under the table root.
+    ///   This slightly over-counts when stale files haven't been vacuumed,
+    ///   which is fine for a coarse force-lazy threshold.
+    pub fn estimate_local_bytes(&self) -> Option<u64> {
+        if self.source.is_s3() {
+            return None;
+        }
+        match self.source.kind {
+            SourceKind::Parquet => {
+                let files = self.resolve_local_parquet_files().ok()?;
+                Some(
+                    files
+                        .iter()
+                        .filter_map(|p| std::fs::metadata(p).ok())
+                        .map(|m| m.len())
+                        .sum(),
+                )
+            }
+            SourceKind::Delta => {
+                let root = self.source.location.trim_end_matches('/');
+                let pattern = format!("{root}/**/*.parquet");
+                let paths = glob::glob(&pattern).ok()?;
+                Some(
+                    paths
+                        .filter_map(Result::ok)
+                        .filter_map(|p| std::fs::metadata(&p).ok())
+                        .filter(|m| m.is_file())
+                        .map(|m| m.len())
+                        .sum(),
+                )
+            }
+        }
+    }
+
+    /// Decide whether this dataset should be forced into lazy mode given
+    /// the server's `force_lazy_above_mb` threshold. Returns `Some(bytes)`
+    /// (the measured size) when it should be forced, so the caller can log
+    /// it. Returns `None` when the dataset is already lazy, the threshold
+    /// is disabled, the source is S3, or the measured size is unknown or at
+    /// or below the threshold.
+    pub fn force_lazy_bytes(&self, server: &ServerConfig) -> Option<u64> {
+        if self.lazy || server.force_lazy_above_mb == 0 {
+            return None;
+        }
+        let threshold = server.force_lazy_above_mb.saturating_mul(1024 * 1024);
+        match self.estimate_local_bytes() {
+            Some(bytes) if bytes > threshold => Some(bytes),
+            _ => None,
+        }
+    }
+
     /// Env-var prefix derived from the dataset name: uppercase with
     /// non-alphanumeric chars replaced by `_`. E.g. `sales.eu-1` →
     /// `SALES_EU_1`.
@@ -1269,6 +1383,7 @@ mod tests {
         assert!(s.compress);
         assert_eq!(s.max_body_bytes, 1024 * 1024);
         assert_eq!(s.max_page_size, 100_000);
+        assert_eq!(s.force_lazy_above_mb, 0);
         assert_eq!(s.request_timeout_ms, 30_000);
         assert!(!s.quack.enabled);
         assert_eq!(s.quack.uri, "quack:localhost");
@@ -1289,6 +1404,7 @@ mod tests {
             compress = false
             max_body_bytes = 4096
             max_page_size = 50000
+            force_lazy_above_mb = 256
             request_timeout_ms = 0
 
             [server.quack]
@@ -1308,6 +1424,7 @@ mod tests {
         assert!(!cfg.server.compress);
         assert_eq!(cfg.server.max_body_bytes, 4096);
         assert_eq!(cfg.server.max_page_size, 50_000);
+        assert_eq!(cfg.server.force_lazy_above_mb, 256);
         assert_eq!(cfg.server.request_timeout_ms, 0);
         assert!(cfg.server.quack.enabled);
         assert_eq!(cfg.server.quack.uri, "quack:localhost:9495");
@@ -1316,6 +1433,67 @@ mod tests {
         assert_eq!(cfg.datasets.len(), 1);
         assert_eq!(cfg.datasets[0].name, "x");
         assert!(cfg.datasets[0].dict_encode); // default
+    }
+
+    #[test]
+    fn force_lazy_bytes_logic() {
+        // A unique temp dir with one 2 MiB "parquet" file (contents are
+        // irrelevant — estimate_local_bytes only stats file lengths).
+        let dir = std::env::temp_dir().join(format!(
+            "dp-force-lazy-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let two_mib = 2 * 1024 * 1024;
+        let file = dir.join("data.parquet");
+        std::fs::write(&file, vec![0u8; two_mib]).unwrap();
+
+        let mk = |kind: SourceKind, location: &str, lazy: bool| DatasetConfig {
+            name: "t".into(),
+            source: SourceConfig {
+                kind,
+                location: location.to_string(),
+            },
+            s3: None,
+            index: IndexConfig::default(),
+            columns: vec![],
+            dict_encode: true,
+            lazy,
+        };
+        let server = |mb: u64| ServerConfig {
+            force_lazy_above_mb: mb,
+            ..ServerConfig::default()
+        };
+
+        // Sizing: single file, directory walk, and delta dir walk all see 2 MiB.
+        let file_ds = mk(SourceKind::Parquet, file.to_str().unwrap(), false);
+        assert_eq!(file_ds.estimate_local_bytes(), Some(two_mib as u64));
+        let dir_ds = mk(SourceKind::Parquet, dir.to_str().unwrap(), false);
+        assert_eq!(dir_ds.estimate_local_bytes(), Some(two_mib as u64));
+        let delta_ds = mk(SourceKind::Delta, dir.to_str().unwrap(), false);
+        assert_eq!(delta_ds.estimate_local_bytes(), Some(two_mib as u64));
+
+        // Threshold disabled → never force.
+        assert_eq!(file_ds.force_lazy_bytes(&server(0)), None);
+        // 1 MiB threshold, 2 MiB file → forced (returns measured size).
+        assert_eq!(file_ds.force_lazy_bytes(&server(1)), Some(two_mib as u64));
+        // 4 MiB threshold → not forced.
+        assert_eq!(file_ds.force_lazy_bytes(&server(4)), None);
+
+        // Already-lazy datasets are never re-flagged.
+        let lazy_ds = mk(SourceKind::Parquet, file.to_str().unwrap(), true);
+        assert_eq!(lazy_ds.force_lazy_bytes(&server(1)), None);
+
+        // S3 sources can't be measured → never auto-forced.
+        let s3_ds = mk(SourceKind::Parquet, "s3://bucket/data.parquet", false);
+        assert_eq!(s3_ds.estimate_local_bytes(), None);
+        assert_eq!(s3_ds.force_lazy_bytes(&server(1)), None);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
@@ -1332,6 +1510,7 @@ mod tests {
                 metrics: MetricsConfig::default(),
                 explorer: ExplorerConfig::default(),
                 sql: SqlConfig::default(),
+                datafusion: DataFusionConfig::default(),
                 auth: AuthConfig::default(),
                 datasets: vec![],
             };
@@ -1348,6 +1527,7 @@ mod tests {
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
             sql: SqlConfig::default(),
+            datafusion: DataFusionConfig::default(),
             auth: AuthConfig {
                 read_scopes: vec!["Datasets:Read".into(), "API.READ".into()],
                 reload_scopes: vec!["Datasets:Reload".into()],
@@ -1369,6 +1549,7 @@ mod tests {
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
             sql: SqlConfig::default(),
+            datafusion: DataFusionConfig::default(),
             auth: AuthConfig::default(),
             datasets: vec![],
         };
@@ -1397,6 +1578,7 @@ mod tests {
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
             sql: SqlConfig::default(),
+            datafusion: DataFusionConfig::default(),
             auth: AuthConfig {
                 enabled: true,
                 issuer: "https://tenant.example.com/".into(),
@@ -1437,6 +1619,7 @@ mod tests {
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
             sql: SqlConfig::default(),
+            datafusion: DataFusionConfig::default(),
             auth: AuthConfig::default(),
             datasets: vec![DatasetConfig {
                 name: "x".into(),

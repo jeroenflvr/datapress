@@ -81,6 +81,7 @@ fn make_registry_at(location: &str) -> Arc<Registry> {
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
+        datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets: vec![DatasetConfig {
             name: "people".into(),
             source: SourceConfig {
@@ -109,6 +110,7 @@ fn make_registry_lazy(location: &str) -> Arc<Registry> {
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
+        datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets: vec![DatasetConfig {
             name: "people".into(),
             source: SourceConfig {

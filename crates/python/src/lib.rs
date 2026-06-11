@@ -23,8 +23,9 @@ use pyo3::prelude::*;
 
 use datapress_core::config::{
     AddressingStyle, AppConfig, AuthConfig as CoreAuthConfig, Backend, BucketInHost,
-    DatasetConfig as CoreDatasetConfig, ExplorerConfig as CoreExplorerConfig, IndexConfig,
-    IndexMode, MetricsConfig as CoreMetricsConfig, Partitioning, S3Config as CoreS3Config,
+    DataFusionConfig as CoreDataFusionConfig, DatasetConfig as CoreDatasetConfig,
+    ExplorerConfig as CoreExplorerConfig, IndexConfig, IndexMode,
+    MetricsConfig as CoreMetricsConfig, Partitioning, S3Config as CoreS3Config,
     ServerConfig, SourceConfig, SourceKind, SqlConfig as CoreSqlConfig,
     SwaggerConfig as CoreSwaggerConfig, SwaggerOAuth2Config as CoreSwaggerOAuth2Config,
 };
@@ -524,6 +525,12 @@ impl PyDatasetConfig {
 ///         (1 MiB).
 ///     max_page_size (int): Maximum rows returned by one query page.
 ///         Larger ``page_size`` values are clamped. Default ``100_000``.
+///     force_lazy_above_mb (int): When ``> 0``, datasets whose backing
+///         files exceed this many MiB are forced into lazy mode
+///         (streamed, not held in RAM) at startup. ``0`` (default)
+///         disables. Local sources are stat'd; on the ``datafusion``
+///         backend S3 sources are sized by listing the object store (the
+///         ``duckdb`` backend sizes local sources only). Default ``0``.
 ///     request_timeout_ms (int): Per-request handler timeout, in
 ///         milliseconds. ``0`` disables the timeout. Default ``30_000``.
 ///     shutdown_timeout_secs (int): Grace period for in-flight requests
@@ -538,6 +545,26 @@ impl PyDatasetConfig {
 ///         Use only behind a TLS-terminating reverse proxy. Default ``False``.
 ///     quack_read_only (bool): Install a read-only Quack authorization hook.
 ///         Default ``True``.
+///     sql_enabled (bool): Enable the raw-SQL endpoint ``POST /api/v1/sql``.
+///         Default ``False``.
+///     sql_max_rows (int): Hard cap on rows returned by one raw-SQL query.
+///         Default ``100_000``.
+///     datafusion_pushdown_filters (bool): DataFusion backend — push row
+///         filters into the parquet decoder so rows failing a predicate are
+///         never materialised. Ignored by DuckDB. Default ``False``.
+///     datafusion_reorder_filters (bool): DataFusion backend — reorder
+///         pushed-down predicates by selectivity. Only effective with
+///         ``datafusion_pushdown_filters``. Default ``False``.
+///     datafusion_list_files_cache (bool): DataFusion backend — cache
+///         object-store file listings so repeated lazy queries reuse
+///         ``LIST`` results (the dominant per-query cost on S3).
+///         Default ``False``.
+///     datafusion_list_files_cache_mb (int): Memory budget for the listing
+///         cache, in MiB. Only used with ``datafusion_list_files_cache``.
+///         Default ``64``.
+///     datafusion_list_files_cache_ttl_secs (int): How long a cached
+///         listing stays valid, in seconds. ``0`` = no expiry. Only used
+///         with ``datafusion_list_files_cache``. Default ``60``.
 #[pyclass(
     name = "DataPressConfig",
     module = "datap_rs.datapress",
@@ -567,6 +594,9 @@ pub struct PyDataPressConfig {
     /// Max rows returned by one query page.
     #[pyo3(get, set)]
     pub max_page_size: u64,
+    /// `>0`: force lazy for datasets larger than this many MiB. `0` off.
+    #[pyo3(get, set)]
+    pub force_lazy_above_mb: u64,
     /// Per-request handler timeout, in ms. `0` = disabled.
     #[pyo3(get, set)]
     pub request_timeout_ms: u64,
@@ -636,6 +666,29 @@ pub struct PyDataPressConfig {
     /// Hard cap on rows returned by one raw-SQL query. Default ``100_000``.
     #[pyo3(get, set)]
     pub sql_max_rows: u64,
+    /// DataFusion backend: push row filters into the parquet decoder so
+    /// rows failing a predicate are never materialised. Ignored by the
+    /// DuckDB backend. Default ``False``.
+    #[pyo3(get, set)]
+    pub datafusion_pushdown_filters: bool,
+    /// DataFusion backend: reorder pushed-down predicates by selectivity.
+    /// Only has an effect with ``datafusion_pushdown_filters``. Default ``False``.
+    #[pyo3(get, set)]
+    pub datafusion_reorder_filters: bool,
+    /// DataFusion backend: cache object-store file listings so repeated
+    /// lazy queries reuse ``LIST`` results — the dominant per-query cost
+    /// on S3. Default ``False``.
+    #[pyo3(get, set)]
+    pub datafusion_list_files_cache: bool,
+    /// Memory budget for the file-listing cache, in MiB. Only used when
+    /// ``datafusion_list_files_cache`` is on. Default ``64``.
+    #[pyo3(get, set)]
+    pub datafusion_list_files_cache_mb: usize,
+    /// How long a cached listing stays valid, in seconds. ``0`` = no
+    /// expiry. Only used when ``datafusion_list_files_cache`` is on.
+    /// Default ``60``.
+    #[pyo3(get, set)]
+    pub datafusion_list_files_cache_ttl_secs: u64,
 }
 
 #[pymethods]
@@ -655,6 +708,8 @@ impl PyDataPressConfig {
     ///         Default ``1_048_576``.
     ///     max_page_size (int): Max rows returned by one query page.
     ///         Default ``100_000``.
+    ///     force_lazy_above_mb (int): ``>0`` forces lazy mode for datasets
+    ///         larger than this many MiB. ``0`` disables. Default ``0``.
     ///     request_timeout_ms (int): Per-request handler timeout, in ms.
     ///         ``0`` disables. Default ``30_000``.
     ///     shutdown_timeout_secs (int): Grace period for in-flight
@@ -684,6 +739,21 @@ impl PyDataPressConfig {
     ///         ``POST /api/v1/sql``. Default ``False``.
     ///     sql_max_rows (int): Hard cap on rows returned by one raw-SQL
     ///         query. Default ``100_000``.
+    ///     datafusion_pushdown_filters (bool): DataFusion backend — push
+    ///         row filters into the parquet decoder. Ignored by DuckDB.
+    ///         Default ``False``.
+    ///     datafusion_reorder_filters (bool): DataFusion backend — reorder
+    ///         pushed-down predicates by selectivity. Only effective with
+    ///         ``datafusion_pushdown_filters``. Default ``False``.
+    ///     datafusion_list_files_cache (bool): DataFusion backend — cache
+    ///         object-store file listings (the dominant per-query cost on
+    ///         S3). Default ``False``.
+    ///     datafusion_list_files_cache_mb (int): Listing-cache memory
+    ///         budget, in MiB. Only used with ``datafusion_list_files_cache``.
+    ///         Default ``64``.
+    ///     datafusion_list_files_cache_ttl_secs (int): Cached-listing TTL,
+    ///         in seconds. ``0`` = no expiry. Only used with
+    ///         ``datafusion_list_files_cache``. Default ``60``.
     #[new]
     #[pyo3(signature = (
         backend            = "duckdb".to_string(),
@@ -694,6 +764,7 @@ impl PyDataPressConfig {
         compress           = true,
         max_body_bytes     = 1_048_576,
         max_page_size      = 100_000,
+        force_lazy_above_mb = 0,
         request_timeout_ms = 30_000,
         shutdown_timeout_secs = 30,
         quack_enabled     = false,
@@ -714,6 +785,11 @@ impl PyDataPressConfig {
         admin_token        = None,
         sql_enabled        = false,
         sql_max_rows       = 100_000,
+        datafusion_pushdown_filters = false,
+        datafusion_reorder_filters  = false,
+        datafusion_list_files_cache = false,
+        datafusion_list_files_cache_mb = 64,
+        datafusion_list_files_cache_ttl_secs = 60,
     ))]
     #[allow(clippy::too_many_arguments)] // user-facing kwargs surface
     fn new(
@@ -725,6 +801,7 @@ impl PyDataPressConfig {
         compress: bool,
         max_body_bytes: usize,
         max_page_size: u64,
+        force_lazy_above_mb: u64,
         request_timeout_ms: u64,
         shutdown_timeout_secs: u64,
         quack_enabled: bool,
@@ -745,6 +822,11 @@ impl PyDataPressConfig {
         admin_token: Option<String>,
         sql_enabled: bool,
         sql_max_rows: u64,
+        datafusion_pushdown_filters: bool,
+        datafusion_reorder_filters: bool,
+        datafusion_list_files_cache: bool,
+        datafusion_list_files_cache_mb: usize,
+        datafusion_list_files_cache_ttl_secs: u64,
     ) -> Self {
         Self {
             backend,
@@ -755,6 +837,7 @@ impl PyDataPressConfig {
             compress,
             max_body_bytes,
             max_page_size,
+            force_lazy_above_mb,
             request_timeout_ms,
             shutdown_timeout_secs,
             quack_enabled,
@@ -775,6 +858,11 @@ impl PyDataPressConfig {
             admin_token,
             sql_enabled,
             sql_max_rows,
+            datafusion_pushdown_filters,
+            datafusion_reorder_filters,
+            datafusion_list_files_cache,
+            datafusion_list_files_cache_mb,
+            datafusion_list_files_cache_ttl_secs,
         }
     }
 }
@@ -816,6 +904,7 @@ impl PyDataPressConfig {
             compress: self.compress,
             max_body_bytes: self.max_body_bytes,
             max_page_size: self.max_page_size,
+            force_lazy_above_mb: self.force_lazy_above_mb,
             request_timeout_ms: self.request_timeout_ms,
             shutdown_timeout_secs: self.shutdown_timeout_secs,
             quack: datapress_core::config::QuackConfig {
@@ -927,6 +1016,19 @@ impl PyDataPressConfig {
         CoreSqlConfig {
             enabled: self.sql_enabled,
             max_rows: self.sql_max_rows,
+        }
+    }
+
+    /// Build the core `DataFusionConfig` from the Python-facing
+    /// `datafusion_*` fields. These tune the DataFusion backend's parquet
+    /// scan and listing cache; the DuckDB backend ignores them.
+    fn datafusion_into_core(&self) -> CoreDataFusionConfig {
+        CoreDataFusionConfig {
+            pushdown_filters: self.datafusion_pushdown_filters,
+            reorder_filters: self.datafusion_reorder_filters,
+            list_files_cache: self.datafusion_list_files_cache,
+            list_files_cache_mb: self.datafusion_list_files_cache_mb,
+            list_files_cache_ttl_secs: self.datafusion_list_files_cache_ttl_secs,
         }
     }
 }
@@ -1167,6 +1269,7 @@ impl PyDataPress {
         let swagger = config.swagger_into_core()?;
         let explorer = config.explorer_into_core()?;
         let sql = config.sql_into_core();
+        let datafusion = config.datafusion_into_core();
         // Seed the admin token before the server starts. This must happen
         // before the first HTTP request; the OnceLock is a no-op if the env
         // var was already read, but we call it first so the explicit value wins.
@@ -1189,6 +1292,7 @@ impl PyDataPress {
                 explorer,
                 auth,
                 sql,
+                datafusion,
                 datasets,
             },
         })
@@ -1272,6 +1376,7 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
             compress: cfg.server.compress,
             max_body_bytes: cfg.server.max_body_bytes,
             max_page_size: cfg.server.max_page_size,
+            force_lazy_above_mb: cfg.server.force_lazy_above_mb,
             request_timeout_ms: cfg.server.request_timeout_ms,
             shutdown_timeout_secs: cfg.server.shutdown_timeout_secs,
             quack: cfg.server.quack.clone(),
@@ -1282,6 +1387,7 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
         explorer: cfg.explorer.clone(),
         auth: cfg.auth.clone(),
         sql: cfg.sql.clone(),
+        datafusion: cfg.datafusion.clone(),
         datasets: cfg.datasets.clone(),
     }
 }

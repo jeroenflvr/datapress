@@ -1,0 +1,129 @@
+name: Static Linux binaries (musl)
+
+# Fully-static, glibc-free Linux binaries for both `datapress` (DuckDB +
+# DataFusion bundled) and `datapress-cli`. Linking against musl with
+# `crt-static` (the musl default) produces a single self-contained
+# executable that runs on any Linux regardless of the host glibc version —
+# this is the fix for "version `GLIBC_2.xx' not found" on older targets.
+#
+# DuckDB's bundled C++ amalgamation is cross-compiled with `cargo-zigbuild`,
+# which uses Zig as a complete musl C/C++ toolchain (plain `musl-tools` on
+# Ubuntu has no C++ compiler, so a normal musl build of DuckDB is not
+# possible). Both architectures build from a single x86_64 runner.
+#
+# Triggers on `v*` tags (attaches the binaries to the GitHub Release) and on
+# manual dispatch (artifacts only, for testing).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-linux:
+    name: static-${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            duckdb_platform: linux_amd64_gcc4
+          - target: aarch64-unknown-linux-musl
+            duckdb_platform: linux_arm64_gcc4
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.12' }
+      - uses: astral-sh/setup-uv@v7
+      # The `docs` feature embeds the rendered MkDocs site, so build it first
+      # (mirrors the wheel / CLI jobs in publish.yml).
+      - name: Build MkDocs site
+        run: uv tool run --with 'mkdocs>=1.6,<2' --with 'mkdocs-material>=9.6,<10' mkdocs build -f docs/mkdocs.yml -d site --strict
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      # Zig is the cross C/C++ compiler + linker cargo-zigbuild drives. It
+      # ships a full musl libc++/libstdc++, which the bundled DuckDB build
+      # requires (Ubuntu's musl-tools provides only a C compiler).
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.13.0
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: static-${{ matrix.target }}
+      - name: Build static binaries
+        env:
+          # zig cc reports `__GNUC__` as 4.2.1, which trips DuckDB's
+          # `__GNUC__ < 5` ABI guard in platform.hpp regardless of the
+          # C++11 ABI setting. DUCKDB_CUSTOM_PLATFORM makes DuckDBPlatform()
+          # early-return before the #error — the same source-level bypass
+          # the manylinux wheel build uses (see publish.yml).
+          CXXFLAGS: -DDUCKDB_CUSTOM_PLATFORM=${{ matrix.duckdb_platform }}
+        run: |
+          set -euo pipefail
+          # Full server binary: both backends bundled + all optional features.
+          cargo zigbuild --release --target ${{ matrix.target }} \
+            -p datapress --bin datapress \
+            --features docs,swagger,auth,metrics,explorer
+          # CLI client: pure Rust (reqwest + rustls, no OpenSSL), so musl is
+          # trivial here.
+          cargo zigbuild --release --target ${{ matrix.target }} \
+            -p datapress-cli --bin datapress-cli
+      - name: Verify the binaries are static
+        run: |
+          set -euo pipefail
+          outdir="target/${{ matrix.target }}/release"
+          for bin in datapress datapress-cli; do
+            echo "== ${bin} =="
+            file "${outdir}/${bin}"
+            # `ldd` on a static binary prints "not a dynamic executable"
+            # (and exits non-zero) — treat any glibc NEEDED entry as a fail.
+            if ldd "${outdir}/${bin}" 2>&1 | grep -qiE 'libc\.so|GLIBC'; then
+              echo "::error::${bin} is dynamically linked against glibc"
+              ldd "${outdir}/${bin}" || true
+              exit 1
+            fi
+          done
+      - name: Package
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          outdir="target/${{ matrix.target }}/release"
+          for bin in datapress datapress-cli; do
+            archive="${bin}-${tag}-${{ matrix.target }}.tar.gz"
+            tar -czf "${archive}" -C "${outdir}" "${bin}"
+            sha256sum "${archive}" > "${archive}.sha256"
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: static-${{ matrix.target }}
+          path: |
+            *-${{ matrix.target }}.tar.gz
+            *-${{ matrix.target }}.tar.gz.sha256
+
+  # Attach the static binaries to the GitHub Release for the tag. softprops
+  # appends assets, so this coexists with the dynamic CLI assets uploaded by
+  # publish.yml's github-release job.
+  attach-release:
+    name: attach-static-to-release
+    needs: [static-linux]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path:    static-dist
+          pattern: 'static-*'
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: static-dist/*
+          fail_on_unmatched_files: true
