@@ -160,12 +160,16 @@ pub fn configure(state: web::Data<ExplorerState>, cfg: &mut web::ServiceConfig) 
                 .route("/assets/pypi.svg", web::get().to(asset_pypi_icon))
                 .route("/assets/book.svg", web::get().to(asset_book_icon))
                 .route("/assets/swagger.svg", web::get().to(asset_swagger_icon))
+                // Single-segment `{path}` (not `{path:.*}`): the vendored
+                // dirs are flat, and a tail regex makes the prometheus
+                // middleware's strfmt label substitution fail and warn on
+                // every asset request ("mixed cardinality pattern").
                 .route(
-                    "/assets/vendor/duckdb/{path:.*}",
+                    "/assets/vendor/duckdb/{path}",
                     web::get().to(asset_duckdb_vendor),
                 )
                 .route(
-                    "/assets/vendor/arrow/{path:.*}",
+                    "/assets/vendor/arrow/{path}",
                     web::get().to(asset_arrow_vendor),
                 )
                 .route("/datasets/{name}", web::get().to(dataset_detail)),

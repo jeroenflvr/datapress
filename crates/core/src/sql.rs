@@ -7,7 +7,8 @@
 //! keeping the "which tables may this query touch?" policy in one place.
 //!
 //! Guarantees enforced by [`validate`]:
-//! - exactly one statement, and it is a read-only `SELECT` / `WITH … SELECT`,
+//! - exactly one statement, and it is a read-only `SELECT` / `WITH … SELECT`
+//!   or a `DESCRIBE` / `DESC <table>` schema lookup,
 //! - every referenced table is a registered dataset — no file-reading
 //!   table functions (`read_parquet`, `read_csv`, …), no unknown tables,
 //! - no file-reading scalar functions (`read_text`, `read_blob`, …),
@@ -23,8 +24,8 @@ use std::collections::{HashMap, HashSet};
 use std::ops::ControlFlow;
 
 use sqlparser::ast::{
-    Expr, Ident, ObjectName, ObjectNamePart, Query, Statement, Visit, VisitMut, Visitor,
-    VisitorMut,
+    DescribeAlias, Expr, Ident, ObjectName, ObjectNamePart, Query, Statement, Visit, VisitMut,
+    Visitor, VisitorMut,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -64,12 +65,14 @@ pub struct ValidatedSql {
 
 /// Validate `sql` for the raw-SQL endpoint.
 ///
-/// `allowed` is the set of registered dataset names, **lowercased** by the
+/// Accepts a single read-only `SELECT` / `WITH … SELECT` or a `DESCRIBE` /
+/// `DESC <table>` statement. `allowed` is the set of registered dataset
 /// caller (matching is case-insensitive). `max_datasets` caps how many
 /// distinct datasets a single statement may touch (phase 1 = `1`).
 ///
 /// On success returns the cleaned SQL ready to be wrapped in an outer
-/// `LIMIT` and executed by the backend.
+/// `LIMIT` and executed by the backend (DESCRIBE is run as-is; see
+/// [`is_describe`]).
 pub fn validate(
     sql: &str,
     allowed: &HashSet<String>,
@@ -88,10 +91,21 @@ pub fn validate(
         ));
     }
     let stmt = &statements[0];
-    if !matches!(stmt, Statement::Query(_)) {
-        return Err(AppError::InvalidValue(
-            "only read-only SELECT queries are allowed".into(),
-        ));
+    // Read-only statements only: a `SELECT` / `WITH … SELECT`, or a
+    // `DESCRIBE`/`DESC <table>` schema lookup. `DESCRIBE` still flows through
+    // the visitor below, so its target table is subject to the same dataset
+    // allowlist as a query. The `EXPLAIN` alias is deliberately excluded.
+    match stmt {
+        Statement::Query(_) => {}
+        Statement::ExplainTable {
+            describe_alias: DescribeAlias::Describe | DescribeAlias::Desc,
+            ..
+        } => {}
+        _ => {
+            return Err(AppError::InvalidValue(
+                "only read-only SELECT and DESCRIBE statements are allowed".into(),
+            ));
+        }
     }
 
     let mut checker = ScopeCheck {
@@ -119,6 +133,24 @@ pub fn validate(
         sql: trimmed.to_string(),
         datasets,
     })
+}
+
+/// Returns `true` if `sql` is a single `DESCRIBE` / `DESC <table>` statement.
+///
+/// `DESCRIBE` yields a schema listing rather than a row stream and cannot be
+/// nested inside an outer `SELECT … LIMIT` subquery on every backend (notably
+/// DataFusion), so callers run it directly instead of through the bounded
+/// wrapper. Returns `false` for anything that does not parse to exactly one
+/// `DESCRIBE`/`DESC` statement.
+pub fn is_describe(sql: &str) -> bool {
+    let trimmed = sql.trim().trim_end_matches(';').trim();
+    matches!(
+        Parser::parse_sql(&GenericDialect {}, trimmed).as_deref(),
+        Ok([Statement::ExplainTable {
+            describe_alias: DescribeAlias::Describe | DescribeAlias::Desc,
+            ..
+        }])
+    )
 }
 
 /// Rewrite references to registered tables and their columns so they
@@ -336,6 +368,32 @@ mod tests {
     fn rejects_non_select() {
         let err = validate("DELETE FROM events", &allowed(&["events"]), 1).unwrap_err();
         assert!(matches!(err, AppError::InvalidValue(_)));
+    }
+
+    #[test]
+    fn accepts_describe_table() {
+        let v = validate("DESCRIBE events", &allowed(&["events"]), 1).unwrap();
+        assert_eq!(v.datasets, vec!["events".to_string()]);
+        assert!(is_describe(&v.sql));
+    }
+
+    #[test]
+    fn accepts_desc_table_case_insensitive() {
+        let v = validate("DESC Events", &allowed(&["events"]), 1).unwrap();
+        assert_eq!(v.datasets, vec!["events".to_string()]);
+        assert!(is_describe(&v.sql));
+    }
+
+    #[test]
+    fn describe_rejects_unknown_table() {
+        let err = validate("DESCRIBE secrets", &allowed(&["events"]), 1).unwrap_err();
+        assert!(matches!(err, AppError::InvalidValue(_)));
+    }
+
+    #[test]
+    fn is_describe_false_for_select() {
+        assert!(!is_describe("SELECT * FROM events"));
+        assert!(!is_describe("SELECT 1"));
     }
 
     #[test]

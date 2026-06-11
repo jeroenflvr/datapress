@@ -72,7 +72,7 @@ an unmounted route — so probing for it leaks nothing.
 
 | Field      | Type            | Required | Notes                                                                         |
 |------------|-----------------|----------|-------------------------------------------------------------------------------|
-| `sql`      | string          | yes      | A single read-only `SELECT` / `WITH … SELECT` referencing one dataset.        |
+| `sql`      | string          | yes      | A single read-only `SELECT` / `WITH … SELECT`, or a `DESCRIBE`/`DESC <table>`, referencing one dataset. |
 | `max_rows` | integer         | no       | Client row cap. **Clamped** into `[1, [sql].max_rows]`; it can never raise the server cap. Omit to use the server cap. |
 
 The dataset is named directly in the SQL `FROM` clause using its
@@ -251,14 +251,27 @@ whole (capped) result in one response.
 
     Table-less queries reference zero datasets and are always allowed.
 
+=== "DESCRIBE"
+
+    Inspect a dataset's columns and types. `DESCRIBE` (and its `DESC`
+    alias) is allowed and subject to the same single-dataset allowlist as
+    a query:
+
+    ```json
+    { "sql": "DESCRIBE accidents" }
+    ```
+
+    The result is one row per column (`column_name`, `column_type`, …).
+
 ## What is rejected
 
 The shared validation gate runs identically for the DuckDB and DataFusion
 backends. A request is rejected with `400 Bad Request` when the statement:
 
-- is **not** a single read-only query — multiple statements, or anything
-  other than `SELECT` / `WITH … SELECT` (no `INSERT`, `UPDATE`, `DELETE`,
-  `CREATE`, `DROP`, `ALTER`, `COPY`, `ATTACH`, `INSTALL`, `PRAGMA`, …);
+- is **not** a single read-only statement — multiple statements, or
+  anything other than `SELECT` / `WITH … SELECT` / `DESCRIBE` / `DESC`
+  (no `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `DROP`, `ALTER`, `COPY`,
+  `ATTACH`, `INSTALL`, `PRAGMA`, `EXPLAIN`, …);
 - references an **unknown table** — every relation must be a registered
   dataset (or a CTE defined in the same query);
 - references **more than one** dataset (Phase 1 limit);
@@ -269,7 +282,7 @@ backends. A request is rejected with `400 Bad Request` when the statement:
 
 ```json
 // 400 — DML is not allowed
-{ "error": "only read-only SELECT queries are allowed" }
+{ "error": "only read-only SELECT and DESCRIBE statements are allowed" }
 
 // 400 — more than one statement
 { "error": "exactly one SQL statement is allowed" }

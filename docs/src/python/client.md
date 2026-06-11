@@ -43,7 +43,8 @@ payload = c.query_json("accidents", { "page_size": 50 })
 
 ## Raw SQL
 
-`sql()` posts a single read-only `SELECT` to `POST /api/v1/sql` and
+`sql()` posts a single read-only `SELECT` (or a `DESCRIBE`/`DESC <table>`)
+to `POST /api/v1/sql` and
 returns the result as a list of row dicts. The endpoint must be enabled
 server-side (`[sql].enabled = true`, or `sql_enabled=True` on
 [`DataPressConfig`](config.md)); otherwise the server responds `404` and

@@ -221,15 +221,16 @@ pub async fn query_dataset(
 
 /// Raw-SQL endpoint: `POST /api/v1/sql`.
 ///
-/// Accepts an arbitrary read-only `SELECT` in the request body and runs
-/// it against the engine. Disabled unless `[sql].enabled = true`; when
-/// off, returns `404` so the endpoint is invisible.
+/// Accepts a read-only `SELECT` / `WITH … SELECT` or a `DESCRIBE`/`DESC
+/// <table>` statement in the request body and runs it against the engine.
+/// Disabled unless `[sql].enabled = true`; when off, returns `404` so the
+/// endpoint is invisible.
 ///
 /// Phase 1 is scoped to a single dataset per query: the statement is
 /// parsed and validated by [`crate::sql::validate`], which rejects
-/// anything that is not a single read-only query, references an unknown
-/// table / file function, or touches more than one registered dataset.
-/// The result is hard-capped at `[sql].max_rows` rows.
+/// anything that is not a single read-only query or `DESCRIBE`, references
+/// an unknown table / file function, or touches more than one registered
+/// dataset. The result is hard-capped at `[sql].max_rows` rows.
 ///
 /// Like the dataset query endpoint, the response is content-negotiated:
 /// clients that send `Accept: application/vnd.apache.arrow.stream` (or

@@ -458,6 +458,46 @@ async fn raw_sql_preserves_identifier_case() {
 }
 
 #[actix_web::test]
+async fn sql_describe_returns_schema() {
+    // DESCRIBE must run directly (not wrapped in a subquery, which
+    // DataFusion cannot plan) and list the dataset's columns.
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("people.parquet");
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("State", DataType::Utf8, false),
+        Field::new("id", DataType::Int64, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(StringArray::from(vec!["CA"])),
+            Arc::new(Int64Array::from(vec![1_i64])),
+        ],
+    )
+    .unwrap();
+    let f = std::fs::File::create(&file).unwrap();
+    let mut writer = ArrowWriter::try_new(f, schema, None).unwrap();
+    writer.write(&batch).unwrap();
+    writer.close().unwrap();
+
+    let store = make_store(&file.display().to_string(), true).await;
+
+    let out = store
+        .query_sql("DESCRIBE people", 100)
+        .await
+        .expect("DESCRIBE should execute");
+    let rows = parse_rows(&out);
+    // One row per column; DataFusion names the first column `column_name`.
+    let names: Vec<&str> = rows
+        .iter()
+        .filter_map(|r| r["column_name"].as_str())
+        .collect();
+    assert!(names.contains(&"State"), "got: {names:?}");
+    assert!(names.contains(&"id"), "got: {names:?}");
+}
+
+#[actix_web::test]
 async fn arrow_stream_all_ignores_page_size() {
     let tmp = TempDir::new().unwrap();
     let file = tmp.path().join("people.parquet");

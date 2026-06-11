@@ -464,8 +464,9 @@ curl -X POST http://localhost:8000/api/v1/datasets/accidents/count \
 
 ### Raw SQL
 
-`POST /api/v1/sql` runs a single read-only `SELECT` (or `WITH … SELECT`)
-referencing **exactly one** registered dataset. It is **disabled by
+`POST /api/v1/sql` runs a single read-only `SELECT` (or `WITH … SELECT`),
+or a `DESCRIBE`/`DESC <table>`, referencing **exactly one** registered
+dataset. It is **disabled by
 default** — a larger attack surface than the structured query API, so you
 opt in explicitly and the server parses and validates every statement
 before any engine sees it. While disabled the route returns `404`, so its

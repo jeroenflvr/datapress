@@ -304,7 +304,15 @@ impl Store {
     pub async fn query_sql(&self, sql: &str, max_rows: u64) -> Result<String, AppError> {
         let cap = max_rows.max(1);
         let sql = self.canonicalize_sql(sql);
-        let wrapped = format!("SELECT * FROM ({sql}) AS _datapress_sql LIMIT {cap}");
+        // DESCRIBE yields a schema listing and cannot be nested in a
+        // subquery on DataFusion, so run it directly. Its row count is
+        // bounded by the column count and the slice below still enforces
+        // `cap`; everything else is wrapped in an outer LIMIT.
+        let wrapped = if datapress_core::sql::is_describe(&sql) {
+            sql
+        } else {
+            format!("SELECT * FROM ({sql}) AS _datapress_sql LIMIT {cap}")
+        };
         let df = self.ctx.sql(&wrapped).await?;
         let batches = df.collect().await?;
         if batches.is_empty() || batches.iter().all(|b| b.num_rows() == 0) {
@@ -335,7 +343,14 @@ impl Store {
     ) -> Result<ArrowIpcStream, AppError> {
         let cap = max_rows.max(1);
         let sql = self.canonicalize_sql(sql);
-        let wrapped = format!("SELECT * FROM ({sql}) AS _datapress_sql LIMIT {cap}");
+        // DESCRIBE cannot be nested in a subquery on DataFusion (see
+        // `query_sql`); run it directly. Its output is bounded by the
+        // column count, so the missing outer LIMIT is harmless.
+        let wrapped = if datapress_core::sql::is_describe(&sql) {
+            sql
+        } else {
+            format!("SELECT * FROM ({sql}) AS _datapress_sql LIMIT {cap}")
+        };
         let df = self.ctx.sql(&wrapped).await?;
         let batches = df.collect().await?;
         Ok(stream_arrow_batches(batches))
