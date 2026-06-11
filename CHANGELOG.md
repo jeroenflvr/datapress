@@ -3,6 +3,19 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.15] - 2026-06-11
+
+### Bug Fixes
+
+- Update with lazy forced on s3 ([04256df](https://github.com/jeroenflvr/datapress/commit/04256dfd5dcf154c649b0b5917ee09fd348e1a16))
+- Drop another no_run ([9927992](https://github.com/jeroenflvr/datapress/commit/9927992ba44a15cdfc0c0cb7c15b84132499e964))
+- *(doc)* Remove no_run marker ([20f0420](https://github.com/jeroenflvr/datapress/commit/20f0420e42360b61daab608b89085633a503d19d))
+
+### Features
+
+- Static linux binaries ([7ec6962](https://github.com/jeroenflvr/datapress/commit/7ec6962c730e357550b1a09a6a85c82f248c1d2c))
+- Lazy forced on size limit ([b9f8be4](https://github.com/jeroenflvr/datapress/commit/b9f8be4d9c64a13e8f8467d6b93a1d15e36e61f4))
+
 ## [0.4.14] - 2026-06-08
 
 ### Bug Fixes
