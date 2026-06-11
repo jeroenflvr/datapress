@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.16] - 2026-06-11
+
+### Bug Fixes
+
+- *(ci)* Dependency tree ([45bf9ef](https://github.com/jeroenflvr/datapress/commit/45bf9efd9dfba7d57a330480f41eed4664e069a2))
+
 ## [0.4.15] - 2026-06-11
 
 ### Bug Fixes
