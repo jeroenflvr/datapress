@@ -43,6 +43,38 @@ cfg = DataPressConfig(
 See [Querying › Raw SQL](../query/sql.md) for the request/response shape
 and the validation rules.
 
+### DataFusion performance tuning
+
+Five optional kwargs mirror the TOML `[datafusion]` block and tune the
+DataFusion backend's parquet scan and object-store listing cache. They are
+**ignored by the DuckDB backend** and are all off by default:
+
+```python
+cfg = DataPressConfig(
+    backend="datafusion",
+    port=8000,
+    datafusion_pushdown_filters=True,        # decode-time row filtering
+    datafusion_reorder_filters=True,         # reorder predicates by selectivity
+    datafusion_list_files_cache=True,        # cache S3/object-store LISTs
+    datafusion_list_files_cache_mb=64,       # listing-cache budget (MiB)
+    datafusion_list_files_cache_ttl_secs=60, # 0 = never expire
+)
+```
+
+- `datafusion_pushdown_filters` pushes row-level predicates into the parquet
+  decoder so rows failing a filter are never materialised. Best for selective
+  filters over large row groups.
+- `datafusion_reorder_filters` reorders those predicates by selectivity — only
+  effective together with `datafusion_pushdown_filters`.
+- `datafusion_list_files_cache` caches object-store file listings so repeated
+  lazy queries reuse `LIST` results — the dominant per-query cost on S3.
+  `*_mb` bounds the cache; `*_ttl_secs` bounds how long before newly written
+  files become visible (`0` = never expire). This cache does not help delta
+  sources (their file list comes from the transaction log).
+
+See [Configuration › DataFusion tuning](../configuration/server.md) and
+`CONFIG.md` for the equivalent TOML knobs.
+
 ### Swagger UI OAuth2 / OIDC
 
 `AuthConfig` protects the API. The `swagger_oauth2_*` fields only make

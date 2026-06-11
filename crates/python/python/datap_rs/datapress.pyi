@@ -132,7 +132,7 @@ class DatasetConfig:
             index_max_cardinality: Upper bound on distinct values per
                 indexed column.
             lazy: Stream from disk instead of loading into RAM.
-                DataFusion backend / local parquet only. Defaults to ``False``.
+                DataFusion backend (parquet or delta). Defaults to ``False``.
         """
         ...
 
@@ -172,6 +172,11 @@ class DataPressConfig:
     admin_token: Optional[str]
     sql_enabled: bool
     sql_max_rows: int
+    datafusion_pushdown_filters: bool
+    datafusion_reorder_filters: bool
+    datafusion_list_files_cache: bool
+    datafusion_list_files_cache_mb: int
+    datafusion_list_files_cache_ttl_secs: int
 
     def __init__(
         self,
@@ -204,6 +209,11 @@ class DataPressConfig:
         admin_token: Optional[str] = None,
         sql_enabled: bool = False,
         sql_max_rows: int = 100_000,
+        datafusion_pushdown_filters: bool = False,
+        datafusion_reorder_filters: bool = False,
+        datafusion_list_files_cache: bool = False,
+        datafusion_list_files_cache_mb: int = 64,
+        datafusion_list_files_cache_ttl_secs: int = 60,
     ) -> None:
         """Build a :class:`DataPressConfig`.
 
@@ -280,6 +290,22 @@ class DataPressConfig:
                 Disabled by default. Default ``False``.
             sql_max_rows: Hard cap on rows returned by one raw-SQL query.
                 Default ``100_000``.
+            datafusion_pushdown_filters: DataFusion backend — push row
+                filters into the parquet decoder so rows failing a predicate
+                are never materialised. Ignored by DuckDB. Default ``False``.
+            datafusion_reorder_filters: DataFusion backend — reorder
+                pushed-down predicates by selectivity. Only effective with
+                ``datafusion_pushdown_filters``. Default ``False``.
+            datafusion_list_files_cache: DataFusion backend — cache
+                object-store file listings so repeated lazy queries reuse
+                ``LIST`` results (the dominant per-query cost on S3).
+                Default ``False``.
+            datafusion_list_files_cache_mb: Memory budget for the listing
+                cache, in MiB. Only used with ``datafusion_list_files_cache``.
+                Default ``64``.
+            datafusion_list_files_cache_ttl_secs: How long a cached listing
+                stays valid, in seconds. ``0`` = no expiry. Only used with
+                ``datafusion_list_files_cache``. Default ``60``.
         """
         ...
 

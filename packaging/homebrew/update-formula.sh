@@ -29,8 +29,8 @@ sha_for() {
 }
 
 SHA_MAC_ARM="$(sha_for aarch64-apple-darwin)"
-SHA_LINUX_ARM="$(sha_for aarch64-unknown-linux-gnu)"
-SHA_LINUX_X64="$(sha_for x86_64-unknown-linux-gnu)"
+SHA_LINUX_ARM="$(sha_for aarch64-unknown-linux-musl)"
+SHA_LINUX_X64="$(sha_for x86_64-unknown-linux-musl)"
 
 cat > "$OUT" <<EOF
 # Homebrew formula for the prebuilt \`datapress\` CLI.
@@ -56,11 +56,11 @@ class Datapress < Formula
 
   on_linux do
     on_arm do
-      url "https://github.com/jeroenflvr/datapress/releases/download/v#{version}/datapress-v#{version}-aarch64-unknown-linux-gnu.tar.gz"
+      url "https://github.com/jeroenflvr/datapress/releases/download/v#{version}/datapress-v#{version}-aarch64-unknown-linux-musl.tar.gz"
       sha256 "${SHA_LINUX_ARM}"
     end
     on_intel do
-      url "https://github.com/jeroenflvr/datapress/releases/download/v#{version}/datapress-v#{version}-x86_64-unknown-linux-gnu.tar.gz"
+      url "https://github.com/jeroenflvr/datapress/releases/download/v#{version}/datapress-v#{version}-x86_64-unknown-linux-musl.tar.gz"
       sha256 "${SHA_LINUX_X64}"
     end
   end

@@ -45,6 +45,42 @@ tasks:
       - cargo build {{.RELEASE}} -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer
 
   # ---------------------------------------------------------------------
+  # Static (musl) Linux binaries — glibc-free, run on any Linux regardless
+  # of host glibc version. Cross-compiled with cargo-zigbuild (Zig supplies
+  # the musl C/C++ toolchain DuckDB's bundled build needs). Works from
+  # macOS or Linux. CI builds these on `v*` tags via
+  # .github/workflows/static-linux.yml.
+  #
+  # One-time setup:
+  #   cargo install cargo-zigbuild
+  #   brew install zig          # or: pip install ziglang / your package mgr
+  #   rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+  #
+  # Override the target with: task build:static:linux TARGET=aarch64-unknown-linux-musl
+  # ---------------------------------------------------------------------
+  build:static:linux:
+    desc: "Build static musl `datapress` + `datapress-cli` (TARGET=x86_64-unknown-linux-musl)"
+    deps: [docs:build]
+    vars:
+      TARGET: '{{.TARGET | default "x86_64-unknown-linux-musl"}}'
+      DUCKDB_PLATFORM:
+        sh: case "{{.TARGET | default "x86_64-unknown-linux-musl"}}" in *aarch64*) echo linux_arm64_gcc4 ;; *) echo linux_amd64_gcc4 ;; esac
+    cmds:
+      # CXXFLAGS bypasses DuckDB's `__GNUC__ < 5` ABI guard, which zig cc
+      # (reporting GCC 4.2.1) would otherwise trip.
+      - CXXFLAGS="-DDUCKDB_CUSTOM_PLATFORM={{.DUCKDB_PLATFORM}}" cargo zigbuild --release --target {{.TARGET}} -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer
+      - cargo zigbuild --release --target {{.TARGET}} -p datapress-cli --bin datapress-cli
+      - 'echo "Built: target/{{.TARGET}}/release/datapress and datapress-cli"'
+
+  build:static:linux:all:
+    desc: Build static musl binaries for both x86_64 and aarch64
+    cmds:
+      - task: build:static:linux
+        vars: { TARGET: x86_64-unknown-linux-musl }
+      - task: build:static:linux
+        vars: { TARGET: aarch64-unknown-linux-musl }
+
+  # ---------------------------------------------------------------------
   # Clients (HTTP client crate, CLI client, Python bindings) — release only
   # ---------------------------------------------------------------------
   build:client:

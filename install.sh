@@ -131,7 +131,9 @@ detect_target() {
 
     case "$_os" in
         Linux)
-            echo "${_arch}-unknown-linux-gnu" ;;
+            # Static musl builds — glibc-free, run on any Linux regardless of
+            # the host glibc version (see .github/workflows/static-linux.yml).
+            echo "${_arch}-unknown-linux-musl" ;;
         Darwin)
             if [ "$_arch" != "aarch64" ]; then
                 err "no prebuilt macOS binary for $_arch. Install on Apple Silicon, or use: cargo install datapress"

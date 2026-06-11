@@ -102,7 +102,7 @@ Seven public classes, no module-level state:
 
 | Class             | Purpose                                                              |
 |-------------------|----------------------------------------------------------------------|
-| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `max_page_size`, `force_lazy_above_mb`, `request_timeout_ms`, `shutdown_timeout_secs`, `metrics_enabled`, `metrics_path`, `sql_enabled`, `sql_max_rows`, `admin_token`. |
+| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `max_page_size`, `force_lazy_above_mb`, `request_timeout_ms`, `shutdown_timeout_secs`, `metrics_enabled`, `metrics_path`, `sql_enabled`, `sql_max_rows`, `admin_token`, `datafusion_pushdown_filters`, `datafusion_reorder_filters`, `datafusion_list_files_cache`, `datafusion_list_files_cache_mb`, `datafusion_list_files_cache_ttl_secs`. |
 | `DatasetConfig`   | One dataset: `name`, `source`, `format`, `mode`, optional S3 + index.|
 | `S3Config`        | S3 / S3-compatible credentials and endpoint config.                  |
 | `HMACKeyPair`     | Access/secret key pair returned by an `S3Config` credentials provider. |
@@ -210,6 +210,38 @@ before the backend runs. Handlers that take longer than
 `request_timeout_ms` are cancelled and the client sees `504 Gateway
 Timeout`. Set the timeout to `0` to disable it entirely (useful behind a
 proxy that already enforces one).
+
+### DataFusion performance tuning
+
+When `backend="datafusion"`, five optional kwargs tune the parquet scan and
+object-store listing cache (they mirror the TOML `[datafusion]` block and are
+ignored by the DuckDB backend). All are off by default:
+
+```python
+DataPressConfig(
+    backend="datafusion",
+    port=8000,
+    datafusion_pushdown_filters=True,        # decode-time row filtering
+    datafusion_reorder_filters=True,         # reorder predicates by selectivity
+    datafusion_list_files_cache=True,        # cache S3/object-store LISTs
+    datafusion_list_files_cache_mb=64,       # listing-cache budget (MiB)
+    datafusion_list_files_cache_ttl_secs=60, # 0 = never expire
+)
+```
+
+- `datafusion_pushdown_filters` pushes row-level predicates into the parquet
+  decoder so rows that fail a filter are never materialised (on top of the
+  row-group / page-index pruning that always happens). Best for selective
+  filters over large row groups.
+- `datafusion_reorder_filters` lets the scan reorder those pushed-down
+  predicates by estimated selectivity — only has an effect together with
+  `datafusion_pushdown_filters`.
+- `datafusion_list_files_cache` caches object-store file listings so repeated
+  lazy queries reuse `LIST` results instead of re-listing the source prefix
+  every time — the dominant per-query cost on S3. `*_mb` bounds the cache and
+  `*_ttl_secs` bounds how long before newly written files become visible
+  (`0` = never expire). Note: this cache does not help delta sources (their
+  file list comes from the transaction log, not an object-store `LIST`).
 
 ### Graceful shutdown
 
