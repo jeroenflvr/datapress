@@ -207,3 +207,69 @@
   border-color: #6e3a31;
 }
 
+
+/* ---- Mermaid click-to-zoom ---- */
+.dp-mermaid-zoomable {
+  cursor: zoom-in;
+}
+
+body.dp-mermaid-no-scroll {
+  overflow: hidden;
+}
+
+.dp-mermaid-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1.5rem 1.5rem;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(2px);
+}
+
+.dp-mermaid-overlay[hidden] {
+  display: none;
+}
+
+.dp-mermaid-overlay__stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
+/* The whole .mermaid host (with its closed shadow root) is moved here and scaled
+   via a CSS transform. Give it a light backdrop so the diagram stays readable. */
+.dp-mermaid-overlay__stage .mermaid {
+  background: var(--md-default-bg-color, #fff);
+  border-radius: 6px;
+  padding: 1rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.dp-mermaid-overlay__close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+  line-height: 1;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.dp-mermaid-overlay__close:hover {
+  background: rgba(255, 255, 255, 0.28);
+}

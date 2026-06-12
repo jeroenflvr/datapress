@@ -125,6 +125,94 @@ serialising everything through an application ORM.
     shapes. Pick the engine in config, A/B-test, and switch without
     rewriting clients.
 
+## Why Rust
+
+The deciding factor was memory. actix-web runs many worker threads inside
+a **single process**, all sharing one heap. DataPress materialises each
+dataset (and its indexes) **once** and hands every worker a cheap shared
+reference to it — so an 8-worker server holds exactly one copy of the
+data in RAM.
+
+A Python equivalent built on, say, FastAPI + uvicorn scales by forking
+**multiple worker processes**, and each process has its own address
+space. A resident dataset would therefore be loaded — and paid for — once
+*per worker*: 8 uvicorn workers means roughly 8× the memory for the same
+data. The usual workarounds (a shared external cache, `mmap`, a separate
+data service) all add moving parts that the single-process Rust model
+simply avoids.
+
+Rust brought the rest along for free:
+
+- **First-class Python bindings.** [PyO3](https://pyo3.rs/) +
+  [maturin](https://www.maturin.rs/) compile the exact same engine into a
+  `pip install datap-rs` wheel, so notebooks and jobs embed the server
+  without a separate codebase.
+- **Excellent package management.** Cargo gives reproducible builds,
+  a single `cargo install datapress`, and a sane dependency story across
+  the whole workspace.
+- **The classic Rust benefits.** No GC pauses, no GIL, fearless
+  multithreading, memory safety without a runtime, and predictable
+  native performance — exactly what a long-lived data server wants.
+
+### One process, many workers, one copy of the data
+
+Every actix-web worker thread serves requests against the **same**
+in-memory dataset through a shared `Arc`. Loading the data twice never
+happens, no matter how many workers you run:
+
+```mermaid
+flowchart TB
+    subgraph proc["DataPress · single OS process"]
+        direction TB
+        subgraph workers["actix-web worker threads"]
+            direction LR
+            W1["Worker 1"]
+            W2["Worker 2"]
+            W3["Worker 3"]
+            Wn["Worker N"]
+        end
+        DS["Shared dataset + indexes<br/>(one Arrow copy in RAM)"]
+        W1 --> DS
+        W2 --> DS
+        W3 --> DS
+        Wn --> DS
+    end
+    Storage[("Parquet / Delta<br/>local · S3")] -->|loaded once at startup| DS
+    Clients(["HTTP clients<br/>JSON · Arrow IPC"]) --> workers
+```
+
+Contrast that with the multi-process model: `N` uvicorn workers are `N`
+separate address spaces, so the same dataset is resident `N` times.
+
+## Reload on demand — without a restart
+
+A `POST` to the reload endpoint swaps the resident dataset for a freshly
+loaded copy **atomically** (DataFusion uses an `ArcSwap` double-buffer;
+DuckDB a transactional replace). In-flight queries finish against the old
+copy; new queries see the new one. This makes DataPress easy to drive
+from an external event loop — for example a Python process consuming a
+Kafka topic that fires whenever a pipeline publishes new files:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Pipe as Data pipeline
+    participant Kafka as Kafka topic
+    participant Py as Python consumer
+    participant DP as DataPress server
+    participant Mem as Resident dataset
+
+    Pipe->>Kafka: publish "events refreshed"
+    Kafka-->>Py: new message
+    Py->>DP: POST /api/v1/datasets/events/reload
+    DP->>Mem: load new copy, atomic swap
+    Note over Mem: in-flight queries use the old copy — new queries hit the new copy
+    DP-->>Py: 200 OK
+```
+
+See [Operations › Dataset reload](operations/reload.md) for the
+backend-specific swap semantics and auth requirements.
+
 ## Why It Is Easy
 
 DataPress keeps the setup surface intentionally small.
