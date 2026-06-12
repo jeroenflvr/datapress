@@ -19,3 +19,5 @@ Day-2 concerns for running DataPress in production.
   request counters and latency histograms.
 - [Authentication](auth.md) — OIDC / OAuth2 bearer enforcement,
   Swagger UI SSO, free providers for testing.
+- [Troubleshooting](troubleshooting.md) — OOM kills during dataset load,
+  cold-cache queries, reload 403s, and the DuckDB CXX ABI build error.

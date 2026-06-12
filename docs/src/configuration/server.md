@@ -239,3 +239,57 @@ INFO  Shutdown complete.
 
 See [Operations › Graceful shutdown](../operations/graceful-shutdown.md)
 for the orchestrator-side tuning.
+
+## DataFusion performance tuning
+
+The DataFusion backend runs with stock defaults unless you opt in via a
+top-level `[datafusion]` block (it is **not** part of `[server]`). Every
+knob is **off by default**, so the block changes nothing until you set it.
+It mainly helps lazy parquet datasets — especially on S3 — and the DuckDB
+backend ignores it entirely.
+
+```toml
+[datafusion]
+# Evaluate row filters *during* the parquet decode so rows failing a
+# predicate are never materialised (on top of the row-group / page-index
+# pruning that always happens). Best for selective filters over large row
+# groups. Default false.
+pushdown_filters = true
+
+# Let the scan reorder pushed-down predicates by selectivity. Only has an
+# effect together with pushdown_filters. Default false.
+reorder_filters = true
+
+# Cache object-store file listings so repeated lazy queries reuse LIST
+# results instead of re-listing the source prefix every time — the dominant
+# per-query cost on S3. Default false.
+list_files_cache = true
+
+# Memory budget for the listing cache, in MiB. Default 64.
+list_files_cache_mb = 64
+
+# How long a cached listing stays valid, in seconds. Bounds how long newly
+# written files take to become visible without a reload. 0 = never expires.
+# Default 60.
+list_files_cache_ttl_secs = 60
+```
+
+| Field                       | Default | Notes                                                                                                                  |
+|-----------------------------|---------|------------------------------------------------------------------------------------------------------------------------|
+| `pushdown_filters`          | `false` | Evaluate row-level predicates during the parquet decode so failing rows are never materialised. Best for selective filters over large row groups. |
+| `reorder_filters`           | `false` | Reorder pushed-down predicates by selectivity. Only effective together with `pushdown_filters`.                        |
+| `list_files_cache`          | `false` | Cache object-store file listings so repeated lazy queries reuse `LIST` results — the dominant per-query cost on S3.    |
+| `list_files_cache_mb`       | `64`    | Memory budget for the listing cache, in MiB.                                                                           |
+| `list_files_cache_ttl_secs` | `60`    | How long a cached listing stays valid (seconds). Bounds how long newly written files take to become visible. `0` = never expires. |
+
+!!! note
+    `list_files_cache` does **not** apply to delta sources — their file
+    list comes from the transaction log, not an object-store `LIST`. The
+    `pushdown_filters` / `reorder_filters` knobs still affect the underlying
+    parquet scan for delta. Row-group / page-index / bloom-filter pruning and
+    the parquet footer `metadata_size_hint` are already on by DataFusion's
+    defaults, so there is nothing to toggle for those.
+
+The Python `DataPressConfig` mirrors these as `datafusion_*` kwargs — see
+[Python › Configuration](../python/config.md#datafusion-performance-tuning).
+

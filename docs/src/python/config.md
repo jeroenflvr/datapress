@@ -72,8 +72,8 @@ cfg = DataPressConfig(
   files become visible (`0` = never expire). This cache does not help delta
   sources (their file list comes from the transaction log).
 
-See [Configuration › DataFusion tuning](../configuration/server.md) and
-`CONFIG.md` for the equivalent TOML knobs.
+See [Configuration › DataFusion performance tuning](../configuration/server.md#datafusion-performance-tuning)
+for the equivalent TOML knobs and their defaults.
 
 ### Swagger UI OAuth2 / OIDC
 
