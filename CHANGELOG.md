@@ -3,6 +3,22 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.17] - 2026-06-12
+
+### Bug Fixes
+
+- Reload on changed filenames (parquet on s3) ([a327c4b](https://github.com/jeroenflvr/datapress/commit/a327c4b67b0ed01ef8a62474371604f2cf5813e9))
+
+### Documentation
+
+- Add diagrams for typical usage + why rust ([19a5d0d](https://github.com/jeroenflvr/datapress/commit/19a5d0dabedcc7eeb5b4a9d152cef0448128ff6f))
+- Update datafusion tuning section, add troubleshooting ([f3f1404](https://github.com/jeroenflvr/datapress/commit/f3f14048bf4b655b09b9190ed489703d385076a8))
+- Add links ([85e71bc](https://github.com/jeroenflvr/datapress/commit/85e71bc40d1cbd23874472595fc041cde1a4c70a))
+
+### Features
+
+- Allow describe in sql endpoint ([b4d6b8b](https://github.com/jeroenflvr/datapress/commit/b4d6b8b18af2a25c852e035f929d524e607e1090))
+
 ## [0.4.16] - 2026-06-11
 
 ### Bug Fixes
