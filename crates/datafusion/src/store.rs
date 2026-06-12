@@ -242,6 +242,25 @@ impl Store {
 
         let started = std::time::Instant::now();
 
+        // Invalidate the object-store LIST cache before rebuilding. For an
+        // S3 *prefix* source the files are often rewritten with new UUID
+        // names; without dropping the cached listing the rebuilt
+        // `ListingTable` would replay the stale keys and fail with
+        // "object at location … not found". A plain prefix is therefore
+        // re-listed fresh; an explicit filename/glob source is re-resolved
+        // against the same configured pattern. Clearing the whole cache is
+        // cheap — other datasets simply re-list on their next query.
+        //
+        // NOTE: this must clear the cache that actually lives on the
+        // `RuntimeEnv`, not just the one we opt into via
+        // `[datafusion] list_files_cache`. DataFusion ≥ 53 installs a
+        // *default* `DefaultListFilesCache` (1 MiB, infinite TTL) on every
+        // `SessionContext` even when no cache is configured, so the staleness
+        // bites regardless of our flag.
+        if let Some(cache) = self.ctx.runtime_env().cache_manager.get_list_files_cache() {
+            cache.clear();
+        }
+
         // 3. Heavy lifting (source read + index build). Parquet/delta
         // readers are themselves async, so we don't wrap in `web::block`.
         let (state, provider) = build_dataset(&cfg, &self.ctx).await?;
@@ -649,6 +668,11 @@ impl Store {
 /// Row-group / page-index / bloom-filter pruning and `metadata_size_hint`
 /// are already on by default in this DataFusion version, so they are left
 /// untouched.
+///
+/// Note: DataFusion ≥ 53 installs a *default* `DefaultListFilesCache` on the
+/// `RuntimeEnv` even with the defaults below, so a reload must explicitly
+/// invalidate it (see [`Store::reload`]) — otherwise a re-listed S3 prefix
+/// would keep serving stale, now-deleted object keys.
 fn build_tuned_context(cfg: &DataFusionConfig) -> SessionContext {
     let mut config = SessionConfig::new();
     {
