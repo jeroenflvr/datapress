@@ -17,6 +17,11 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
+  # Harden crates.io access against flaky CI networking. Disabling HTTP/2
+  # multiplexing avoids the intermittent "[16] Error in the HTTP2 framing
+  # layer" curl failure; the retry count covers transient drops.
+  CARGO_NET_RETRY: "10"
+  CARGO_HTTP_MULTIPLEXING: "false"
 
 jobs:
   clippy:
