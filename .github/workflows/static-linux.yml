@@ -123,7 +123,7 @@ jobs:
           path:    static-dist
           pattern: 'static-*'
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: static-dist/*
           fail_on_unmatched_files: true
