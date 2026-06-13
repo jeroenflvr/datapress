@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.20] - 2026-06-13
+
+### Bug Fixes
+
+- Log and skip on empty deltatables ([6c2065d](https://github.com/jeroenflvr/datapress/commit/6c2065dd5c349a682f7a6bc6f31caf7490ea8b7b))
+
 ## [0.4.19] - 2026-06-13
 
 ### Bug Fixes
