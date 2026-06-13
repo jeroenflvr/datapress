@@ -1,8 +1,8 @@
 ---
 description: >-
   Diagnose and fix common DataPress runtime issues — OOM kills during dataset
-  load, slow cold-cache queries, reload 403s, empty-source startup errors, and
-  the DuckDB legacy CXX ABI build failure.
+  load, slow cold-cache queries, reload 403s, empty datasets skipped at startup,
+  and the DuckDB legacy CXX ABI build failure.
 ---
 
 # Troubleshooting
@@ -231,22 +231,44 @@ See [Operations › Dataset reload](reload.md) for the full reload
 semantics and the OIDC-based alternative under
 [Operations › Authentication](auth.md).
 
-## "dataset '…': source produced no batches" at startup
+## "skipping empty dataset '…'" at startup
 
 ### Symptom
 
-The server refuses to start with this error in the log.
+A dataset is missing from `/api/v1/datasets` and the log shows a
+warning like:
+
+```text
+WARN  skipping empty dataset 'events': dataset 'events': no *.parquet files found in data/events/
+```
 
 ### Root cause
 
-The configured `source.location` resolved to zero files. Common
-reasons:
+The configured `source.location` resolved to zero files (or zero rows).
+Rather than aborting the whole server, DataPress logs a warning and
+**skips** that one dataset — the rest of the registry still loads and
+serves traffic. Common reasons:
 
 - A glob pattern (`data/*.parquet`) that doesn't match anything on
   this host.
 - A directory path with no `.parquet` files in it.
+- An S3 prefix (`s3://bucket/events/`) with no objects under it yet.
 - A relative path that's correct on your dev box but wrong inside the
   container (the process's CWD differs).
+
+This applies to both the `datafusion` and `duckdb` backends, and to the
+Python bindings (`DataPress(...)`) the same way — the dataset is dropped,
+not fatal.
+
+!!! note "Delta tables are never \"empty\""
+    An empty Delta table still carries a schema in its transaction log,
+    so it registers normally as a 0-row dataset. Only parquet sources
+    that resolve to *no files* are skipped.
+
+!!! warning "`reload` still errors"
+    `POST /api/v1/datasets/{name}/reload` returns an error if the
+    reloaded source is empty — an admin reload is an explicit action, so
+    it reports failure instead of silently dropping the dataset.
 
 ### Fix
 
@@ -254,8 +276,11 @@ reasons:
   same working directory the server starts in.
 - For glob patterns: shell-expand them by hand
   (`echo data/*.parquet`) to confirm what they resolve to.
+- For S3: list the prefix (`aws s3 ls s3://bucket/events/`) to confirm
+  objects exist.
 - For containers: prefer absolute paths or mount the data directory
   at a known location.
+
 
 ## DuckDB build fails in CI with `legacy CXX ABI`
 

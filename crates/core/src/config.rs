@@ -1212,7 +1212,7 @@ impl DatasetConfig {
                 .collect();
             files.sort();
             if files.is_empty() {
-                return Err(AppError::Internal(format!(
+                return Err(AppError::EmptyDataset(format!(
                     "dataset '{}': glob '{loc}' matched no .parquet files",
                     self.name
                 )));
@@ -1245,7 +1245,7 @@ impl DatasetConfig {
             .collect();
         files.sort();
         if files.is_empty() {
-            return Err(AppError::Internal(format!(
+            return Err(AppError::EmptyDataset(format!(
                 "dataset '{}': no *.parquet files found in {loc}",
                 self.name
             )));

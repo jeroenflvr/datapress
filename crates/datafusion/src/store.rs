@@ -151,7 +151,14 @@ impl Store {
                 None => std::borrow::Cow::Borrowed(d),
             };
             let d = d.as_ref();
-            let (state, provider) = build_dataset(d, &ctx).await?;
+            let (state, provider) = match build_dataset(d, &ctx).await {
+                Ok(built) => built,
+                Err(AppError::EmptyDataset(msg)) => {
+                    log::warn!("skipping empty dataset '{}': {msg}", d.name);
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
             ctx.register_table(d.name.as_str(), provider)?;
             datasets.insert(d.name.clone(), Arc::new(state));
             configs.insert(d.name.clone(), d.clone());
@@ -732,7 +739,7 @@ async fn build_dataset(
         (SourceKind::Delta, true) => read_delta(d, delta_s3_options(d)?).await?,
     };
     if raw_batches.is_empty() {
-        return Err(AppError::Internal(format!(
+        return Err(AppError::EmptyDataset(format!(
             "dataset '{}': source produced no batches",
             d.name
         )));
@@ -837,6 +844,16 @@ async fn build_lazy_local_parquet(
     let file_schema = opts.infer_schema(&session_state, &url).await.map_err(|e| {
         AppError::Internal(format!("dataset '{}': infer parquet schema: {e}", d.name))
     })?;
+
+    // An empty listing yields an empty schema (DataFusion does not error on a
+    // prefix/glob that matches no files). Treat that as an empty dataset so
+    // the load loop logs and skips it rather than registering 0 columns.
+    if file_schema.fields().is_empty() {
+        return Err(AppError::EmptyDataset(format!(
+            "dataset '{}': no .parquet files at {}",
+            d.name, d.source.location
+        )));
+    }
 
     let cfg = ListingTableConfig::new(url)
         .with_listing_options(opts)
@@ -1004,6 +1021,15 @@ async fn build_lazy_s3_parquet(
     register_s3_object_store(d, ctx)?;
 
     let (provider, file_schema, part_keys) = build_s3_listing_table(d, ctx).await?;
+
+    // An empty S3 prefix yields an empty inferred schema (no error). Treat it
+    // as an empty dataset so the load loop logs and skips it.
+    if file_schema.fields().is_empty() {
+        return Err(AppError::EmptyDataset(format!(
+            "dataset '{}': no .parquet files at {}",
+            d.name, d.source.location
+        )));
+    }
 
     // Discovery schema = file columns + partition columns (Utf8).
     let mut fields: Vec<Field> = file_schema

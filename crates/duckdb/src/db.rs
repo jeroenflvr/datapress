@@ -222,7 +222,14 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
             None => std::borrow::Cow::Borrowed(d),
         };
         let d = d.as_ref();
-        let schema = register_dataset(&conn, d)?;
+        let schema = match register_dataset(&conn, d) {
+            Ok(schema) => schema,
+            Err(AppError::EmptyDataset(msg)) => {
+                log::warn!("skipping empty dataset '{}': {msg}", d.name);
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
         let rows = count_rows(&conn, &d.name)?;
         if d.lazy {
             log::info!(
@@ -468,8 +475,25 @@ fn register_dataset(conn: &Connection, cfg: &DatasetConfig) -> Result<DatasetSch
     let scan = build_scan_clause(cfg)?;
     let table = DatasetSchema::quote_ident(&cfg.name);
     let relation = if cfg.lazy { "VIEW" } else { "TABLE" };
-    conn.execute_batch(&format!("CREATE {relation} {table} AS SELECT * FROM {scan};"))?;
+    conn.execute_batch(&format!("CREATE {relation} {table} AS SELECT * FROM {scan};"))
+        .map_err(|e| classify_scan_error(cfg, e))?;
     introspect_schema(conn, &cfg.name)
+}
+
+/// Classify a DuckDB source-scan failure. An S3 / glob source that matches
+/// no files surfaces as an "IO Error: No files found …" — that means the
+/// dataset is currently empty, which the load loop logs and skips rather
+/// than treating as fatal. Everything else stays an internal error.
+fn classify_scan_error(cfg: &DatasetConfig, e: duckdb::Error) -> AppError {
+    let msg = e.to_string();
+    if msg.to_lowercase().contains("no files found") {
+        AppError::EmptyDataset(format!(
+            "dataset '{}': source matched no files: {}",
+            cfg.name, cfg.source.location
+        ))
+    } else {
+        AppError::Internal(msg)
+    }
 }
 
 fn introspect_schema(conn: &Connection, table: &str) -> Result<DatasetSchema, AppError> {

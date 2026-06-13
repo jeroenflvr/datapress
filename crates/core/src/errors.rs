@@ -9,6 +9,9 @@ pub enum AppError {
     Unauthorized(String),
     Forbidden(String),
     Unavailable(String),
+    /// A dataset's source resolved to no data (no matching files / no rows).
+    /// Used at startup to log-and-skip the dataset rather than aborting.
+    EmptyDataset(String),
     Internal(String),
 }
 
@@ -22,6 +25,7 @@ impl std::fmt::Display for AppError {
             AppError::Unauthorized(m) => write!(f, "unauthorized: {m}"),
             AppError::Forbidden(m) => write!(f, "forbidden: {m}"),
             AppError::Unavailable(m) => write!(f, "service unavailable: {m}"),
+            AppError::EmptyDataset(m) => write!(f, "empty dataset: {m}"),
             AppError::Internal(s) => write!(f, "internal error: {s}"),
         }
     }

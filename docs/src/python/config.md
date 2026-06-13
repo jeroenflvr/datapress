@@ -167,6 +167,15 @@ ds = DatasetConfig(
 | `description`          | Free-form metadata; surfaced by `/api/v1/datasets`.                  |
 | `s3`                   | `S3Config` — only for `s3://` sources.                               |
 
+!!! note "Empty datasets are skipped"
+    If a dataset's `source` resolves to no files at startup (an empty
+    directory, a non-matching glob, or an empty `s3://` prefix),
+    `DataPress(...)` logs a warning and skips just that dataset instead of
+    raising — the server still boots with the remaining datasets. An empty
+    Delta table is *not* skipped: it registers as a 0-row dataset. See
+    [Configuration › Datasets](../configuration/datasets.md#empty-datasets-are-skipped-not-fatal).
+
+
 ## `S3Config`
 
 ```python

@@ -106,3 +106,32 @@ location = "data/orders_delta/"
 
 For S3-backed parquet and delta tables, see
 [S3 / object storage](s3.md).
+
+## Empty datasets are skipped, not fatal
+
+If a dataset's `source.location` resolves to **no files** at startup —
+an empty directory, a glob that matches nothing, or an S3 prefix with no
+objects yet — DataPress logs a warning and **skips just that dataset**.
+The rest of the registry still loads and serves traffic:
+
+```text
+WARN  skipping empty dataset 'events': dataset 'events': no *.parquet files found in data/events/
+```
+
+This applies to both backends (`datafusion` and `duckdb`), to parquet
+sources whether local or `s3://`, and to the Python bindings the same
+way. The skipped dataset simply won't appear in `/api/v1/datasets`.
+
+!!! note "Delta tables are never \"empty\""
+    An empty Delta table still carries a schema in its transaction log,
+    so it registers normally as a 0-row dataset. Only parquet sources
+    that resolve to *no files* are skipped.
+
+!!! warning "`reload` still errors on empty"
+    `POST /api/v1/datasets/{name}/reload` returns an error if the
+    reloaded source is empty. A reload is an explicit admin action, so it
+    reports failure rather than silently dropping the live dataset.
+
+See [Troubleshooting › empty datasets](../operations/troubleshooting.md#skipping-empty-dataset-at-startup)
+for diagnosis tips.
+
