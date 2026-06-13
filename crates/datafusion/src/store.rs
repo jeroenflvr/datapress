@@ -1423,10 +1423,28 @@ async fn open_delta_provider(
     let table = deltalake::open_table_with_storage_options(url, opts)
         .await
         .map_err(|e| {
-            AppError::Internal(format!(
-                "dataset '{}': delta open '{}': {e}",
-                d.name, d.source.location
-            ))
+            // A Delta location that doesn't exist, is empty, or was never
+            // committed has no files in its log segment. deltalake (kernel
+            // 0.32) surfaces every one of these as:
+            //   "Not a Delta table: Generic delta kernel error: No files in
+            //    log segment"
+            // — covering a missing local dir AND a non-existent S3 prefix
+            // alike. Match case-insensitively (the kernel capitalises the
+            // phrases) and treat it like any other empty dataset so startup
+            // logs and skips instead of aborting the whole process.
+            let msg = e.to_string();
+            let low = msg.to_lowercase();
+            if low.contains("no files in log segment") || low.contains("not a delta table") {
+                AppError::EmptyDataset(format!(
+                    "delta location '{}' has no committed files ({msg})",
+                    d.source.location
+                ))
+            } else {
+                AppError::Internal(format!(
+                    "dataset '{}': delta open '{}': {msg}",
+                    d.name, d.source.location
+                ))
+            }
         })?;
     table.table_provider().await.map_err(|e| {
         AppError::Internal(format!("dataset '{}': delta table_provider: {e}", d.name))

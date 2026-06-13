@@ -253,6 +253,8 @@ serves traffic. Common reasons:
   this host.
 - A directory path with no `.parquet` files in it.
 - An S3 prefix (`s3://bucket/events/`) with no objects under it yet.
+- A Delta location with no committed files in its log segment
+  (uninitialized, or pointed at a path that isn't a Delta table).
 - A relative path that's correct on your dev box but wrong inside the
   container (the process's CWD differs).
 
@@ -260,10 +262,11 @@ This applies to both the `datafusion` and `duckdb` backends, and to the
 Python bindings (`DataPress(...)`) the same way — the dataset is dropped,
 not fatal.
 
-!!! note "Delta tables are never \"empty\""
-    An empty Delta table still carries a schema in its transaction log,
-    so it registers normally as a 0-row dataset. Only parquet sources
-    that resolve to *no files* are skipped.
+!!! note "Delta tables: 0 rows vs. no log"
+    An empty Delta table that has a committed transaction log still
+    carries a schema, so it registers normally as a 0-row dataset. Only
+    a Delta location with **no committed files in its log segment**
+    (`not a delta table: ... no files in log segment`) is skipped.
 
 !!! warning "`reload` still errors"
     `POST /api/v1/datasets/{name}/reload` returns an error if the

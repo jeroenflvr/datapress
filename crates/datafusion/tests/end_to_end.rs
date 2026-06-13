@@ -310,6 +310,29 @@ async fn delta_local_lazy_reads_and_filters() {
     assert_eq!(filtered[0]["id"], Value::from(2));
 }
 
+/// A Delta dataset whose location doesn't exist (or is an empty directory
+/// with no committed transaction log) must be *skipped* at startup, not
+/// abort the whole `Store::load`. deltalake reports both as
+/// "Not a Delta table: ... No files in log segment"; `open_delta_provider`
+/// maps that to `EmptyDataset`, which `Store::load` logs and skips. Covers
+/// both the eager and lazy build paths.
+#[actix_web::test]
+async fn delta_missing_location_is_skipped() {
+    // A path under a fresh temp dir that we never create: no log segment.
+    let tmp = TempDir::new().unwrap();
+    let missing = tmp.path().join("does/not/exist");
+    let loc = missing.to_str().unwrap();
+
+    for lazy in [false, true] {
+        let store = make_delta_store_lazy(loc, lazy).await;
+        assert!(
+            !store.names().contains(&"people".to_string()),
+            "missing delta location should be skipped (lazy={lazy}), got names: {:?}",
+            store.names()
+        );
+    }
+}
+
 #[actix_web::test]
 async fn hive_partition_column_eager() {
     let tmp = TempDir::new().unwrap();
