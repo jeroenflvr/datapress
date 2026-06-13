@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.18] - 2026-06-13
+
+### Bug Fixes
+
+- Correct empty data handling with datafusion - log and skip ([19791e1](https://github.com/jeroenflvr/datapress/commit/19791e17e4545cf231e053e793cb53ab1919e8c9))
+
+### Miscellaneous
+
+- Update crates from audit failures ([7bdd405](https://github.com/jeroenflvr/datapress/commit/7bdd40521140b7f7ee492dc32d0a1d11be2de020))
+
 ## [0.4.17] - 2026-06-12
 
 ### Bug Fixes
