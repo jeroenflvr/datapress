@@ -111,9 +111,10 @@ For S3-backed parquet and delta tables, see
 
 If a dataset's `source.location` resolves to **no files** at startup —
 an empty directory, a glob that matches nothing, an S3 prefix with no
-objects yet, or a Delta location with no committed files in its log
-segment — DataPress logs a warning and **skips just that dataset**.
-The rest of the registry still loads and serves traffic:
+objects yet, or a Delta table with no data files (no log segment, or a
+committed schema with zero rows) — DataPress logs a warning and **skips
+just that dataset**. The rest of the registry still loads and serves
+traffic:
 
 ```text
 WARN  skipping empty dataset 'events': dataset 'events': no *.parquet files found in data/events/
@@ -124,11 +125,22 @@ sources whether local or `s3://`, to Delta tables, and to the Python
 bindings the same way. The skipped dataset simply won't appear in
 `/api/v1/datasets`.
 
-!!! note "Delta tables: 0 rows vs. no log"
-    An empty Delta table that has a committed transaction log still
-    carries a schema, so it registers normally as a 0-row dataset. Only
-    a Delta location with **no committed files in its log segment** (an
-    uninitialized or not-yet-a-Delta-table path) is skipped.
+!!! note "Empty Delta tables are skipped"
+    A Delta table that resolves to **zero data files** is skipped, whether
+    it has a committed transaction log + schema but no rows, or no log
+    segment at all (an uninitialized or not-yet-a-Delta-table path). It
+    won't appear in `/api/v1/datasets` or the explorer until it has rows.
+
+!!! note "Inaccessible S3 sources are skipped too"
+    An `s3://` source that returns **403 Access Denied** at startup (bad
+    credentials, missing bucket/prefix policy, or an expired token) is
+    logged and skipped the same way, instead of aborting the whole
+    server. Fix the credentials or policy and `reload` (or restart) to
+    pick it up.
+
+    ```text
+    WARN  skipping dataset 'events': S3 access denied — check credentials and bucket policy (...)
+    ```
 
 !!! warning "`reload` still errors on empty"
     `POST /api/v1/datasets/{name}/reload` returns an error if the

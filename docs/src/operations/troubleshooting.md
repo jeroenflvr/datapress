@@ -253,8 +253,8 @@ serves traffic. Common reasons:
   this host.
 - A directory path with no `.parquet` files in it.
 - An S3 prefix (`s3://bucket/events/`) with no objects under it yet.
-- A Delta location with no committed files in its log segment
-  (uninitialized, or pointed at a path that isn't a Delta table).
+- A Delta table with no data files — no log segment (uninitialized or not
+  a Delta table), or a committed schema with zero rows.
 - A relative path that's correct on your dev box but wrong inside the
   container (the process's CWD differs).
 
@@ -262,11 +262,23 @@ This applies to both the `datafusion` and `duckdb` backends, and to the
 Python bindings (`DataPress(...)`) the same way — the dataset is dropped,
 not fatal.
 
-!!! note "Delta tables: 0 rows vs. no log"
-    An empty Delta table that has a committed transaction log still
-    carries a schema, so it registers normally as a 0-row dataset. Only
-    a Delta location with **no committed files in its log segment**
-    (`not a delta table: ... no files in log segment`) is skipped.
+!!! note "Empty Delta tables are skipped"
+    A Delta table that resolves to **zero data files** is skipped — both
+    a table with a committed log + schema but no rows, and a location with
+    **no log segment** at all (`not a delta table: ... no files in log
+    segment`). It won't appear in `/api/v1/datasets` or the explorer until
+    it has rows.
+
+!!! note "S3 access denied is also skipped"
+    An `s3://` source that returns **403 Access Denied** at startup (bad
+    credentials, missing bucket/prefix policy, or an expired token) is
+    logged and skipped too, rather than aborting the server:
+
+    ```text
+    WARN  skipping dataset 'events': S3 access denied — check credentials and bucket policy (...)
+    ```
+
+    Fix the credentials/policy, then `reload` (or restart) to pick it up.
 
 !!! warning "`reload` still errors"
     `POST /api/v1/datasets/{name}/reload` returns an error if the

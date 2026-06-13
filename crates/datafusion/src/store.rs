@@ -157,6 +157,19 @@ impl Store {
                     log::warn!("skipping empty dataset '{}': {msg}", d.name);
                     continue;
                 }
+                // An S3 source we're not authorized to read (bad creds, no
+                // bucket/prefix policy, expired token) returns a 403. Don't
+                // abort the whole registry for one inaccessible dataset —
+                // log and skip it, exactly like an empty source. The rest of
+                // the datasets still load and serve traffic.
+                Err(e) if d.source.is_s3() && is_s3_access_denied(&e.to_string()) => {
+                    log::warn!(
+                        "skipping dataset '{}': S3 access denied — check credentials \
+                         and bucket policy ({e})",
+                        d.name
+                    );
+                    continue;
+                }
                 Err(e) => return Err(e),
             };
             ctx.register_table(d.name.as_str(), provider)?;
@@ -741,6 +754,16 @@ async fn build_dataset(
     if raw_batches.is_empty() {
         return Err(AppError::EmptyDataset(format!(
             "dataset '{}': source produced no batches",
+            d.name
+        )));
+    }
+    // A source can also resolve to one or more *zero-row* batches (e.g. an
+    // empty Delta table, or a parquet file with only a schema). Treat that as
+    // empty too so it's logged and skipped rather than registered as a 0-row
+    // dataset that shows up in discovery / explore.
+    if raw_batches.iter().all(|b| b.num_rows() == 0) {
+        return Err(AppError::EmptyDataset(format!(
+            "dataset '{}': source has a schema but no rows",
             d.name
         )));
     }
@@ -1405,22 +1428,23 @@ async fn read_s3_parquet(
     Ok(df.collect().await?)
 }
 
-/// Open a Delta table (local or S3) and return its DataFusion
-/// `TableProvider`. The provider reads the transaction log to resolve the
-/// current file list and registers the table's object store on the session
+/// Open a Delta table (local or S3) and return the deltalake `DeltaTable`
+/// handle. The transaction log is read here to resolve the current file
+/// list + schema; the table's object store is registered on the session
 /// `RuntimeEnv` lazily at scan time, so callers don't need to register a
-/// store themselves.
-async fn open_delta_provider(
+/// store themselves. A location that doesn't exist, is empty, or was never
+/// committed maps to [`AppError::EmptyDataset`] so startup can log-and-skip.
+async fn open_delta_table(
     d: &DatasetConfig,
     opts: HashMap<String, String>,
-) -> Result<Arc<dyn TableProvider>, AppError> {
+) -> Result<deltalake::DeltaTable, AppError> {
     let url = deltalake::ensure_table_uri(&d.source.location).map_err(|e| {
         AppError::Internal(format!(
             "dataset '{}': bad delta location '{}': {e}",
             d.name, d.source.location
         ))
     })?;
-    let table = deltalake::open_table_with_storage_options(url, opts)
+    deltalake::open_table_with_storage_options(url, opts)
         .await
         .map_err(|e| {
             // A Delta location that doesn't exist, is empty, or was never
@@ -1445,7 +1469,19 @@ async fn open_delta_provider(
                     d.name, d.source.location
                 ))
             }
-        })?;
+        })
+}
+
+/// Open a Delta table (local or S3) and return its DataFusion
+/// `TableProvider`. The provider reads the transaction log to resolve the
+/// current file list and registers the table's object store on the session
+/// `RuntimeEnv` lazily at scan time, so callers don't need to register a
+/// store themselves.
+async fn open_delta_provider(
+    d: &DatasetConfig,
+    opts: HashMap<String, String>,
+) -> Result<Arc<dyn TableProvider>, AppError> {
+    let table = open_delta_table(d, opts).await?;
     table.table_provider().await.map_err(|e| {
         AppError::Internal(format!("dataset '{}': delta table_provider: {e}", d.name))
     })
@@ -1487,7 +1523,28 @@ async fn build_lazy_delta(
     d: &DatasetConfig,
     _ctx: &SessionContext,
 ) -> Result<(DatasetState, Arc<dyn TableProvider>), AppError> {
-    let provider = open_delta_provider(d, delta_storage_options(d)?).await?;
+    let table = open_delta_table(d, delta_storage_options(d)?).await?;
+
+    // An empty Delta table carries a valid schema in its log but resolves to
+    // zero data files. The eager path catches this naturally (a full scan
+    // yields no batches), but the lazy path never scans — so check the file
+    // list explicitly and skip, matching the eager behaviour. Without this an
+    // empty Delta table would register as a 0-row dataset and show up in
+    // discovery / explore.
+    let file_count = table
+        .get_file_uris()
+        .map(|it| it.count())
+        .map_err(|e| AppError::Internal(format!("dataset '{}': delta file list: {e}", d.name)))?;
+    if file_count == 0 {
+        return Err(AppError::EmptyDataset(format!(
+            "delta location '{}' has a schema but no data files",
+            d.source.location
+        )));
+    }
+
+    let provider = table.table_provider().await.map_err(|e| {
+        AppError::Internal(format!("dataset '{}': delta table_provider: {e}", d.name))
+    })?;
 
     // The provider's schema is the full logical schema (data + partition
     // columns), which is exactly the discovery schema we want.
@@ -1583,9 +1640,21 @@ fn register_s3_object_store(d: &DatasetConfig, ctx: &SessionContext) -> Result<(
     Ok(())
 }
 
-/// Decide whether dataset `d` should be forced lazy because its backing data
-/// exceeds `server.force_lazy_above_mb`. Returns `Some(measured_bytes)` when it
-/// should be forced, `None` otherwise.
+/// Best-effort detection of an S3 authorization failure (HTTP 403) from an
+/// error message. object_store, the AWS SDK, deltalake, and MinIO all
+/// surface a denied read as some mix of "Access Denied" / "AccessDenied"
+/// (the S3 error code), "Forbidden", or a bare "403" in the rendered error
+/// chain. Matched case-insensitively. Only consulted for sources we already
+/// know are S3, so a stray "forbidden" in unrelated text can't misfire.
+fn is_s3_access_denied(msg: &str) -> bool {
+    let low = msg.to_lowercase();
+    low.contains("access denied")
+        || low.contains("accessdenied")
+        || low.contains("forbidden")
+        || low.contains("403")
+}
+
+
 ///
 /// Local sources are sized with a cheap filesystem stat (`estimate_local_bytes`);
 /// S3 sources are sized by listing the object store under their prefix. S3
@@ -3124,3 +3193,33 @@ impl Backend for Store {
         Store::reload(self, name).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::is_s3_access_denied;
+
+    #[test]
+    fn detects_s3_access_denied_variants() {
+        // Representative messages from object_store / AWS / deltalake / MinIO.
+        for msg in [
+            "Generic S3 error: Error performing get request: response error \"<Error><Code>AccessDenied</Code></Error>\", status: 403",
+            "Client error with status 403 Forbidden",
+            "S3 error: Access Denied",
+            "request failed: 403 Forbidden",
+        ] {
+            assert!(is_s3_access_denied(msg), "should flag: {msg}");
+        }
+    }
+
+    #[test]
+    fn ignores_unrelated_errors() {
+        for msg in [
+            "Not a Delta table: Generic delta kernel error: No files in log segment",
+            "object at location data/part.parquet not found",
+            "failed to infer parquet schema: invalid magic bytes",
+        ] {
+            assert!(!is_s3_access_denied(msg), "should not flag: {msg}");
+        }
+    }
+}
+

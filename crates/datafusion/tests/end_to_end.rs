@@ -333,6 +333,27 @@ async fn delta_missing_location_is_skipped() {
     }
 }
 
+/// An *empty* Delta table — a valid transaction log + schema but zero data
+/// files / rows — must be skipped at startup, not registered as a 0-row
+/// dataset that shows up in discovery / explore. Covers both the eager
+/// (full scan yields no rows) and lazy (file list is empty) build paths.
+#[actix_web::test]
+async fn delta_empty_table_is_skipped() {
+    let tmp = TempDir::new().unwrap();
+    // Commit a transaction with no rows -> schema exists, zero data files.
+    write_delta(tmp.path(), &[], &[], &[]).await;
+    let loc = tmp.path().to_str().unwrap();
+
+    for lazy in [false, true] {
+        let store = make_delta_store_lazy(loc, lazy).await;
+        assert!(
+            !store.names().contains(&"people".to_string()),
+            "empty delta table should be skipped (lazy={lazy}), got names: {:?}",
+            store.names()
+        );
+    }
+}
+
 #[actix_web::test]
 async fn hive_partition_column_eager() {
     let tmp = TempDir::new().unwrap();
