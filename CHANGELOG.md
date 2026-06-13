@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.21] - 2026-06-13
+
+### Bug Fixes
+
+- Don't register empty delta tables ([cffd81e](https://github.com/jeroenflvr/datapress/commit/cffd81ef889ff719da12d2a68dbb1b2e6f5a8cf2))
+
 ## [0.4.20] - 2026-06-13
 
 ### Bug Fixes
