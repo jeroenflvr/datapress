@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.19] - 2026-06-13
+
+### Bug Fixes
+
+- *(ci)* Build failures for windows (duckdb dep versions) ([e2a98fc](https://github.com/jeroenflvr/datapress/commit/e2a98fce63a5cc9dee6b5b745716fd774f3d706b))
+
 ## [0.4.18] - 2026-06-13
 
 ### Bug Fixes

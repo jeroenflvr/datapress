@@ -2601,7 +2601,7 @@ dependencies = [
 
 [[package]]
 name = "datapress"
-version = "0.4.18"
+version = "0.4.19"
 dependencies = [
  "actix-web",
  "clap",
@@ -2615,7 +2615,7 @@ dependencies = [
 
 [[package]]
 name = "datapress-cli"
-version = "0.4.18"
+version = "0.4.19"
 dependencies = [
  "anyhow",
  "arrow",
@@ -2626,7 +2626,7 @@ dependencies = [
 
 [[package]]
 name = "datapress-client"
-version = "0.4.18"
+version = "0.4.19"
 dependencies = [
  "arrow",
  "bytes",
@@ -2639,7 +2639,7 @@ dependencies = [
 
 [[package]]
 name = "datapress-client-py"
-version = "0.4.18"
+version = "0.4.19"
 dependencies = [
  "datapress-client",
  "pyo3",
@@ -2649,7 +2649,7 @@ dependencies = [
 
 [[package]]
 name = "datapress-core"
-version = "0.4.18"
+version = "0.4.19"
 dependencies = [
  "actix-rt",
  "actix-web",
@@ -2681,7 +2681,7 @@ dependencies = [
 
 [[package]]
 name = "datapress-datafusion"
-version = "0.4.18"
+version = "0.4.19"
 dependencies = [
  "actix-web",
  "ahash 0.8.12",
@@ -2710,7 +2710,7 @@ dependencies = [
 
 [[package]]
 name = "datapress-duckdb"
-version = "0.4.18"
+version = "0.4.19"
 dependencies = [
  "actix-web",
  "arrow",
@@ -2729,7 +2729,7 @@ dependencies = [
 
 [[package]]
 name = "datapress-py"
-version = "0.4.18"
+version = "0.4.19"
 dependencies = [
  "actix-web",
  "datapress-core",
