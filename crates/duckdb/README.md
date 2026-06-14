@@ -26,7 +26,7 @@ Datasets are configured in `datasets.toml`; see the
 
 ## Features
 
-`docs`, `swagger`, `metrics`, and `auth` forward to the matching
+`docs`, `swagger`, `metrics`, `auth`, and `explorer` forward to the matching
 [`datapress-core`](https://crates.io/crates/datapress-core) features.
 
 ## License

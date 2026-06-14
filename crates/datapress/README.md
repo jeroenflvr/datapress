@@ -55,8 +55,8 @@ cargo install datapress --no-default-features --features datafusion
 
 ## Optional features
 
-`docs`, `swagger`, `metrics`, and `auth` are forwarded to whichever
-backends are enabled, e.g.:
+`docs`, `swagger`, `metrics`, `auth`, and `explorer` are forwarded to
+whichever backends are enabled, e.g.:
 
 ```sh
 cargo install datapress --features swagger,auth,metrics

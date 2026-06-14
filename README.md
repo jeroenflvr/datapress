@@ -324,6 +324,13 @@ must differ from each other. When the binary is built without the
 relevant feature but the TOML enables it, the server logs a warning at
 startup and continues without that surface.
 
+### Browser explorer
+
+Build with `--features explorer` to embed a small browser UI at `/explore`
+for poking at datasets — list / schema browsing plus an API Query tab that
+issues `/query` calls and decodes the Arrow IPC responses client-side. Like
+the docs surfaces it is compiled in opt-in and served by default once present.
+
 ### Authentication (OIDC / OAuth2)
 
 Build with `--features auth` to enable JWT bearer enforcement against
@@ -420,7 +427,8 @@ Override the config path with `DATASETS_CONFIG=/path/to/file.toml`.
 
 ## HTTP API
 
-Four routes, both backends:
+Five core routes, both backends — list / schema / query / count / reload —
+plus an opt-in raw-SQL endpoint (see below):
 
 ### API versioning
 
@@ -655,6 +663,31 @@ resident chunk metadata, no scan); indexable predicates short-circuit
 through the equality index. Otherwise it runs `SELECT COUNT(*) … WHERE …`
 through the engine.
 
+### `POST /api/v1/sql` *(raw SQL — opt-in)*
+
+Runs a single read-only `SELECT` / `WITH … SELECT` (or `DESCRIBE <table>`)
+that references **exactly one** registered dataset by its configured `name`.
+**Disabled by default** — while off the route returns `404`, so its presence
+isn't even revealed. Every statement is parsed and validated (no file
+functions, `ATTACH`, `COPY`, `PRAGMA`, DDL or DML) before any engine sees it.
+
+Enable it with a top-level `[sql]` block:
+
+```toml
+[sql]
+enabled  = false     # set true to expose POST /api/v1/sql (default false)
+max_rows = 100000    # server-side hard cap; result wrapped in an outer LIMIT
+```
+
+```json
+{ "sql": "SELECT State, COUNT(*) AS n FROM accidents GROUP BY State", "max_rows": 500 }
+```
+
+`max_rows` is clamped into `[1, sql.max_rows]` and can never raise the server
+cap; omit it to use the configured cap. Like `/query`, the response is
+content-negotiated — send `Accept: application/vnd.apache.arrow.stream`
+(or `?format=arrow`) for an Arrow IPC stream instead of the JSON envelope.
+
 ### `POST /api/v1/datasets/{name}/reload` *(admin)*
 
 Rebuilds the dataset from its configured `source` and publishes the new
@@ -756,35 +789,7 @@ For a deeper benchmark catalogue (light load + CPU/memory stress tests), see
 
 ---
 
-## Project layout
-
-```
-Cargo.toml                          # workspace manifest
-pyproject.toml                      # maturin / PyO3 build
-crates/
-├ core/                           # datapress-core: config, schema, errors, admin
-│   └ src/
-│       ├ admin.rs                # X-Admin-Token verification (constant-time)
-│       ├ config.rs               # datasets.toml parsing + validation
-│       ├ schema.rs               # backend-agnostic schema model
-│       ├ models.rs               # Predicate / QueryRequest
-│       └ errors.rs               # AppError + actix ResponseError
-├ duckdb/                         # datapress-duckdb
-│   └ src/
-│       ├ lib.rs                  # pub async fn serve(cfg) -> io::Result<()>
-│       ├ db.rs                   # Registry: pool + schemas + reload
-│       ├ repository.rs           # DatasetRepository (SQL builder)
-│       ├ handlers.rs             # actix routes
-│       └ bin/datapress-duckdb.rs # entrypoint binary
-├ datafusion/                     # datapress-datafusion
-│   └ src/
-│       ├ lib.rs                  # pub async fn serve(cfg) -> io::Result<()>
-│       ├ store.rs                # Store: RecordBatch + eq-index + reload
-│       ├ handlers.rs             # actix routes
-│       └ bin/datapress-datafusion.rs
-└ python/                         # datapress (Python wheel, cdylib)
-    └ src/lib.rs                  # PyO3 bindings — DataPress, DataPressConfig, ...
-```
+## Project specifics
 
 Core re-exports compile without any backend; each backend crate adds the
 feature flag it needs on `datapress-core`. The Python crate depends on both
@@ -810,8 +815,9 @@ task py:develop     # editable install into ./.venv (uses uv + maturin)
 task py:build       # release wheel into ./target/wheels/
 ```
 
-Release builds use LTO + `codegen-units = 1` (see `[profile.release]` in
-`Cargo.toml`). Expect noticeably longer link times in exchange for tighter
+Release builds use thin LTO (see `[profile.release]` in `Cargo.toml`); fat
+LTO was dropped because it OOM-killed `rustc` when cross-building the aarch64
+wheel under QEMU. Expect somewhat longer link times in exchange for tighter
 inner loops.
 
 ---
@@ -835,9 +841,11 @@ in `datasets.toml`, not in env vars.
 
 ## Status / non-goals
 
-- No authentication or rate-limiting on query routes — put this behind your
-  own gateway. The `reload` admin route is gated by a shared-secret header
-  (`X-Admin-Token`) and disabled unless `ADMIN_TOKEN` is set.
+- No rate-limiting on query routes — put this behind your own gateway.
+  Authentication is opt-in: build with `--features auth` for OIDC / OAuth2
+  bearer enforcement (see "Authentication" above). The `reload` admin route
+  is additionally gated by a shared-secret header (`X-Admin-Token`) and
+  disabled unless `ADMIN_TOKEN` is set.
 - No write path: parquet sources are read-only. The only mutation is
   reloading a dataset from disk via the admin route.
 - No cursor pagination — pagination is plain `OFFSET / LIMIT`, so deep
