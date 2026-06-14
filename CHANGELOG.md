@@ -3,6 +3,20 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.23] - 2026-06-14
+
+### Bug Fixes
+
+- Eager path also skips empty datasets ([1aa4766](https://github.com/jeroenflvr/datapress/commit/1aa4766855ea030cad2baa7f6934b99cf2eaf115))
+
+### CI
+
+- *(winget)* Anchor installer regex to server zip; bump reference manifests to 0.4.22 ([01e1ba3](https://github.com/jeroenflvr/datapress/commit/01e1ba3e83fc26d5207299001b1400ed935ac745))
+
+### Documentation
+
+- Update for stale content ([5ea5809](https://github.com/jeroenflvr/datapress/commit/5ea5809a6735d30fd97d40309c85eb796cbf036b))
+
 ## [0.4.22] - 2026-06-14
 
 ### Bug Fixes
