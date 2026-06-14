@@ -1507,11 +1507,26 @@ async fn read_delta(
     let provider = open_delta_provider(d, opts).await?;
     // Drive a full scan via a throwaway SessionContext so we end up with
     // an in-memory Vec<RecordBatch> the shared materialise path can use.
+    //
+    // A Delta table can open cleanly (valid log + schema) yet still fail to
+    // scan: its add actions may reference data files that no longer exist in
+    // storage (e.g. vacuumed away), or are otherwise unreadable. Rather than
+    // abort the whole registry for one broken table, map scan failures to
+    // `EmptyDataset` so `Store::load` logs and skips it — mirroring the
+    // bounded-probe behaviour on the lazy path.
     let scan_ctx = SessionContext::new();
-    let df = scan_ctx
-        .read_table(provider)
-        .map_err(|e| AppError::Internal(format!("dataset '{}': delta read_table: {e}", d.name)))?;
-    Ok(df.collect().await?)
+    let df = scan_ctx.read_table(provider).map_err(|e| {
+        AppError::EmptyDataset(format!(
+            "delta location '{}' could not be scanned, skipping ({e})",
+            d.source.location
+        ))
+    })?;
+    df.collect().await.map_err(|e| {
+        AppError::EmptyDataset(format!(
+            "delta location '{}' could not be scanned, skipping ({e})",
+            d.source.location
+        ))
+    })
 }
 
 /// Build a lazy state + deltalake `TableProvider` for a Delta dataset
@@ -1545,6 +1560,48 @@ async fn build_lazy_delta(
     let provider = table.table_provider().await.map_err(|e| {
         AppError::Internal(format!("dataset '{}': delta table_provider: {e}", d.name))
     })?;
+
+    // The file-list check above only catches a Delta table with *no* data
+    // files. A table can still be effectively empty in ways the log doesn't
+    // make obvious: its add actions may reference files that contain zero
+    // rows, or files that no longer exist in storage (e.g. vacuumed). Those
+    // register fine here but then return nothing — or hard-error — the moment
+    // they're queried, leaving a broken dataset visible in discovery/explore.
+    //
+    // The eager path catches all of this for free (a full scan yields no rows
+    // or surfaces the read error up front), but the lazy path never scans. So
+    // probe with a bounded one-row scan: it reads at most a single row group
+    // from a single file, costing almost nothing on a healthy table, but lets
+    // us log-and-skip an empty or unreadable table instead of registering it.
+    {
+        let probe_ctx = SessionContext::new();
+        let probe = probe_ctx
+            .read_table(provider.clone())
+            .and_then(|df| df.limit(0, Some(1)));
+        match probe {
+            Ok(df) => match df.collect().await {
+                Ok(batches) if batches.iter().all(|b| b.num_rows() == 0) => {
+                    return Err(AppError::EmptyDataset(format!(
+                        "delta location '{}' resolves to no rows",
+                        d.source.location
+                    )));
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    return Err(AppError::EmptyDataset(format!(
+                        "delta location '{}' could not be scanned, skipping ({e})",
+                        d.source.location
+                    )));
+                }
+            },
+            Err(e) => {
+                return Err(AppError::EmptyDataset(format!(
+                    "delta location '{}' could not be scanned, skipping ({e})",
+                    d.source.location
+                )));
+            }
+        }
+    }
 
     // The provider's schema is the full logical schema (data + partition
     // columns), which is exactly the discovery schema we want.

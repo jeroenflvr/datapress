@@ -354,6 +354,41 @@ async fn delta_empty_table_is_skipped() {
     }
 }
 
+/// A Delta table whose transaction log still references data files that no
+/// longer exist in storage (e.g. vacuumed away) opens fine and lists a
+/// non-zero file count, so the file-list check can't catch it — but every
+/// query against it hard-errors. Both build paths must log-and-skip such a
+/// table rather than registering a broken dataset that shows up in
+/// discovery / explore and then fails on query: the lazy path probes with a
+/// bounded scan, the eager path maps its full-scan failure to the same skip.
+#[actix_web::test]
+async fn delta_with_missing_data_files_is_skipped() {
+    let tmp = TempDir::new().unwrap();
+    write_delta(tmp.path(), &[1, 2, 3], &["a", "b", "c"], &[1.0, 2.0, 3.0]).await;
+
+    // Delete the parquet data files but keep `_delta_log/` intact, so the log
+    // still advertises files that can no longer be read.
+    let mut removed = 0;
+    for entry in std::fs::read_dir(tmp.path()).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|e| e.to_str()) == Some("parquet") {
+            std::fs::remove_file(&path).unwrap();
+            removed += 1;
+        }
+    }
+    assert!(removed > 0, "expected at least one parquet data file to delete");
+
+    let loc = tmp.path().to_str().unwrap();
+    for lazy in [false, true] {
+        let store = make_delta_store_lazy(loc, lazy).await;
+        assert!(
+            !store.names().contains(&"people".to_string()),
+            "delta table with missing data files should be skipped (lazy={lazy}), got names: {:?}",
+            store.names()
+        );
+    }
+}
+
 #[actix_web::test]
 async fn hive_partition_column_eager() {
     let tmp = TempDir::new().unwrap();
