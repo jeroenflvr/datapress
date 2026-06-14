@@ -328,6 +328,15 @@ jobs:
         with:
           shared-key: cli-${{ matrix.target }}
       - name: Build datapress CLI
+        env:
+          # Statically link the MSVC C runtime on Windows so the standalone
+          # binary is self-contained and doesn't depend on the VC++
+          # Redistributable (VCRUNTIME140*.dll). That DLL isn't present on a
+          # clean Windows (e.g. Windows Sandbox), which made the exe crash on
+          # launch and failed winget's installer validation. `cc`/libduckdb-sys
+          # picks up the +crt-static target feature and compiles DuckDB's C++
+          # with /MT to match. Empty (no-op) on macOS.
+          RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
         run: cargo build --release -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer --target ${{ matrix.target }}
       - name: Package (Unix)
         if: runner.os != 'Windows'
