@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.22] - 2026-06-14
+
+### Bug Fixes
+
+- *(windows)* Statically link the MSVC CRT so the binary runs without the VC++ redistributable ([d94710b](https://github.com/jeroenflvr/datapress/commit/d94710bc418bd440df4823280e3b30f11a24b66f))
+
 ## [0.4.21] - 2026-06-13
 
 ### Bug Fixes

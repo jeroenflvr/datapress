@@ -12,7 +12,7 @@ members  = [
 ]
 
 [workspace.package]
-version = "0.4.21"
+version = "0.4.22"
 edition = "2024"
 license = "MIT"
 authors = ["Jeroen <jeroenflvr@users.noreply.github.com>"]
@@ -25,9 +25,9 @@ categories = ["database", "web-programming::http-server"]
 [workspace.dependencies]
 # Internal crates (path deps). Versions are required so the crates can be
 # published to crates.io while still resolving to the local path in-tree.
-datapress-core       = { path = "crates/core", version = "0.4.21" }
-datapress-duckdb     = { path = "crates/duckdb", version = "0.4.21" }
-datapress-datafusion = { path = "crates/datafusion", version = "0.4.21" }
+datapress-core       = { path = "crates/core", version = "0.4.22" }
+datapress-duckdb     = { path = "crates/duckdb", version = "0.4.22" }
+datapress-datafusion = { path = "crates/datafusion", version = "0.4.22" }
 datapress-client     = { path = "crates/client", version = "0.4.11" }
 
 # Shared third-party deps. Pinning versions here keeps every crate aligned.
