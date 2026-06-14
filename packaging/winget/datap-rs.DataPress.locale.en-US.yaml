@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
 PackageIdentifier: datap-rs.DataPress
-PackageVersion: 0.4.4
+PackageVersion: 0.4.22
 PackageLocale: en-US
 Publisher: DataPress
 PublisherUrl: https://datap-rs.org
@@ -25,7 +25,7 @@ Tags:
   - http-api
   - rust
   - data
-ReleaseNotesUrl: https://github.com/jeroenflvr/datapress/releases/tag/v0.4.4
+ReleaseNotesUrl: https://github.com/jeroenflvr/datapress/releases/tag/v0.4.22
 Documentation:
   - DocumentLabel: Documentation
     DocumentUrl: https://docs.datap-rs.org

@@ -485,7 +485,11 @@ jobs:
         uses: vedantmgoyal9/winget-releaser@main
         with:
           identifier: datap-rs.DataPress
-          installers-regex: '-x86_64-pc-windows-msvc\.zip$'
+          # Anchor on `datapress-v…` so this matches ONLY the server CLI zip
+          # and not the separate client tool asset
+          # (`datapress-cli-v…-x86_64-pc-windows-msvc.zip` from
+          # publish-clients.yml), which also ends in the same suffix.
+          installers-regex: '^datapress-v.*-x86_64-pc-windows-msvc\.zip$'
           token: ${{ secrets.WINGET_TOKEN }}
 
   # -----------------------------------------------------------------------
