@@ -23,6 +23,13 @@
   <div class="tab-pane fade show active" id="discovery-pane" role="tabpanel">
     <div class="row g-3">
       <div class="col-12 col-lg-4">
+        <div class="input-group input-group-sm mb-2 dataset-filter">
+          <span class="input-group-text"><i class="bi bi-funnel"></i></span>
+          <input type="search" class="form-control" id="dataset-filter-input"
+                 placeholder="Filter datasets…" aria-label="Filter datasets" autocomplete="off" spellcheck="false">
+          <button type="button" class="btn btn-outline-secondary d-none" id="dataset-filter-clear"
+                  title="Clear filter" aria-label="Clear filter"><i class="bi bi-x-lg"></i></button>
+        </div>
         <div class="btn-group btn-group-sm w-100 mb-2 dataset-sort" role="group" aria-label="Sort datasets">
           <button type="button" class="btn btn-outline-secondary active" data-sort-key="name" data-sort-dir="asc">
             Name <i class="bi bi-caret-up-fill sort-caret"></i>
@@ -51,6 +58,9 @@
             <small class="text-secondary">{{ d.kind }} · {{ d.columns }} cols</small>
           </a>
           {% endfor %}
+        </div>
+        <div class="dataset-filter-empty text-secondary small text-center py-3 d-none">
+          No datasets match <span class="fw-semibold dataset-filter-term"></span>.
         </div>
       </div>
       <div class="col-12 col-lg-8">
@@ -286,6 +296,51 @@
 
         apply(key, dir);
       });
+    });
+  })();
+</script>
+<script>
+  // Filter the dataset list by name as the user types. Hides non-matching
+  // items rather than removing them, so sort order and htmx bindings are
+  // preserved and clearing the box restores the full list instantly.
+  (function () {
+    const list = document.querySelector(".dataset-list");
+    const input = document.getElementById("dataset-filter-input");
+    const clear = document.getElementById("dataset-filter-clear");
+    const empty = document.querySelector(".dataset-filter-empty");
+    const term = document.querySelector(".dataset-filter-term");
+    if (!list || !input) return;
+
+    function apply() {
+      const q = input.value.trim().toLowerCase();
+      const items = Array.from(list.querySelectorAll(".list-group-item"));
+      let visible = 0;
+      items.forEach(function (el) {
+        const name = (el.dataset.name || "").toLowerCase();
+        const match = q === "" || name.includes(q);
+        el.classList.toggle("d-none", !match);
+        if (match) visible++;
+      });
+      if (clear) clear.classList.toggle("d-none", q === "");
+      if (empty) empty.classList.toggle("d-none", !(q !== "" && visible === 0));
+      if (term) term.textContent = q ? '"' + input.value.trim() + '"' : "";
+    }
+
+    input.addEventListener("input", apply);
+    if (clear) {
+      clear.addEventListener("click", function () {
+        input.value = "";
+        input.focus();
+        apply();
+      });
+    }
+    // Esc clears the filter when the box is focused.
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && input.value !== "") {
+        e.preventDefault();
+        input.value = "";
+        apply();
+      }
     });
   })();
 </script>
