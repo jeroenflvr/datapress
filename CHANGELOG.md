@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.24] - 2026-06-15
+
+### Styling
+
+- Add filter on discovery in explorer ([2acfd58](https://github.com/jeroenflvr/datapress/commit/2acfd58ee7be96a34c88b38e0f9f8964d9e2760d))
+
 ## [0.4.23] - 2026-06-14
 
 ### Bug Fixes
