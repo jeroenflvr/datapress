@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.25] - 2026-06-17
+
+### Documentation
+
+- Add comparison with roapi, seafowl, datasette ([09d447a](https://github.com/jeroenflvr/datapress/commit/09d447a28c59f705a37db2113792598f95e4e962))
+
 ## [0.4.24] - 2026-06-15
 
 ### Styling
