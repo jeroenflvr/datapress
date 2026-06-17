@@ -179,5 +179,8 @@ nav:
       - Endpoints: reference/endpoints.md
       - Errors: reference/errors.md
       - Changelog: reference/changelog.md
+  - Comparison:
+      - comparison/index.md
+      - DataPress vs alternatives: comparison/comparison-vs-alternatives.md
   - Resources:
       - resources/index.md
