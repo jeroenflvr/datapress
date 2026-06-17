@@ -45,9 +45,9 @@ log        = "0.4"
 toml       = "1.1.2"
 clap       = { version = "4.5", features = ["derive"] }
 
-arrow      = "58"
-parquet    = { version = "58", features = ["arrow"] }
-datafusion = "53"
+arrow      = "59"
+parquet    = { version = "59", features = ["arrow"] }
+datafusion = "54"
 duckdb     = { version = "1.10503.0", features = ["bundled"] }
 rayon      = "1.12.0"
 itoa       = "1.0.18"
@@ -56,7 +56,7 @@ ahash      = "0.8"
 arc-swap   = "1.9.1"
 # SQL parser for the raw-SQL endpoint's shared safety gate. Pinned to the
 # version DataFusion 53 resolves to so the AST types stay in lock-step.
-sqlparser  = { version = "0.61", features = ["visitor"] }
+sqlparser  = { version = "0.62", features = ["visitor"] }
 object_store = { version = "0.13", features = ["aws"] }
 url          = "2"
 deltalake    = { version = "0.32", features = ["datafusion", "s3"] }
@@ -77,7 +77,7 @@ jsonwebtoken        = "10"
 reqwest             = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Embedded explorer UI templating (feature-gated via `explorer` on datapress-core).
-askama              = "0.12"
+askama              = "0.16"
 
 [profile.release]
 opt-level     = 3
