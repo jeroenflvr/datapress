@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.26] - 2026-06-19
+
+### Miscellaneous
+
+- Update flake.nix ([c40ff8b](https://github.com/jeroenflvr/datapress/commit/c40ff8b73949086d8b4d524efcfdd5d914efe8dc))
+
 ## [0.4.25] - 2026-06-17
 
 ### Documentation
