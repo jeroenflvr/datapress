@@ -10,9 +10,11 @@ HTTP API.
 
 - **Battle-tested SQL.** Full SQL surface, mature optimiser, robust
   type coercion, well-understood NULL semantics.
-- **Lazy parquet reads everywhere.** Both local files and S3 URLs are
-  scanned on demand via DuckDB's parquet reader. No materialisation
-  step at startup — the server is up and serving within milliseconds.
+- **Eager or lazy, your choice.** By default each dataset is
+  materialised into an in-memory DuckDB table at startup. Set
+  `lazy = true` to register the dataset as a view that streams parquet
+  on demand — from local files or S3 URLs — instead, with predicate and
+  projection pushdown into DuckDB's parquet reader and no resident copy.
 - **httpfs + delta.** DuckDB autoloads `httpfs` and `delta` extensions
   when the dataset URL requires them.
 - **Arrow IPC.** Paged `/query?format=arrow` responses and full
@@ -35,8 +37,8 @@ HTTP API.
   is not available here.
 - `[dataset.index]` is ignored. The DataFusion-specific block in
   `datasets.toml` doesn't apply.
-- `lazy = true` is meaningful but redundant — DuckDB always reads
-  parquet on demand.
+- Lazy datasets are streamed from source via a view, so they trade the
+  resident table's RAM for a parquet scan on each query.
 
 ## S3 reads
 

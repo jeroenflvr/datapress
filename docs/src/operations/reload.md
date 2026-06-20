@@ -48,7 +48,9 @@ dataset. Reload is delegated to DuckDB as an ACID transaction with:
 CREATE OR REPLACE TABLE dataset AS SELECT * FROM read_parquet(...);
 ```
 
-or the equivalent scan for Delta/S3 sources. DuckDB executes that as a
+(or `CREATE OR REPLACE VIEW` for `lazy` datasets, which re-points the
+streaming view rather than re-materialising) or the equivalent scan for
+Delta/S3 sources. DuckDB executes that as a
 transactional catalog/table replacement: if the source read or table
 creation fails, the existing table remains available; if it succeeds, the
 replacement becomes visible atomically to later queries. In-flight

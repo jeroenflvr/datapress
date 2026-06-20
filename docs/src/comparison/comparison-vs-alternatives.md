@@ -19,7 +19,7 @@ products that also handle writes, governance, and broad federation.
 | Output formats | JSON, Arrow IPC | JSON, Arrow, MessagePack, Parquet | JSON (CDN/HTTP-cache friendly) | JSON, CSV, web UI |
 | Write path | No (read-only; reload-from-disk only) | No | **Yes** (uploads, DDL/DML) | Read-focused (writes via plugins) |
 | Cross-dataset joins | No (one dataset per query) | **Yes** (cross-source) | Yes (SQL) | Yes (SQL, within a DB) |
-| Memory model | DuckDB: lazy reads · DataFusion: resident | Resident (in-memory) | Resident + spill-to-disk | On-disk (SQLite) |
+| Memory model | Both engines: resident (eager) or streamed (`lazy`) | Resident (in-memory) | Resident + spill-to-disk | On-disk (SQLite) |
 | Python embedding | **Yes — launch server from wheel** | Python bindings | No | Native Python app |
 | Ops built in | **Probes, OIDC, metrics, hot reload** | Partial | Partial | Plugin ecosystem |
 | Maturity | Early (v0.x, small community) | Established | Established, commercially backed | **Very mature, large ecosystem** |
@@ -30,8 +30,10 @@ products that also handle writes, governance, and broad federation.
   Clients keep the same contract while you choose DuckDB or Arrow+DataFusion at runtime.
 - **Safe-by-default query surface.**
   Structured JSON predicates are first-class; raw SQL is opt-in and hidden when disabled.
-- **Mixed memory strategy.**
-  DuckDB gives lazy parquet reads; DataFusion gives RAM-resident execution with optional equality indexes.
+- **Flexible memory strategy.**
+  Both engines materialise resident data by default and can stream
+  large datasets with `lazy = true`; DataFusion adds optional equality
+  indexes for hot point lookups.
 - **Embeddable server from Python.**
   `datap-rs` can configure and launch the server in-process.
 - **Operations included.**

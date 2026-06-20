@@ -112,10 +112,12 @@ DataPress leans on columnar formats and mature query engines instead of
 serialising everything through an application ORM.
 
 - **Rust + actix-web** keeps the HTTP layer compact and predictable.
-- **DuckDB** is excellent for huge or growing datasets, lazy reads,
-  object storage, Delta, and rich SQL execution.
+- **DuckDB** is excellent for huge or growing datasets, object storage,
+  Delta, and rich SQL execution \u2014 served eagerly from memory or streamed
+  lazily from source.
 - **Apache Arrow + DataFusion** gives a pure-Rust path with resident
-  Arrow batches and optional equality indexes for hot point lookups.
+  Arrow batches (or lazy streaming) and optional equality indexes for
+  hot point lookups.
 - **Arrow IPC** avoids JSON overhead when clients need many rows.
 - **Projection and predicate pushdown** mean clients can ask for the
   columns and rows they need instead of downloading whole files.
