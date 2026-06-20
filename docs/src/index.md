@@ -129,32 +129,40 @@ serialising everything through an application ORM.
 
 ## Why Rust
 
-The deciding factor was memory. actix-web runs many worker threads inside
-a **single process**, all sharing one heap. DataPress materialises each
-dataset (and its indexes) **once** and hands every worker a cheap shared
-reference to it — so an 8-worker server holds exactly one copy of the
-data in RAM.
+The headline win is memory density, but the root cause is parallelism.
+A data server's hot path isn't just the query engine — it's also the
+**glue** around every request: predicate parsing, validation, pagination,
+auth, and JSON / Arrow encoding. In Rust that glue runs on **all cores
+inside one process**, so DataPress materialises each dataset (and its
+indexes) **once** and hands every worker thread a cheap shared `Arc` —
+an 8-worker server holds exactly one copy of the data in RAM.
 
-A Python equivalent built on, say, FastAPI + uvicorn scales by forking
-**multiple worker processes**, and each process has its own address
-space. A resident dataset would therefore be loaded — and paid for — once
-*per worker*: 8 uvicorn workers means roughly 8× the memory for the same
-data. The usual workarounds (a shared external cache, `mmap`, a separate
-data service) all add moving parts that the single-process Rust model
-simply avoids.
+Python *can* share a single resident copy too — DuckDB, Arrow, and Polars
+all release the GIL, so the engine work even parallelises. The catch is
+the glue: it stays pure-Python and serialises on the GIL. To put that
+glue on every core, the standard answer is to fork **multiple worker
+processes** (`gunicorn -w N`, several uvicorn workers) — and forking is
+what gives each process its own address space, loading the dataset once
+*per worker*. So Python's memory duplication isn't an inability to share;
+it's the price of working around the GIL to use all cores. Rust skips the
+workaround, and the single-copy memory model falls out for free.
+(Free-threaded Python 3.13+ is starting to chip away at this, but the
+ecosystem and the C extensions are still catching up.)
 
-Rust brought the rest along for free:
+That single-process parallelism is the foundation; Rust adds three more
+reasons that matter just as much:
 
-- **First-class Python bindings.** [PyO3](https://pyo3.rs/) +
-  [maturin](https://www.maturin.rs/) compile the exact same engine into a
-  `pip install datap-rs` wheel, so notebooks and jobs embed the server
-  without a separate codebase.
-- **Excellent package management.** Cargo gives reproducible builds,
-  a single `cargo install datapress`, and a sane dependency story across
-  the whole workspace.
-- **The classic Rust benefits.** No GC pauses, no GIL, fearless
-  multithreading, memory safety without a runtime, and predictable
-  native performance — exactly what a long-lived data server wants.
+- **Single static binary.** `cargo install datapress`, Homebrew, winget,
+  or a tiny scratch Docker image — no interpreter, no venv, no dependency
+  resolution at deploy time. The CLI and server ship as one file.
+- **Embeddable two ways.** The exact same engine compiles into a
+  `pip install datap-rs` wheel via [PyO3](https://pyo3.rs/) +
+  [maturin](https://www.maturin.rs/) **and** is available as a crate other
+  Rust projects can depend on directly. One codebase, four delivery forms:
+  server, CLI, Python wheel, library.
+- **Predictable for a long-lived server.** No GC pauses, no GIL
+  contention spikes, fearless multithreading, and memory safety without a
+  runtime — exactly what a process that stays up for weeks wants.
 
 ### One process, many workers, one copy of the data
 
