@@ -57,6 +57,59 @@ start_degraded       = true                 # warn-and-continue if IdP is down a
 | `admin_token_fallback` | `true`      | If true, `X-Admin-Token` still satisfies `reload_scopes`.              |
 | `start_degraded`       | `true`      | If false, an unreachable JWKS at boot fails startup.                   |
 
+## Same config from Python (`datap-rs`)
+
+The standalone binary's `[auth]` block and the Python `AuthConfig` are
+**the same struct** under the hood, so every key maps one-to-one. If you
+already enable scope-based auth from the `datap-rs` wheel, the standalone
+server is a verbatim translation — and vice versa.
+
+```python
+from datap_rs.datapress import AuthConfig, DataPress
+
+auth = AuthConfig(
+    enabled=True,
+    issuer="https://login.microsoftonline.com/<tenant-id>/v2.0",
+    audience="api://datapress",
+    read_scopes=["datasets:read"],
+    reload_scopes=["datasets:reload"],
+    anonymous_read=False,
+    admin_token_fallback=True,
+)
+
+server = DataPress(config, datasets, auth=auth)
+await server.run()
+```
+
+is exactly equivalent to this `[auth]` block in `datasets.toml`:
+
+```toml
+[auth]
+enabled              = true
+issuer               = "https://login.microsoftonline.com/<tenant-id>/v2.0"
+audience             = "api://datapress"
+read_scopes          = ["datasets:read"]
+reload_scopes        = ["datasets:reload"]
+anonymous_read       = false
+admin_token_fallback = true
+```
+
+The field names, defaults, and validation rules are identical
+(`algorithms`, `leeway_secs`, `jwks_refresh_secs`, `tenant_claim`,
+`allowed_tenants`, `start_degraded` all carry over). The only thing that
+differs is the delivery mechanism: the wheel sets it programmatically,
+the binary reads it from TOML.
+
+!!! warning "Feature must be compiled in"
+
+    Scope enforcement only runs when the binary was built with the
+    `auth` Cargo feature. The published wheels and the combined
+    `datapress` binary (install scripts, Homebrew, winget, Docker) ship
+    with it; the slim `datapress-duckdb` / `datapress-datafusion`
+    binaries do **not**. For `cargo install`, add `--features auth`.
+    Without the feature, `[auth] enabled = true` only logs a warning and
+    the legacy `X-Admin-Token` guard remains.
+
 ## How requests are validated
 
 1. Middleware extracts `Authorization: Bearer <jwt>`. No header →
