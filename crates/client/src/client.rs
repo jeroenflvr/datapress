@@ -58,6 +58,16 @@ impl ClientBuilder {
         self
     }
 
+    /// Accept invalid or untrusted TLS certificates.
+    ///
+    /// **Dangerous**: disables certificate verification, leaving the
+    /// connection open to man-in-the-middle attacks. Intended only for
+    /// development against servers using self-signed certificates.
+    pub fn danger_accept_invalid_certs(mut self, accept: bool) -> Self {
+        self.inner = self.inner.danger_accept_invalid_certs(accept);
+        self
+    }
+
     /// Provide a pre-configured [`reqwest::ClientBuilder`] to customise
     /// the underlying HTTP client (proxies, TLS, pools, …).
     pub fn reqwest_builder(mut self, b: reqwest::ClientBuilder) -> Self {

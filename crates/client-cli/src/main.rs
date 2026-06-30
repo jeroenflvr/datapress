@@ -52,6 +52,16 @@ struct ConnectionArgs {
     #[arg(long, global = true)]
     timeout: Option<f64>,
 
+    /// Skip TLS certificate verification (dangerous; dev only). Allows
+    /// connecting to HTTPS servers with self-signed or untrusted certs.
+    #[arg(
+        short = 'k',
+        long = "insecure",
+        global = true,
+        env = "DATAPRESS_INSECURE"
+    )]
+    insecure: bool,
+
     /// Pretty-print JSON output (default is compact, single-line).
     #[arg(long, global = true)]
     pretty: bool,
@@ -68,6 +78,9 @@ impl ConnectionArgs {
         }
         if let Some(secs) = self.timeout {
             builder = builder.timeout(std::time::Duration::from_secs_f64(secs));
+        }
+        if self.insecure {
+            builder = builder.danger_accept_invalid_certs(true);
         }
         let async_client = builder.build().context("failed to build client")?;
         Client::from_async(async_client).context("failed to start runtime")
