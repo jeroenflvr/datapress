@@ -3,6 +3,19 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.4.27] - 2026-06-30
+
+### Documentation
+
+- Link to auth ([516f25d](https://github.com/jeroenflvr/datapress/commit/516f25dd60d1c694bb410e92d28f805f0bc6a55d))
+- Update auth section ([21e13c6](https://github.com/jeroenflvr/datapress/commit/21e13c63eee930207121fe987e1ff4c968abb864))
+- Update why rust ([f4eb050](https://github.com/jeroenflvr/datapress/commit/f4eb0505a34210d7eca08bebc2cb3fe70cede953))
+- Correct resident and streaming modes for backends ([e6a7666](https://github.com/jeroenflvr/datapress/commit/e6a76669e89ec7e872488c0c502d5431f5e2638f))
+
+### Features
+
+- Allow insecure connection from client (dev!) ([e98d0ac](https://github.com/jeroenflvr/datapress/commit/e98d0acf8a72c806b1843d0089ed2b0c8b6c3159))
+
 ## [0.4.26] - 2026-06-19
 
 ### Miscellaneous
