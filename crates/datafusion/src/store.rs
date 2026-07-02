@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -23,9 +24,13 @@ use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
 use datafusion::datasource::{MemTable, TableProvider};
+use datafusion::error::Result as DfResult;
 use datafusion::execution::cache::DefaultListFilesCache;
 use datafusion::execution::cache::cache_manager::CacheManagerConfig;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
+use datafusion::logical_expr::{
+    ColumnarValue, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature, Volatility,
+};
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion::scalar::ScalarValue;
 
@@ -772,8 +777,14 @@ fn build_tuned_context(cfg: &DataFusionConfig) -> SessionContext {
         opts.execution.parquet.reorder_filters = cfg.reorder_filters;
     }
 
+    // Name of the session's default schema, surfaced by the `current_schema()`
+    // compatibility UDF registered below.
+    let default_schema = config.options().catalog.default_schema.clone();
+
     if !cfg.list_files_cache {
-        return SessionContext::new_with_config(config);
+        let ctx = SessionContext::new_with_config(config);
+        register_compat_udfs(&ctx, default_schema);
+        return ctx;
     }
 
     // Cache object-store listings so repeated lazy/S3 queries skip the
@@ -791,7 +802,60 @@ fn build_tuned_context(cfg: &DataFusionConfig) -> SessionContext {
         .build_arc()
         .expect("failed to build DataFusion runtime env");
 
-    SessionContext::new_with_config_rt(config, runtime)
+    let ctx = SessionContext::new_with_config_rt(config, runtime);
+    register_compat_udfs(&ctx, default_schema);
+    ctx
+}
+
+/// Register scalar UDFs that exist on DuckDB but not on DataFusion, so the
+/// same portable smoke-test / introspection SQL works on both backends.
+///
+/// * `current_schema()` — DuckDB returns the active schema (`main`);
+///   DataFusion has no such function, so we return the session's default
+///   schema name (`public`).
+fn register_compat_udfs(ctx: &SessionContext, default_schema: String) {
+    ctx.register_udf(ScalarUDF::from(CurrentSchemaUdf::new(default_schema)));
+}
+
+/// `current_schema()` — a no-argument scalar UDF returning the session's
+/// default schema name as a constant `Utf8`.
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct CurrentSchemaUdf {
+    signature: Signature,
+    schema: String,
+}
+
+impl CurrentSchemaUdf {
+    fn new(schema: String) -> Self {
+        Self {
+            signature: Signature::nullary(Volatility::Stable),
+            schema,
+        }
+    }
+}
+
+impl ScalarUDFImpl for CurrentSchemaUdf {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        "current_schema"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, _arg_types: &[DataType]) -> DfResult<DataType> {
+        Ok(DataType::Utf8)
+    }
+
+    fn invoke_with_args(&self, _args: ScalarFunctionArgs) -> DfResult<ColumnarValue> {
+        Ok(ColumnarValue::Scalar(ScalarValue::Utf8(Some(
+            self.schema.clone(),
+        ))))
+    }
 }
 
 async fn build_dataset(

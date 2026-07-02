@@ -581,6 +581,35 @@ async fn sql_describe_returns_schema() {
 }
 
 #[actix_web::test]
+async fn sql_current_schema_is_supported() {
+    // `current_schema()` exists on DuckDB but not DataFusion; we register a
+    // compatibility UDF so the same portable SQL works on both backends.
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("people.parquet");
+
+    let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![Arc::new(Int64Array::from(vec![1_i64]))],
+    )
+    .unwrap();
+    let f = std::fs::File::create(&file).unwrap();
+    let mut writer = ArrowWriter::try_new(f, schema, None).unwrap();
+    writer.write(&batch).unwrap();
+    writer.close().unwrap();
+
+    let store = make_store(&file.display().to_string(), true).await;
+
+    let out = store
+        .query_sql("SELECT current_schema() AS s", 100)
+        .await
+        .expect("current_schema() should execute on DataFusion");
+    let rows = parse_rows(&out);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["s"], Value::from("public"));
+}
+
+#[actix_web::test]
 async fn arrow_stream_all_ignores_page_size() {
     let tmp = TempDir::new().unwrap();
     let file = tmp.path().join("people.parquet");
