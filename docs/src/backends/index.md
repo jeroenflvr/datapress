@@ -42,7 +42,7 @@ sequenceDiagram
     H->>DF: load new Arrow chunks + index (off to the side)
     note over DF: existing queries keep reading the old Arc
     DF->>DF: atomic ArcSwap(new)
-    note over DF: queries after the swap see the new Arc;<br/>old Arc dropped when its last reader finishes
+    note over DF: queries after the swap see the new Arc.<br/>old Arc dropped when its last reader finishes
     end
 
     rect rgb(235, 255, 240)
