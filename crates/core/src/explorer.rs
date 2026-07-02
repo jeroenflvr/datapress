@@ -16,14 +16,17 @@
 //! Templates live under `crates/core/templates/explorer/` and are compiled
 //! into the binary by Askama, so nothing is read from disk at runtime.
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use actix_web::{HttpRequest, HttpResponse, http::header, web};
 use askama::Template;
 use include_dir::{Dir, include_dir};
 
 use crate::backend::Backend;
-use crate::config::DatasetConfig;
+use crate::config::{
+    AddressingStyle, DatasetConfig, IndexConfig, IndexMode, Partitioning, S3Config, SourceConfig,
+    SourceKind,
+};
 use crate::schema::LogicalType;
 
 /// Self-hosted Apache Arrow (UMD) bundle, embedded at compile time. Used by
@@ -35,7 +38,9 @@ static ARROW_VENDOR: Dir<'_> =
 /// Shared state handed to the explorer handlers.
 pub struct ExplorerState {
     pub backend: Arc<dyn Backend>,
-    pub datasets: Vec<DatasetConfig>,
+    /// Dataset configs shown in the UI. Behind an `RwLock` so datasets
+    /// registered live through the explorer appear without a restart.
+    pub datasets: RwLock<Vec<DatasetConfig>>,
     /// Absolute mount path of the explorer UI, e.g. `/explore`.
     pub explorer_base: String,
     /// Absolute base path of the versioned API, e.g. `/api/v1` (or
@@ -67,6 +72,11 @@ struct IndexTemplate {
     swagger_url: Option<String>,
     datasets: Vec<DatasetListItem>,
     datasets_json: String,
+    /// Whether the server can append newly-registered datasets back to its
+    /// on-disk config file (only when it was loaded from one).
+    can_persist: bool,
+    /// Display path of that config file (empty when `can_persist` is false).
+    config_path: String,
 }
 
 struct DatasetListItem {
@@ -172,7 +182,12 @@ pub fn configure(state: web::Data<ExplorerState>, cfg: &mut web::ServiceConfig) 
                     "/assets/vendor/arrow/{path}",
                     web::get().to(asset_arrow_vendor),
                 )
-                .route("/datasets/{name}", web::get().to(dataset_detail)),
+                .route("/datasets/{name}", web::get().to(dataset_detail))
+                .route("/datasets", web::post().to(register_dataset))
+                .route(
+                    "/datasets/{name}/persist",
+                    web::post().to(persist_dataset),
+                ),
         );
 }
 
@@ -190,9 +205,10 @@ fn render<T: Template>(tpl: &T) -> HttpResponse {
 /// Build the `[{name, rows, parquet}]` payload consumed by the DuckDB-WASM
 /// console and shell terminal, alongside the discovery list items.
 fn collect_datasets(state: &ExplorerState) -> (Vec<DatasetListItem>, String) {
-    let mut items = Vec::with_capacity(state.datasets.len());
-    let mut json_items = Vec::with_capacity(state.datasets.len());
-    for ds in &state.datasets {
+    let datasets = state.datasets.read().unwrap();
+    let mut items = Vec::with_capacity(datasets.len());
+    let mut json_items = Vec::with_capacity(datasets.len());
+    for ds in datasets.iter() {
         let (rows, columns) = match state.backend.summary(&ds.name) {
             Ok(s) => (s.rows, s.columns),
             Err(_) => (0, 0),
@@ -215,6 +231,9 @@ fn collect_datasets(state: &ExplorerState) -> (Vec<DatasetListItem>, String) {
 
 async fn index(state: web::Data<ExplorerState>) -> HttpResponse {
     let (items, datasets_json) = collect_datasets(&state);
+    let config_path = crate::config::source_config_path()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
     let tpl = IndexTemplate {
         backend_label: state.backend_label.clone(),
         explorer_base: state.explorer_base.clone(),
@@ -225,6 +244,8 @@ async fn index(state: web::Data<ExplorerState>) -> HttpResponse {
         swagger_url: state.swagger_url.clone(),
         datasets: items,
         datasets_json,
+        can_persist: !config_path.is_empty(),
+        config_path,
     };
     render(&tpl)
 }
@@ -324,7 +345,16 @@ async fn asset_arrow_vendor(req: HttpRequest) -> HttpResponse {
 
 async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>) -> HttpResponse {
     let name = path.into_inner();
-    let Some(ds) = state.datasets.iter().find(|d| d.name == name) else {
+    // Clone the config out of the lock so we don't hold the guard across the
+    // `await` below (the guard isn't `Send`).
+    let Some(ds) = state
+        .datasets
+        .read()
+        .unwrap()
+        .iter()
+        .find(|d| d.name == name)
+        .cloned()
+    else {
         // Dataset names are validated to `[A-Za-z0-9_.-]` at config load,
         // so the echoed name is safe to inline without HTML escaping.
         return HttpResponse::NotFound()
@@ -333,6 +363,7 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
                 "<div class=\"alert alert-warning\">Unknown dataset: {name}</div>"
             ));
     };
+    let ds = &ds;
 
     let summary = state.backend.summary(&name).ok();
     let rows = summary.as_ref().map(|s| s.rows).unwrap_or(0);
@@ -433,3 +464,265 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
     };
     render(&tpl)
 }
+
+// ---------------------------------------------------------------------------
+// Live dataset registration
+// ---------------------------------------------------------------------------
+
+#[derive(Template)]
+#[template(path = "explorer/register_result.html")]
+struct RegisterResultTemplate {
+    ok: bool,
+    message: String,
+    name: String,
+    rows: usize,
+    columns: usize,
+    toml_block: String,
+    explorer_base: String,
+    can_persist: bool,
+    config_path: String,
+}
+
+/// Form payload from the explorer "Register dataset" tab. Checkbox fields are
+/// only present in the body when ticked, so every field carries a serde
+/// default and unchecked boxes deserialize to `None`.
+#[derive(Debug, serde::Deserialize)]
+struct RegisterForm {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    location: String,
+    #[serde(default)]
+    columns: String,
+    #[serde(default)]
+    dict_encode: Option<String>,
+    #[serde(default)]
+    lazy: Option<String>,
+    #[serde(default)]
+    index_mode: String,
+    #[serde(default)]
+    index_columns: String,
+    #[serde(default)]
+    index_max_cardinality: String,
+    #[serde(default)]
+    s3_enabled: Option<String>,
+    #[serde(default)]
+    s3_region: String,
+    #[serde(default)]
+    s3_endpoint: String,
+    #[serde(default)]
+    s3_addressing: String,
+    #[serde(default)]
+    s3_allow_http: Option<String>,
+    #[serde(default)]
+    s3_access_key_id: String,
+    #[serde(default)]
+    s3_secret_access_key: String,
+    #[serde(default)]
+    s3_session_token: String,
+    #[serde(default)]
+    s3_partitioning: String,
+}
+
+fn split_csv(s: &str) -> Vec<String> {
+    s.split(',')
+        .map(str::trim)
+        .filter(|x| !x.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn non_empty(s: &str) -> Option<String> {
+    let t = s.trim();
+    (!t.is_empty()).then(|| t.to_string())
+}
+
+/// Translate a submitted [`RegisterForm`] into a [`DatasetConfig`]. Rejects
+/// malformed enum selections; deeper validation (name charset, source
+/// reachability) happens in the backend's `register`.
+fn build_register_config(f: &RegisterForm) -> Result<DatasetConfig, crate::errors::AppError> {
+    use crate::errors::AppError;
+
+    let kind = match f.kind.trim() {
+        "delta" => SourceKind::Delta,
+        "parquet" | "" => SourceKind::Parquet,
+        other => return Err(AppError::InvalidValue(format!("unknown source kind '{other}'"))),
+    };
+    let location = f.location.trim();
+    if location.is_empty() {
+        return Err(AppError::InvalidValue(
+            "source location must not be empty".into(),
+        ));
+    }
+
+    let index_mode = match f.index_mode.trim() {
+        "none" => IndexMode::None,
+        "list" => IndexMode::List,
+        "auto" | "" => IndexMode::Auto,
+        other => return Err(AppError::InvalidValue(format!("unknown index mode '{other}'"))),
+    };
+    let mut index = IndexConfig {
+        mode: index_mode,
+        columns: split_csv(&f.index_columns),
+        ..IndexConfig::default()
+    };
+    if let Some(mc) = non_empty(&f.index_max_cardinality) {
+        index.max_cardinality = mc.parse().map_err(|_| {
+            AppError::InvalidValue("index max_cardinality must be a whole number".into())
+        })?;
+    }
+
+    let s3 = if f.s3_enabled.is_some() {
+        let addressing_style = match f.s3_addressing.trim() {
+            "path" => AddressingStyle::Path,
+            "virtual" | "" => AddressingStyle::Virtual,
+            other => {
+                return Err(AppError::InvalidValue(format!(
+                    "unknown S3 addressing style '{other}'"
+                )));
+            }
+        };
+        let partitioning = match f.s3_partitioning.trim() {
+            "hive" => Partitioning::Hive,
+            "none" => Partitioning::None,
+            "auto" | "" => Partitioning::Auto,
+            other => {
+                return Err(AppError::InvalidValue(format!(
+                    "unknown S3 partitioning '{other}'"
+                )));
+            }
+        };
+        Some(S3Config {
+            region: non_empty(&f.s3_region),
+            endpoint: non_empty(&f.s3_endpoint),
+            addressing_style,
+            allow_http: f.s3_allow_http.is_some(),
+            access_key_id: non_empty(&f.s3_access_key_id),
+            secret_access_key: non_empty(&f.s3_secret_access_key),
+            session_token: non_empty(&f.s3_session_token),
+            partitioning,
+            ..S3Config::default()
+        })
+    } else {
+        None
+    };
+
+    Ok(DatasetConfig {
+        name: f.name.trim().to_string(),
+        source: SourceConfig {
+            kind,
+            location: location.to_string(),
+        },
+        s3,
+        index,
+        columns: split_csv(&f.columns),
+        dict_encode: f.dict_encode.is_some(),
+        lazy: f.lazy.is_some(),
+        predicate_filter: crate::config::ColumnFilter::default(),
+        projection_filter: crate::config::ColumnFilter::default(),
+    })
+}
+
+fn register_result_error(msg: &str) -> HttpResponse {
+    let tpl = RegisterResultTemplate {
+        ok: false,
+        message: msg.to_string(),
+        name: String::new(),
+        rows: 0,
+        columns: 0,
+        toml_block: String::new(),
+        explorer_base: String::new(),
+        can_persist: false,
+        config_path: String::new(),
+    };
+    render(&tpl)
+}
+
+/// `POST {explorer_base}/datasets` — build a dataset config from the form,
+/// register it live in the backend, and add it to the explorer's dataset
+/// list. Returns an HTML fragment (success card or error alert) for htmx.
+async fn register_dataset(
+    state: web::Data<ExplorerState>,
+    form: web::Form<RegisterForm>,
+) -> HttpResponse {
+    let cfg = match build_register_config(&form) {
+        Ok(c) => c,
+        Err(e) => return register_result_error(&e.to_string()),
+    };
+
+    match state.backend.register(cfg.clone()).await {
+        Ok(summary) => {
+            let toml_block = cfg.to_toml_block().unwrap_or_default();
+            state.datasets.write().unwrap().push(cfg);
+            let config_path = crate::config::source_config_path()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            let tpl = RegisterResultTemplate {
+                ok: true,
+                message: String::new(),
+                name: summary.name,
+                rows: summary.rows,
+                columns: summary.columns,
+                toml_block,
+                explorer_base: state.explorer_base.clone(),
+                can_persist: !config_path.is_empty(),
+                config_path,
+            };
+            render(&tpl)
+        }
+        Err(e) => register_result_error(&e.to_string()),
+    }
+}
+
+fn html_alert(kind: &str, inner_html: &str) -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(format!(
+            "<div class=\"alert alert-{kind} mb-0\" role=\"alert\">{inner_html}</div>"
+        ))
+}
+
+/// `POST {explorer_base}/datasets/{name}/persist` — append the named
+/// dataset's `[[dataset]]` block to the server's on-disk config file so it
+/// survives a restart. Only works when the server was loaded from a file.
+async fn persist_dataset(
+    state: web::Data<ExplorerState>,
+    path: web::Path<String>,
+) -> HttpResponse {
+    let name = path.into_inner();
+    if crate::config::source_config_path().is_none() {
+        return html_alert(
+            "warning",
+            "This server has no on-disk config file to append to.",
+        );
+    }
+    // Only persist datasets we actually registered (guards against echoing
+    // an arbitrary path segment and against writing unknown configs).
+    let Some(cfg) = state
+        .datasets
+        .read()
+        .unwrap()
+        .iter()
+        .find(|d| d.name == name)
+        .cloned()
+    else {
+        return html_alert("warning", "Unknown or not-yet-registered dataset.");
+    };
+
+    // Delegate to the same helper the API's `POST /datasets/persist` uses.
+    match cfg.persist_to_source_config() {
+        Ok(config_path) => html_alert(
+            "success",
+            &format!(
+                "Appended <code>[[dataset]]</code> for <strong>{}</strong> to \
+                 <code>{}</code>.",
+                cfg.name,
+                config_path.display()
+            ),
+        ),
+        Err(e) => html_alert("danger", &format!("Failed to write config: {e}")),
+    }
+}
+

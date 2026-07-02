@@ -74,7 +74,9 @@ pub struct Registry {
     max_page_size: u64,
     /// Original dataset configs, indexed by name. Reload reads the source
     /// path from here — clients can't redirect a reload at an arbitrary file.
-    configs: HashMap<String, DatasetConfig>,
+    /// Behind an `RwLock` so datasets registered at runtime can be added
+    /// without a restart.
+    configs: RwLock<HashMap<String, DatasetConfig>>,
     /// Hot-swappable schema map. `RwLock` is enough here: reads are very
     /// short (clone an `Arc`); writes happen only on reload.
     datasets: RwLock<HashMap<String, Arc<DatasetSchema>>>,
@@ -114,6 +116,8 @@ impl Registry {
     pub async fn reload(&self, name: &str) -> Result<ReloadStats, AppError> {
         let cfg = self
             .configs
+            .read()
+            .unwrap()
             .get(name)
             .ok_or_else(|| AppError::NotFound(format!("dataset: {name}")))?
             .clone();
@@ -134,7 +138,7 @@ impl Registry {
             actix_web::web::block(move || -> Result<(DatasetSchema, i64), AppError> {
                 let conn = DbPool::get(&pool);
                 replace_table(&conn, &cfg)?;
-                let schema = introspect_schema(&conn, &cfg.name)?;
+                let schema = introspect_schema(&conn, &cfg)?;
                 let rows = count_rows(&conn, &cfg.name)?;
                 Ok((schema, rows))
             })
@@ -155,6 +159,90 @@ impl Registry {
         Ok(ReloadStats {
             rows: rows as usize,
             elapsed_ms,
+        })
+    }
+
+    /// Register a brand-new dataset from `cfg` at runtime. Opens the source,
+    /// creates the backing table (eager) or view (lazy), and inserts it into
+    /// the registry so it is immediately queryable — no restart required.
+    pub async fn register(&self, cfg: DatasetConfig) -> Result<DatasetSummary, AppError> {
+        cfg.validate_for_register()?;
+
+        // Fast pre-check before taking the (async) per-name lock.
+        if self.datasets.read().unwrap().contains_key(&cfg.name) {
+            return Err(AppError::InvalidValue(format!(
+                "dataset '{}' already exists",
+                cfg.name
+            )));
+        }
+
+        // Serialise against a concurrent register/reload of the same name.
+        let lock = {
+            let mut locks = self.reload_locks.lock().unwrap();
+            locks
+                .entry(cfg.name.clone())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                .clone()
+        };
+        let _guard = lock.lock().await;
+
+        // Re-check under the lock — another task may have won the race.
+        if self.datasets.read().unwrap().contains_key(&cfg.name) {
+            return Err(AppError::InvalidValue(format!(
+                "dataset '{}' already exists",
+                cfg.name
+            )));
+        }
+
+        let started = std::time::Instant::now();
+        let pool = self.pool.clone();
+        let build_cfg = cfg.clone();
+
+        let (schema, rows) =
+            actix_web::web::block(move || -> Result<(DatasetSchema, i64), AppError> {
+                let conn = DbPool::get(&pool);
+                // Load the extensions this source needs on demand. DuckDB
+                // loads them into the shared database instance, so every
+                // pooled connection sees them. Idempotent when cached.
+                if build_cfg.source.is_s3() {
+                    conn.execute_batch("INSTALL httpfs; LOAD httpfs;")?;
+                    apply_s3_secret(&conn, &build_cfg)?;
+                }
+                if build_cfg.source.kind == SourceKind::Delta {
+                    conn.execute_batch("INSTALL delta; LOAD delta;")?;
+                }
+                let schema = register_dataset(&conn, &build_cfg)?;
+                let rows = count_rows(&conn, &build_cfg.name)?;
+                Ok((schema, rows))
+            })
+            .await
+            .map_err(|e| AppError::Internal(format!("join error: {e}")))??;
+
+        let columns = schema.columns.len();
+        self.datasets
+            .write()
+            .unwrap()
+            .insert(cfg.name.clone(), Arc::new(schema));
+        self.row_counts
+            .write()
+            .unwrap()
+            .insert(cfg.name.clone(), rows);
+        self.configs
+            .write()
+            .unwrap()
+            .insert(cfg.name.clone(), cfg.clone());
+
+        let elapsed_ms = started.elapsed().as_millis();
+        log::info!(
+            "registered dataset '{}' ({} @ {}): {rows} rows in {elapsed_ms} ms",
+            cfg.name,
+            cfg.source.kind.as_str(),
+            cfg.source.location
+        );
+        Ok(DatasetSummary {
+            name: cfg.name,
+            columns,
+            rows: rows.max(0) as usize,
         })
     }
 }
@@ -257,7 +345,7 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
     Ok(Registry {
         pool,
         max_page_size: cfg.server.max_page_size.max(1),
-        configs,
+        configs: RwLock::new(configs),
         datasets: RwLock::new(datasets),
         row_counts: RwLock::new(row_counts),
         reload_locks: Mutex::new(HashMap::new()),
@@ -477,7 +565,7 @@ fn register_dataset(conn: &Connection, cfg: &DatasetConfig) -> Result<DatasetSch
     let relation = if cfg.lazy { "VIEW" } else { "TABLE" };
     conn.execute_batch(&format!("CREATE {relation} {table} AS SELECT * FROM {scan};"))
         .map_err(|e| classify_scan_error(cfg, e))?;
-    introspect_schema(conn, &cfg.name)
+    introspect_schema(conn, cfg)
 }
 
 /// Classify a DuckDB source-scan failure. An S3 / glob source that matches
@@ -496,7 +584,8 @@ fn classify_scan_error(cfg: &DatasetConfig, e: duckdb::Error) -> AppError {
     }
 }
 
-fn introspect_schema(conn: &Connection, table: &str) -> Result<DatasetSchema, AppError> {
+fn introspect_schema(conn: &Connection, cfg: &DatasetConfig) -> Result<DatasetSchema, AppError> {
+    let table = &cfg.name;
     let mut stmt = conn.prepare(&format!("DESCRIBE {}", DatasetSchema::quote_ident(table)))?;
     let rows = stmt.query_map([], |row| {
         // DESCRIBE columns: column_name, column_type, null, key, default, extra
@@ -517,7 +606,8 @@ fn introspect_schema(conn: &Connection, table: &str) -> Result<DatasetSchema, Ap
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(DatasetSchema::new(table, columns))
+    DatasetSchema::new(table, columns)
+        .with_filters(cfg.predicate_filter.clone(), cfg.projection_filter.clone())
 }
 
 fn classify_duckdb_type(sql_type: &str) -> LogicalType {
@@ -770,6 +860,10 @@ impl Backend for Registry {
     async fn reload(&self, name: &str) -> Result<ReloadStats, AppError> {
         Registry::reload(self, name).await
     }
+
+    async fn register(&self, cfg: DatasetConfig) -> Result<DatasetSummary, AppError> {
+        Registry::register(self, cfg).await
+    }
 }
 
 #[cfg(test)]
@@ -792,6 +886,8 @@ mod tests {
             columns: vec![],
             dict_encode: true,
             lazy: false,
+            predicate_filter: Default::default(),
+            projection_filter: Default::default(),
         }
     }
 

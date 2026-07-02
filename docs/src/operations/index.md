@@ -12,6 +12,8 @@ Day-2 concerns for running DataPress in production.
   `{prefix}/health`.
 - [Dataset reload](reload.md) — backend-specific reload semantics,
   DataFusion double-buffering, and DuckDB transactional replacement.
+- [Register datasets at runtime](register.md) — add, persist, and
+  hot-reload datasets on a running server without a restart.
 - [Graceful shutdown](graceful-shutdown.md) — `SIGTERM` handling and
   `shutdown_timeout_secs` tuning.
 - [Logging](logging.md) — actix request log format, `RUST_LOG`.

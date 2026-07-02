@@ -373,6 +373,61 @@ impl QueryRequest {
         };
         (limit, offset)
     }
+
+    /// Apply the dataset's column-level access filters to this request,
+    /// rejecting any use of a hidden or predicate-restricted column and
+    /// narrowing a default (all-columns) projection to the visible set.
+    ///
+    /// Enforced consistently for every backend and response format because
+    /// the shared HTTP handlers call it before dispatching. Rules:
+    /// - a predicate on a hidden column → `UnknownColumn`; on a
+    ///   predicate-restricted (but visible) column → `Forbidden`;
+    /// - `group_by`, aggregation, and (ungrouped) `order_by` columns must be
+    ///   visible, else `UnknownColumn`;
+    /// - an explicit `columns` entry must be visible, else `UnknownColumn`;
+    /// - an empty `columns` (all columns) is rewritten to the visible set so
+    ///   hidden columns never appear in the default projection.
+    ///
+    /// A no-op when the schema carries no active filters.
+    pub fn enforce_column_filters(&mut self, schema: &DatasetSchema) -> Result<(), AppError> {
+        if !schema.has_column_filters() {
+            return Ok(());
+        }
+        for p in &self.predicates {
+            schema.find_for_predicate(&p.col)?;
+        }
+        for c in &self.group_by {
+            schema.find_visible(c)?;
+        }
+        for a in &self.aggregations {
+            if let Some(c) = &a.col {
+                schema.find_visible(c)?;
+            }
+        }
+        let grouping = !self.group_by.is_empty();
+        if !grouping {
+            // In grouped mode `order_by` references group columns / aggregation
+            // aliases, validated by `order_by_sql`; only ungrouped sorts name
+            // raw schema columns.
+            for o in &self.order_by {
+                schema.find_visible(&o.col)?;
+            }
+        }
+        if self.columns.is_empty() {
+            if !grouping && schema.projection_filter.is_active() {
+                self.columns = schema
+                    .visible_columns()
+                    .into_iter()
+                    .map(|c| c.name.clone())
+                    .collect();
+            }
+        } else {
+            for c in &self.columns {
+                schema.find_visible(c)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 fn default_page() -> u64 {
@@ -388,6 +443,21 @@ fn default_page_size() -> u64 {
 pub struct CountRequest {
     #[serde(default)]
     pub predicates: Vec<Predicate>,
+}
+
+impl CountRequest {
+    /// Reject predicates that reference a hidden or predicate-restricted
+    /// column, mirroring [`QueryRequest::enforce_column_filters`]. A no-op
+    /// when the schema carries no active filters.
+    pub fn enforce_column_filters(&self, schema: &DatasetSchema) -> Result<(), AppError> {
+        if !schema.has_column_filters() {
+            return Ok(());
+        }
+        for p in &self.predicates {
+            schema.find_for_predicate(&p.col)?;
+        }
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -758,5 +828,122 @@ mod tests {
         r.page_size = 50;
         r.limit = Some(75); // offset 100 >= 75 -> empty page.
         assert_eq!(r.effective_limit_offset(1000), (0, 100));
+    }
+
+    // ---- enforce_column_filters ---------------------------------------------
+
+    fn exclude(cols: &[&str]) -> crate::config::ColumnFilter {
+        crate::config::ColumnFilter {
+            include: vec![],
+            exclude: cols.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    fn pred(col: &str) -> Predicate {
+        Predicate {
+            col: col.into(),
+            op: "eq".into(),
+            val: Some(serde_json::json!(1)),
+        }
+    }
+
+    #[test]
+    fn enforce_is_noop_without_filters() {
+        let mut r = empty_req();
+        r.columns = vec!["id".into()];
+        r.enforce_column_filters(&schema()).unwrap();
+        assert_eq!(r.columns, vec!["id".to_string()]);
+    }
+
+    #[test]
+    fn enforce_predicate_on_hidden_column_is_unknown() {
+        let sch = schema()
+            .with_filters(Default::default(), exclude(&["score"]))
+            .unwrap();
+        let mut r = empty_req();
+        r.predicates = vec![pred("score")];
+        assert!(matches!(
+            r.enforce_column_filters(&sch).unwrap_err(),
+            AppError::UnknownColumn(_)
+        ));
+    }
+
+    #[test]
+    fn enforce_predicate_on_restricted_column_is_forbidden() {
+        let sch = schema()
+            .with_filters(exclude(&["score"]), Default::default())
+            .unwrap();
+        let mut r = empty_req();
+        r.predicates = vec![pred("score")];
+        assert!(matches!(
+            r.enforce_column_filters(&sch).unwrap_err(),
+            AppError::Forbidden(_)
+        ));
+        // still selectable
+        let mut r2 = empty_req();
+        r2.columns = vec!["score".into()];
+        r2.enforce_column_filters(&sch).unwrap();
+    }
+
+    #[test]
+    fn enforce_explicit_hidden_column_is_rejected() {
+        let sch = schema()
+            .with_filters(Default::default(), exclude(&["score"]))
+            .unwrap();
+        let mut r = empty_req();
+        r.columns = vec!["id".into(), "score".into()];
+        assert!(matches!(
+            r.enforce_column_filters(&sch).unwrap_err(),
+            AppError::UnknownColumn(_)
+        ));
+    }
+
+    #[test]
+    fn enforce_default_all_narrows_to_visible() {
+        let sch = schema()
+            .with_filters(Default::default(), exclude(&["score", "Mixed"]))
+            .unwrap();
+        let mut r = empty_req();
+        r.enforce_column_filters(&sch).unwrap();
+        assert_eq!(r.columns, vec!["id".to_string(), "name".to_string()]);
+    }
+
+    #[test]
+    fn enforce_default_all_untouched_when_grouped() {
+        let sch = schema()
+            .with_filters(Default::default(), exclude(&["score"]))
+            .unwrap();
+        let mut r = empty_req();
+        r.group_by = vec!["name".into()];
+        r.enforce_column_filters(&sch).unwrap();
+        // grouped projection is driven by group_by/aggregations, not columns
+        assert!(r.columns.is_empty());
+    }
+
+    #[test]
+    fn enforce_group_by_hidden_column_is_rejected() {
+        let sch = schema()
+            .with_filters(Default::default(), exclude(&["score"]))
+            .unwrap();
+        let mut r = empty_req();
+        r.group_by = vec!["score".into()];
+        assert!(matches!(
+            r.enforce_column_filters(&sch).unwrap_err(),
+            AppError::UnknownColumn(_)
+        ));
+    }
+
+    #[test]
+    fn count_enforce_predicate_restricted_is_forbidden() {
+        let sch = schema()
+            .with_filters(exclude(&["score"]), Default::default())
+            .unwrap();
+        let c = CountRequest {
+            predicates: vec![pred("score")],
+        };
+        assert!(matches!(
+            c.enforce_column_filters(&sch).unwrap_err(),
+            AppError::Forbidden(_)
+        ));
     }
 }

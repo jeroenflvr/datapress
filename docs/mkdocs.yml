@@ -169,6 +169,7 @@ nav:
       - operations/index.md
       - Probes (healthz / readyz / version): operations/probes.md
       - Dataset reload: operations/reload.md
+      - Register datasets at runtime: operations/register.md
       - Graceful shutdown: operations/graceful-shutdown.md
       - Logging: operations/logging.md
       - Prometheus metrics: operations/metrics.md
@@ -184,3 +185,4 @@ nav:
       - DataPress vs alternatives: comparison/comparison-vs-alternatives.md
   - Resources:
       - resources/index.md
+      - Roadmap: resources/roadmap.md

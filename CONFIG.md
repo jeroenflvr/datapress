@@ -45,6 +45,8 @@ name = "..."
 | `s3`      | no       | absent      | Only meaningful when `source.location` starts with `s3://`. Non-secret connection details.       |
 | `index`   | no       | `mode="auto"` | Equality-index policy. **Important for wide tables — see below.**                              |
 | `lazy`    | no       | `false`     | Skip materialisation; stream row groups at query time. DataFusion: parquet only (local or S3). DuckDB: parquet or delta. |
+| `predicate_filter`  | no | absent | Access control: `{ include = [...] }` or `{ exclude = [...] }` — restrict which columns may be filtered on. |
+| `projection_filter` | no | absent | Access control: `{ include = [...] }` or `{ exclude = [...] }` — hide columns from queries entirely. |
 
 ## 1. Local parquet — single file
 

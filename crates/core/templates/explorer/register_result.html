@@ -1,0 +1,44 @@
+{% if ok %}
+<div class="card border-success mb-0">
+  <div class="card-header bg-success-subtle">
+    <i class="bi bi-check-circle-fill text-success"></i>
+    Registered <strong>{{ name }}</strong>
+    <span class="badge text-bg-secondary ms-2">{{ rows }} rows</span>
+    <span class="badge text-bg-secondary">{{ columns }} columns</span>
+  </div>
+  <div class="card-body">
+    <p class="small text-secondary mb-2">
+      The dataset is live and queryable now. It lives in memory only &mdash;
+      export or persist the config below to keep it across restarts.
+    </p>
+    <label class="form-label small fw-semibold mb-1">TOML config</label>
+    <pre id="toml-{{ name }}" class="bg-body-secondary p-2 rounded small mb-2"><code>{{ toml_block }}</code></pre>
+    <div class="d-flex flex-wrap gap-2">
+      <button type="button" class="btn btn-sm btn-outline-primary"
+        onclick="(function(){const t=document.getElementById('toml-{{ name }}').innerText;const b=new Blob([t],{type:'application/toml'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='{{ name }}.toml';a.click();URL.revokeObjectURL(u);})()">
+        <i class="bi bi-download"></i> Download .toml
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-secondary"
+        onclick="navigator.clipboard.writeText(document.getElementById('toml-{{ name }}').innerText)">
+        <i class="bi bi-clipboard"></i> Copy
+      </button>
+      {% if can_persist %}
+      <button type="button" class="btn btn-sm btn-outline-success"
+        hx-post="{{ explorer_base }}/datasets/{{ name }}/persist"
+        hx-target="#persist-result-{{ name }}" hx-swap="innerHTML">
+        <i class="bi bi-save"></i> Append to server config
+      </button>
+      {% endif %}
+    </div>
+    {% if can_persist %}
+    <p class="form-text mb-0 mt-1">Server config: <code>{{ config_path }}</code></p>
+    {% endif %}
+    <div id="persist-result-{{ name }}" class="mt-2"></div>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-danger mb-0" role="alert">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  Could not register dataset: {{ message }}
+</div>
+{% endif %}

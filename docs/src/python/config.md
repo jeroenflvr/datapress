@@ -166,6 +166,26 @@ ds = DatasetConfig(
 | `lazy`                 | Stream from disk instead of materialising (parquet + delta).         |
 | `description`          | Free-form metadata; surfaced by `/api/v1/datasets`.                  |
 | `s3`                   | `S3Config` — only for `s3://` sources.                               |
+| `projection_include` / `projection_exclude` | Access control: hide columns everywhere. Set one, not both. |
+| `predicate_include` / `predicate_exclude`   | Access control: block columns from filters. Set one, not both. |
+
+!!! tip "Column access control"
+    `projection_*` hides columns from every read surface (query, schema,
+    sample, SQL, parquet export); `predicate_*` keeps a column visible but
+    blocks it from `where`/`having` filters. Use `*_include` for an
+    allowlist or `*_exclude` for a denylist — never both for the same
+    filter. See [Column access control](../configuration/datasets.md#column-access-control)
+    for full enforcement semantics.
+
+    ```python
+    ds = DatasetConfig(
+        name="people",
+        source="data/people.parquet",
+        projection_exclude=["ssn", "internal_notes"],
+        predicate_exclude=["email"],
+    )
+    ```
+
 
 !!! note "Empty datasets are skipped"
     If a dataset's `source` resolves to no files at startup (an empty

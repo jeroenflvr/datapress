@@ -117,6 +117,8 @@ async fn make_delta_store_lazy(location: &str, lazy: bool) -> Store {
             columns: vec![],
             dict_encode: true,
             lazy,
+            predicate_filter: Default::default(),
+            projection_filter: Default::default(),
         }],
     };
     Store::load(&cfg).await.expect("Store::load")
@@ -172,6 +174,8 @@ async fn make_store_with_max_page_size(location: &str, lazy: bool, max_page_size
             columns: vec![],
             dict_encode: true,
             lazy,
+            predicate_filter: Default::default(),
+            projection_filter: Default::default(),
         }],
     };
     Store::load(&cfg).await.expect("Store::load")
@@ -723,4 +727,104 @@ async fn group_by_with_having_filters_groups() {
     let mut req = empty_req();
     req.having = vec![pred("count", "gt", serde_json::json!(1))];
     assert!(store.query("people", &req).await.is_err());
+}
+
+/// Build a single-parquet store whose `people` dataset carries the given
+/// column-access filters, exercising the registration-time `with_filters`
+/// wiring end to end.
+async fn make_store_with_filters(
+    location: &str,
+    predicate_filter: datapress_core::config::ColumnFilter,
+    projection_filter: datapress_core::config::ColumnFilter,
+) -> Store {
+    let cfg = AppConfig {
+        server: ServerConfig::default(),
+        docs: datapress_core::config::DocsConfig::default(),
+        swagger: datapress_core::config::SwaggerConfig::default(),
+        auth: datapress_core::config::AuthConfig::default(),
+        metrics: datapress_core::config::MetricsConfig::default(),
+        explorer: datapress_core::config::ExplorerConfig::default(),
+        sql: datapress_core::config::SqlConfig::default(),
+        datafusion: datapress_core::config::DataFusionConfig::default(),
+        datasets: vec![DatasetConfig {
+            name: "people".into(),
+            source: SourceConfig {
+                kind: SourceKind::Parquet,
+                location: location.to_string(),
+            },
+            s3: None,
+            index: IndexConfig::default(),
+            columns: vec![],
+            dict_encode: true,
+            lazy: false,
+            predicate_filter,
+            projection_filter,
+        }],
+    };
+    Store::load(&cfg).await.expect("Store::load")
+}
+
+#[actix_web::test]
+async fn projection_filter_is_attached_to_schema_at_registration() {
+    use datapress_core::backend::Backend;
+
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("d.parquet");
+    write_parquet(&path, &[1, 2], &["a", "b"], &[1.0, 2.0]);
+
+    let excl = datapress_core::config::ColumnFilter {
+        include: vec![],
+        exclude: vec!["score".into()],
+    };
+    let store =
+        make_store_with_filters(path.to_str().unwrap(), Default::default(), excl).await;
+
+    let schema = store.schema("people").expect("schema");
+    assert!(schema.projection_filter.is_active());
+    assert!(!schema.is_visible("score"));
+    assert!(schema.is_visible("id"));
+    let visible: Vec<_> = schema.visible_columns().iter().map(|c| &c.name).collect();
+    assert_eq!(visible, vec!["id", "name"]);
+}
+
+#[actix_web::test]
+async fn unknown_filter_column_fails_registration() {
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("d.parquet");
+    write_parquet(&path, &[1], &["a"], &[1.0]);
+
+    let bad = datapress_core::config::ColumnFilter {
+        include: vec![],
+        exclude: vec!["ghost".into()],
+    };
+    let cfg = AppConfig {
+        server: ServerConfig::default(),
+        docs: datapress_core::config::DocsConfig::default(),
+        swagger: datapress_core::config::SwaggerConfig::default(),
+        auth: datapress_core::config::AuthConfig::default(),
+        metrics: datapress_core::config::MetricsConfig::default(),
+        explorer: datapress_core::config::ExplorerConfig::default(),
+        sql: datapress_core::config::SqlConfig::default(),
+        datafusion: datapress_core::config::DataFusionConfig::default(),
+        datasets: vec![DatasetConfig {
+            name: "people".into(),
+            source: SourceConfig {
+                kind: SourceKind::Parquet,
+                location: path.to_str().unwrap().to_string(),
+            },
+            s3: None,
+            index: IndexConfig::default(),
+            columns: vec![],
+            dict_encode: true,
+            lazy: false,
+            predicate_filter: Default::default(),
+            projection_filter: bad,
+        }],
+    };
+    // A typo'd filter column must not silently pass — registration fails.
+    let err = match Store::load(&cfg).await {
+        Ok(_) => panic!("load should fail on unknown filter column"),
+        Err(e) => e,
+    };
+    assert!(matches!(err, datapress_core::errors::AppError::InvalidValue(_)));
 }

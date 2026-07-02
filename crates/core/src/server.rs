@@ -293,7 +293,7 @@ async fn run_server(
         };
         Some(web::Data::new(crate::explorer::ExplorerState {
             backend: backend.clone(),
-            datasets: cfg.datasets.clone(),
+            datasets: std::sync::RwLock::new(cfg.datasets.clone()),
             explorer_base: explorer_cfg.path.clone(),
             api_base: format!("{prefix}/api/v1"),
             backend_label: label.to_string(),

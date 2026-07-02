@@ -6,11 +6,14 @@
 //! | Method | Path                              | Description                          |
 //! |--------|-----------------------------------|--------------------------------------|
 //! | GET    | `/datasets`                       | List datasets with summaries         |
+//! | POST   | `/datasets`                       | Register a new dataset (admin-only)  |
+//! | POST   | `/datasets/persist`               | Append a dataset to config (admin)   |
 //! | GET    | `/datasets/{name}/schema`         | Schema + rows + indexed cols + sample |
 //! | POST   | `/datasets/{name}/query`          | Query (JSON or Arrow IPC)            |
 //! | POST   | `/datasets/{name}/query/stream`   | Stream full query result as Arrow IPC |
 //! | POST   | `/datasets/{name}/count`          | Count matching rows                  |
 //! | POST   | `/datasets/{name}/reload`         | Rebuild dataset (admin-only)         |
+//! | POST   | `/config/reload`                  | Register newly-added datasets (admin) |
 //!
 //! Handlers are plain `async fn` (not route-macro structs) so the same
 //! version can be mounted under multiple scopes — see
@@ -82,6 +85,8 @@ fn require_reload(req: &HttpRequest) -> Result<(), crate::errors::AppError> {
 /// out as `/api/v1/datasets/...`.
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.route("/datasets", web::get().to(list_datasets))
+        .route("/datasets", web::post().to(register_dataset))
+        .route("/datasets/persist", web::post().to(persist_dataset))
         .route("/datasets/{name}/schema", web::get().to(get_schema))
         .route("/datasets/{name}/query", web::post().to(query_dataset))
         .route("/sql", web::post().to(sql_query))
@@ -97,13 +102,16 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         // file type from the URL extension, so it must end in `.parquet`.
         .route("/datasets/{name}/all.parquet", web::get().to(parquet_dataset))
         .route("/datasets/{name}/all.parquet", web::head().to(parquet_dataset))
-        .route("/datasets/{name}/reload", web::post().to(reload_dataset));
+        .route("/datasets/{name}/reload", web::post().to(reload_dataset))
+        .route("/config/reload", web::post().to(reload_config));
 }
 
 /// Route table for log_routes-style introspection. Each entry is
 /// `(method, path-suffix)` relative to the version's mount scope.
 pub const ROUTES: &[(&str, &str)] = &[
     ("GET", "/datasets"),
+    ("POST", "/datasets"),
+    ("POST", "/datasets/persist"),
     ("GET", "/datasets/{name}/schema"),
     ("POST", "/datasets/{name}/query"),
     ("POST", "/sql"),
@@ -112,6 +120,7 @@ pub const ROUTES: &[(&str, &str)] = &[
     ("GET", "/datasets/{name}/parquet"),
     ("GET", "/datasets/{name}/all.parquet"),
     ("POST", "/datasets/{name}/reload"),
+    ("POST", "/config/reload"),
 ];
 
 // ---------------------------------------------------------------- handlers --
@@ -123,7 +132,17 @@ pub async fn list_datasets(req: HttpRequest, backend: BackendData) -> HttpRespon
     let summaries: Vec<_> = backend
         .names()
         .into_iter()
-        .filter_map(|n| backend.summary(&n).ok())
+        .filter_map(|n| {
+            let mut summary = backend.summary(&n).ok()?;
+            // Report only the visible column count when a projection filter
+            // hides some columns.
+            if let Ok(schema) = backend.schema(&n)
+                && schema.projection_filter.is_active()
+            {
+                summary.columns = schema.visible_columns().len();
+            }
+            Some(summary)
+        })
         .collect();
     HttpResponse::Ok().json(serde_json::json!({ "datasets": summaries }))
 }
@@ -153,16 +172,46 @@ pub async fn get_schema(
         Ok(s) => s,
         Err(e) => return e.error_response(),
     };
+    // Never reveal projection-hidden columns: filter the schema listing and
+    // the indexed-column set, and strip hidden keys out of the row sample.
+    let visible = schema.projection_filter.is_active();
+    let columns: Vec<_> = schema.visible_columns();
+    let indexed: Vec<_> = if visible {
+        indexed
+            .into_iter()
+            .filter(|c| schema.is_visible(c))
+            .collect()
+    } else {
+        indexed
+    };
+    let sample = if visible {
+        strip_hidden_sample(&sample, &schema)
+    } else {
+        sample
+    };
     let body = format!(
         r#"{{"name":{name_lit},"rows":{rows},"columns":{cols},"indexed":{indexed},"sample":{sample}}}"#,
         name_lit = serde_json::to_string(&schema.name).unwrap(),
         rows = summary.rows,
-        cols = serde_json::to_string(&schema.columns).unwrap(),
+        cols = serde_json::to_string(&columns).unwrap(),
         indexed = serde_json::to_string(&indexed).unwrap(),
     );
     HttpResponse::Ok()
         .content_type("application/json")
         .body(body)
+}
+
+/// Remove projection-hidden keys from a `/schema` row sample. The sample is
+/// backend-rendered JSON (`"null"` when the dataset is empty); on any parse
+/// failure the original string is returned unchanged.
+fn strip_hidden_sample(sample: &str, schema: &crate::schema::DatasetSchema) -> String {
+    match serde_json::from_str::<serde_json::Value>(sample) {
+        Ok(serde_json::Value::Object(mut map)) => {
+            map.retain(|k, _| schema.is_visible(k));
+            serde_json::Value::Object(map).to_string()
+        }
+        _ => sample.to_string(),
+    }
 }
 
 pub async fn query_dataset(
@@ -186,6 +235,18 @@ pub async fn query_dataset(
     let mut req = body.into_inner();
     req.page = page;
     req.page_size = page_size;
+
+    // Apply the dataset's column-level access filters (hidden columns,
+    // predicate restrictions) before the backend sees the request. This is
+    // the single choke point for every backend and response format.
+    match backend.schema(&name) {
+        Ok(schema) => {
+            if let Err(e) = req.enforce_column_filters(&schema) {
+                return e.error_response();
+            }
+        }
+        Err(e) => return e.error_response(),
+    }
 
     // Content negotiation: clients opt into Arrow IPC via the `Accept`
     // header or `?format=arrow`. Anything else (including no header)
@@ -265,6 +326,17 @@ pub async fn sql_query(
         Err(e) => return e.error_response(),
     };
 
+    // Apply each referenced dataset's column-level access filters. Datasets
+    // with no active filters are a no-op, so this only costs a schema lookup
+    // in the common case.
+    for ds in &validated.datasets {
+        if let Ok(schema) = backend.schema(ds)
+            && let Err(e) = crate::sql::enforce_column_access(&validated.sql, &schema)
+        {
+            return e.error_response();
+        }
+    }
+
     // The effective row cap is the server limit, optionally lowered (never
     // raised) by the request's `max_rows`.
     let max_rows = match body.max_rows {
@@ -311,7 +383,13 @@ pub async fn stream_dataset(
         return e.error_response();
     }
     let name = path.into_inner();
-    let req = body.into_inner();
+    let mut req = body.into_inner();
+
+    if let Ok(schema) = backend.schema(&name)
+        && let Err(e) = req.enforce_column_filters(&schema)
+    {
+        return e.error_response();
+    }
 
     match backend.query_arrow_stream_all(&name, &req).await {
         Ok(stream) => HttpResponse::Ok()
@@ -335,10 +413,114 @@ pub async fn count_dataset(
     let name = path.into_inner();
     let req = body.map(|b| b.into_inner()).unwrap_or_default();
 
+    if let Ok(schema) = backend.schema(&name)
+        && let Err(e) = req.enforce_column_filters(&schema)
+    {
+        return e.error_response();
+    }
+
     match backend.count(&name, &req).await {
         Ok(n) => HttpResponse::Ok().json(serde_json::json!({ "count": n })),
         Err(e) => e.error_response(),
     }
+}
+
+/// Admin endpoint: register a brand-new dataset at runtime from a JSON
+/// [`crate::config::DatasetConfig`] body and make it immediately queryable —
+/// no server restart. The dataset lives in memory only; use
+/// `POST /datasets/persist` to also append it to the on-disk config.
+///
+/// Requires the same reload/admin permission as `/reload`. The backend
+/// validates the config and opens the source, so an unreachable source or a
+/// duplicate name surfaces as a `400`.
+pub async fn register_dataset(
+    req: HttpRequest,
+    backend: BackendData,
+    body: web::Json<crate::config::DatasetConfig>,
+) -> HttpResponse {
+    if let Err(e) = require_reload(&req) {
+        return e.error_response();
+    }
+    match backend.register(body.into_inner()).await {
+        Ok(summary) => HttpResponse::Ok().json(summary),
+        Err(e) => e.error_response(),
+    }
+}
+
+/// Admin endpoint: append a dataset's `[[dataset]]` block to the server's
+/// on-disk config file so a runtime-registered dataset survives a restart.
+///
+/// Takes the same JSON [`crate::config::DatasetConfig`] body as
+/// `POST /datasets` and requires the reload/admin permission. Only works
+/// when the server was loaded from a config file; otherwise returns `400`.
+pub async fn persist_dataset(
+    req: HttpRequest,
+    body: web::Json<crate::config::DatasetConfig>,
+) -> HttpResponse {
+    if let Err(e) = require_reload(&req) {
+        return e.error_response();
+    }
+    match body.persist_to_source_config() {
+        Ok(path) => HttpResponse::Ok().json(serde_json::json!({
+            "persisted": true,
+            "path":      path.display().to_string(),
+        })),
+        Err(e) => e.error_response(),
+    }
+}
+
+/// Admin endpoint: re-read the server's on-disk `datasets.toml` and register
+/// any datasets added since startup (or the previous config reload).
+///
+/// This is a *hot* config reload: the file is re-read and validated, then
+/// every `[[dataset]]` whose name is not already registered is opened and
+/// registered live. Datasets that already exist are left untouched (use
+/// `/datasets/{name}/reload` to rebuild one), and server-level settings
+/// (port, workers, …) are not re-applied — those still require a restart.
+///
+/// Requires the reload/admin permission and only works when the server was
+/// started from a config file. Returns the names that were registered,
+/// those skipped as already-present, and any per-dataset errors (a bad
+/// dataset does not abort the others).
+pub async fn reload_config(req: HttpRequest, backend: BackendData) -> HttpResponse {
+    if let Err(e) = require_reload(&req) {
+        return e.error_response();
+    }
+    let Some(path) = crate::config::source_config_path() else {
+        return crate::errors::AppError::InvalidValue(
+            "server has no on-disk config file to reload".into(),
+        )
+        .error_response();
+    };
+    let cfg = match crate::config::AppConfig::load(&path.to_string_lossy()) {
+        Ok(c) => c,
+        Err(e) => return e.error_response(),
+    };
+
+    let existing: std::collections::HashSet<String> = backend.names().into_iter().collect();
+
+    let mut registered: Vec<String> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+    let mut errors: Vec<serde_json::Value> = Vec::new();
+    for ds in cfg.datasets {
+        if existing.contains(&ds.name) {
+            skipped.push(ds.name);
+            continue;
+        }
+        let name = ds.name.clone();
+        match backend.register(ds).await {
+            Ok(_) => registered.push(name),
+            Err(e) => {
+                errors.push(serde_json::json!({ "dataset": name, "error": e.to_string() }))
+            }
+        }
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "registered": registered,
+        "skipped":    skipped,
+        "errors":     errors,
+    }))
 }
 
 /// Admin endpoint: rebuild a dataset from disk and atomically swap it in.
@@ -389,6 +571,20 @@ pub async fn parquet_dataset(
         return e.error_response();
     }
     let name = path.into_inner();
+
+    // The parquet export streams the raw source, which would bypass a
+    // projection filter and leak hidden columns. Refuse it for datasets that
+    // hide columns.
+    match backend.schema(&name) {
+        Ok(schema) if schema.projection_filter.is_active() => {
+            return crate::errors::AppError::Forbidden(format!(
+                "parquet export is disabled for dataset '{name}' because it hides columns"
+            ))
+            .error_response();
+        }
+        Ok(_) => {}
+        Err(e) => return e.error_response(),
+    }
 
     let body = match cache.as_ref().and_then(|c| c.get(&name)) {
         Some(cached) => cached,

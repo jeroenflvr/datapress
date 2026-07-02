@@ -14,10 +14,10 @@ use futures_util::stream::{self, BoxStream, StreamExt};
 use serde::Serialize;
 use tokio::sync::mpsc;
 
+use crate::config::DatasetConfig;
 use crate::errors::AppError;
 use crate::models::{CountRequest, QueryRequest};
 use crate::schema::DatasetSchema;
-
 /// Stream of Arrow IPC response chunks emitted by a backend.
 pub type ArrowIpcStream = BoxStream<'static, Result<Bytes, AppError>>;
 
@@ -247,4 +247,22 @@ pub trait Backend: Send + Sync + 'static {
 
     /// Rebuild `name` from its configured source and atomically swap it in.
     async fn reload(&self, name: &str) -> Result<ReloadStats, AppError>;
+
+    /// Register a brand-new dataset from `cfg` at runtime, without a server
+    /// restart. The backend opens the source, builds/registers the dataset
+    /// under `cfg.name`, and makes it immediately queryable through the same
+    /// registry the HTTP handlers read.
+    ///
+    /// Returns the fresh [`DatasetSummary`] on success. Errors with
+    /// `AppError::InvalidValue` when a dataset of that name already exists,
+    /// and with the backend's usual source errors (not found, access denied,
+    /// empty) when the source can't be opened.
+    ///
+    /// Default impl errors with `InvalidValue`; the shipped backends
+    /// (DuckDB, DataFusion) override it.
+    async fn register(&self, _cfg: DatasetConfig) -> Result<DatasetSummary, AppError> {
+        Err(AppError::InvalidValue(
+            "live dataset registration is not supported by this backend".into(),
+        ))
+    }
 }

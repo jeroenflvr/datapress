@@ -23,7 +23,7 @@ use pyo3::prelude::*;
 
 use datapress_core::config::{
     AddressingStyle, AppConfig, AuthConfig as CoreAuthConfig, Backend, BucketInHost,
-    DataFusionConfig as CoreDataFusionConfig, DatasetConfig as CoreDatasetConfig,
+    ColumnFilter, DataFusionConfig as CoreDataFusionConfig, DatasetConfig as CoreDatasetConfig,
     ExplorerConfig as CoreExplorerConfig, IndexConfig, IndexMode,
     MetricsConfig as CoreMetricsConfig, Partitioning, S3Config as CoreS3Config,
     ServerConfig, SourceConfig, SourceKind, SqlConfig as CoreSqlConfig,
@@ -381,6 +381,25 @@ pub struct PyDatasetConfig {
     /// Stream from disk instead of materialising into RAM.
     #[pyo3(get, set)]
     pub lazy: bool,
+    /// Allowlist of columns that may be filtered on (query predicates /
+    /// count, and any reference on the raw-SQL endpoint). Mutually
+    /// exclusive with ``predicate_exclude``.
+    #[pyo3(get, set)]
+    pub predicate_include: Option<Vec<String>>,
+    /// Denylist of columns that may not be filtered on. Mutually exclusive
+    /// with ``predicate_include``.
+    #[pyo3(get, set)]
+    pub predicate_exclude: Option<Vec<String>>,
+    /// Allowlist of columns that may be seen / returned (projection,
+    /// group_by, aggregations, order_by, schema and sample, and any
+    /// reference on the raw-SQL endpoint). Columns not listed are hidden as
+    /// if they did not exist. Mutually exclusive with ``projection_exclude``.
+    #[pyo3(get, set)]
+    pub projection_include: Option<Vec<String>>,
+    /// Denylist of columns to hide. Mutually exclusive with
+    /// ``projection_include``.
+    #[pyo3(get, set)]
+    pub projection_exclude: Option<Vec<String>>,
 }
 
 #[pymethods]
@@ -402,6 +421,15 @@ impl PyDatasetConfig {
     ///     index_max_cardinality (int | None): Max distinct values per indexed column.
     ///     lazy (bool): Stream from disk instead of loading into RAM.
     ///         DataFusion backend / local parquet only. Defaults to ``False``.
+    ///     predicate_include (list[str] | None): Only these columns may be
+    ///         filtered on. Mutually exclusive with ``predicate_exclude``.
+    ///     predicate_exclude (list[str] | None): These columns may not be
+    ///         filtered on. Mutually exclusive with ``predicate_include``.
+    ///     projection_include (list[str] | None): Only these columns may be
+    ///         seen/returned; every other column is hidden. Mutually
+    ///         exclusive with ``projection_exclude``.
+    ///     projection_exclude (list[str] | None): These columns are hidden.
+    ///         Mutually exclusive with ``projection_include``.
     #[new]
     #[pyo3(signature = (
         name,
@@ -415,6 +443,10 @@ impl PyDatasetConfig {
         index_columns         = None,
         index_max_cardinality = None,
         lazy                  = false,
+        predicate_include     = None,
+        predicate_exclude     = None,
+        projection_include    = None,
+        projection_exclude    = None,
     ))]
     #[allow(clippy::too_many_arguments)] // mirrors the user-facing Python kwargs surface
     fn new(
@@ -429,6 +461,10 @@ impl PyDatasetConfig {
         index_columns: Option<Vec<String>>,
         index_max_cardinality: Option<usize>,
         lazy: bool,
+        predicate_include: Option<Vec<String>>,
+        predicate_exclude: Option<Vec<String>>,
+        projection_include: Option<Vec<String>>,
+        projection_exclude: Option<Vec<String>>,
     ) -> Self {
         Self {
             name,
@@ -442,6 +478,10 @@ impl PyDatasetConfig {
             index_columns,
             index_max_cardinality,
             lazy,
+            predicate_include,
+            predicate_exclude,
+            projection_include,
+            projection_exclude,
         }
     }
 }
@@ -481,6 +521,21 @@ impl PyDatasetConfig {
 
         let s3 = self.s3.map(|s| s.into_core(py)).transpose()?;
 
+        let predicate_filter = ColumnFilter {
+            include: self.predicate_include.unwrap_or_default(),
+            exclude: self.predicate_exclude.unwrap_or_default(),
+        };
+        let projection_filter = ColumnFilter {
+            include: self.projection_include.unwrap_or_default(),
+            exclude: self.projection_exclude.unwrap_or_default(),
+        };
+        predicate_filter
+            .validate(&self.name, "predicate_filter")
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        projection_filter
+            .validate(&self.name, "projection_filter")
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
         Ok(CoreDatasetConfig {
             name: self.name,
             source: SourceConfig {
@@ -492,6 +547,8 @@ impl PyDatasetConfig {
             columns: self.columns.unwrap_or_default(),
             dict_encode: self.dict_encode,
             lazy: self.lazy,
+            predicate_filter,
+            projection_filter,
         })
     }
 }
