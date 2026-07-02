@@ -93,6 +93,8 @@ fn make_registry_at(location: &str) -> Arc<Registry> {
             columns: vec![],
             dict_encode: true,
             lazy: false,
+            predicate_filter: Default::default(),
+            projection_filter: Default::default(),
         }],
     };
     Arc::new(load_registry(&cfg).expect("load_registry"))
@@ -122,6 +124,8 @@ fn make_registry_lazy(location: &str) -> Arc<Registry> {
             columns: vec![],
             dict_encode: true,
             lazy: true,
+            predicate_filter: Default::default(),
+            projection_filter: Default::default(),
         }],
     };
     Arc::new(load_registry(&cfg).expect("load_registry"))

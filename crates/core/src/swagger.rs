@@ -255,6 +255,74 @@ fn openapi(oauth2: Option<&ResolvedOAuth2>) -> OpenApi {
                             }
                         }
                     }
+                },
+                "post": {
+                    "tags":    ["admin"],
+                    "summary": "Register a new dataset at runtime",
+                    "description": "Load a Parquet or Delta source into the running server without a restart. The dataset is held in memory only — call `POST /api/v1/datasets/persist` to also append it to the on-disk config. Requires the configured reload/admin permission.",
+                    "security": [ { "AdminToken": [] } ],
+                    "requestBody": {
+                        "required": true,
+                        "content": {
+                            "application/json": {
+                                "schema":  { "$ref": "#/components/schemas/DatasetConfig" },
+                                "example": {
+                                    "name":   "events",
+                                    "source": { "kind": "parquet", "location": "/data/events/*.parquet" }
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Dataset registered",
+                            "content": {
+                                "application/json": {
+                                    "schema": { "$ref": "#/components/schemas/DatasetSummary" }
+                                }
+                            }
+                        },
+                        "400": { "description": "Invalid config, unreachable source, or a dataset of that name already exists" },
+                        "401": { "description": "Missing or invalid admin token" }
+                    }
+                }
+            },
+            "/api/v1/datasets/persist": {
+                "post": {
+                    "tags":    ["admin"],
+                    "summary": "Append a dataset to the on-disk config",
+                    "description": "Append the given dataset's `[[dataset]]` block to the `datasets.toml` this server was loaded from, so a runtime-registered dataset survives a restart. Takes the same body as `POST /api/v1/datasets`. Requires the reload/admin permission and only works when the server was started from a config file.",
+                    "security": [ { "AdminToken": [] } ],
+                    "requestBody": {
+                        "required": true,
+                        "content": {
+                            "application/json": {
+                                "schema":  { "$ref": "#/components/schemas/DatasetConfig" },
+                                "example": {
+                                    "name":   "events",
+                                    "source": { "kind": "parquet", "location": "/data/events/*.parquet" }
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Block appended",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "persisted": { "type": "boolean" },
+                                            "path":      { "type": "string" }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "400": { "description": "Server has no on-disk config file, or the write failed" },
+                        "401": { "description": "Missing or invalid admin token" }
+                    }
                 }
             },
             "/api/v1/datasets/{name}/schema": {
@@ -392,6 +460,33 @@ fn openapi(oauth2: Option<&ResolvedOAuth2>) -> OpenApi {
                     }
                 }
             },
+            "/api/v1/config/reload": {
+                "post": {
+                    "tags":    ["admin"],
+                    "summary": "Hot-reload the config and register new datasets",
+                    "description": "Re-read the server's on-disk `datasets.toml` and register any `[[dataset]]` added since startup. Existing datasets are left untouched (use `/datasets/{name}/reload` to rebuild one) and server-level settings are not re-applied. Requires the reload/admin permission and only works when the server was started from a config file.",
+                    "security": [ { "AdminToken": [] } ],
+                    "responses": {
+                        "200": {
+                            "description": "Reload summary",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "registered": { "type": "array", "items": { "type": "string" } },
+                                            "skipped":    { "type": "array", "items": { "type": "string" } },
+                                            "errors":     { "type": "array", "items": { "type": "object" } }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "400": { "description": "Server has no on-disk config file, or the file failed to load" },
+                        "401": { "description": "Missing or invalid admin token" }
+                    }
+                }
+            },
             "/api/v1/sql": {
                 "post": {
                     "tags":    ["datasets"],
@@ -455,6 +550,60 @@ fn openapi(oauth2: Option<&ResolvedOAuth2>) -> OpenApi {
                         "name":     { "type": "string" },
                         "rows":     { "type": "integer", "format": "int64" },
                         "columns":  { "type": "integer", "format": "int64" }
+                    }
+                },
+                "DatasetConfig": {
+                    "type": "object",
+                    "required": ["name", "source"],
+                    "description": "Runtime dataset definition, mirroring a `[[dataset]]` block in `datasets.toml`.",
+                    "properties": {
+                        "name":   { "type": "string", "description": "Dataset identifier. Alphanumeric plus `_ - .`" },
+                        "source": {
+                            "type":     "object",
+                            "required": ["kind", "location"],
+                            "properties": {
+                                "kind":     { "type": "string", "enum": ["parquet", "delta"] },
+                                "location": { "type": "string", "description": "Local path or `s3://bucket/key` URL." }
+                            }
+                        },
+                        "columns":     { "type": "array", "items": { "type": "string" }, "description": "Optional column projection." },
+                        "dict_encode": { "type": "boolean" },
+                        "lazy":        { "type": "boolean", "description": "Stream from source instead of materialising into RAM." },
+                        "predicate_filter": {
+                            "type": "object",
+                            "description": "Access control: restrict which columns may be used in filters (`where`/`having`). Set `include` (allowlist) or `exclude` (denylist), never both.",
+                            "properties": {
+                                "include": { "type": "array", "items": { "type": "string" } },
+                                "exclude": { "type": "array", "items": { "type": "string" } }
+                            }
+                        },
+                        "projection_filter": {
+                            "type": "object",
+                            "description": "Access control: hide columns from projection, grouping, ordering and the schema everywhere. Set `include` (allowlist) or `exclude` (denylist), never both.",
+                            "properties": {
+                                "include": { "type": "array", "items": { "type": "string" } },
+                                "exclude": { "type": "array", "items": { "type": "string" } }
+                            }
+                        },
+                        "index": {
+                            "type": "object",
+                            "properties": {
+                                "mode":            { "type": "string", "enum": ["auto", "none", "list"] },
+                                "columns":         { "type": "array", "items": { "type": "string" } },
+                                "max_cardinality": { "type": "integer", "format": "int64" }
+                            }
+                        },
+                        "s3": {
+                            "type": "object",
+                            "description": "S3 / object-store settings for `s3://` locations.",
+                            "properties": {
+                                "region":            { "type": "string" },
+                                "endpoint":          { "type": "string" },
+                                "addressing_style":  { "type": "string", "enum": ["virtual", "path"] },
+                                "allow_http":        { "type": "boolean" },
+                                "partitioning":      { "type": "string", "enum": ["auto", "hive", "none"] }
+                            }
+                        }
                     }
                 },
                 "Predicate": {

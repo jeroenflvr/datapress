@@ -117,6 +117,8 @@ async fn make_delta_store_lazy(location: &str, lazy: bool) -> Store {
             columns: vec![],
             dict_encode: true,
             lazy,
+            predicate_filter: Default::default(),
+            projection_filter: Default::default(),
         }],
     };
     Store::load(&cfg).await.expect("Store::load")
@@ -172,6 +174,8 @@ async fn make_store_with_max_page_size(location: &str, lazy: bool, max_page_size
             columns: vec![],
             dict_encode: true,
             lazy,
+            predicate_filter: Default::default(),
+            projection_filter: Default::default(),
         }],
     };
     Store::load(&cfg).await.expect("Store::load")

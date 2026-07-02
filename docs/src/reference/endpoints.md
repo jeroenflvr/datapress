@@ -9,6 +9,8 @@ under `/api/v1/` and `/api/` is shifted by `prefix` when set.
 | Method | Path                                              | Body            | Purpose                                                              |
 |--------|---------------------------------------------------|-----------------|----------------------------------------------------------------------|
 | GET    | `/api/v1/datasets`                                | —               | List configured datasets and metadata.                               |
+| POST   | `/api/v1/datasets`                                | [Dataset config](../configuration/datasets.md) | Register a dataset at runtime. Requires `X-Admin-Token`. |
+| POST   | `/api/v1/datasets/persist`                        | [Dataset config](../configuration/datasets.md) | Append a dataset to the on-disk config. Requires `X-Admin-Token`. |
 | GET    | `/api/v1/datasets/{name}/schema`                  | —               | Inferred schema + one sample row.                                    |
 | POST   | `/api/v1/datasets/{name}/query`                   | [Query body](../query/request-body.md) | Filter / project / sort / paginate.                |
 | POST   | `/api/v1/sql`                                     | [SQL body](../query/sql.md) | Raw read-only SQL over one dataset. Off unless `[sql].enabled`. |
@@ -17,6 +19,7 @@ under `/api/v1/` and `/api/` is shifted by `prefix` when set.
 | GET    | `/api/v1/datasets/{name}/parquet`                 | —               | Whole dataset as a Parquet file (HTTP range + `HEAD`).               |
 | GET    | `/api/v1/datasets/{name}/all.parquet`             | —               | Alias of `/parquet` whose URL ends in `.parquet` (bare `FROM '…'`).  |
 | POST   | `/api/v1/datasets/{name}/reload`                  | —               | Atomic dataset reload. Requires `X-Admin-Token`.                     |
+| POST   | `/api/v1/config/reload`                           | —               | Re-read `datasets.toml`; register newly-added datasets. Requires `X-Admin-Token`. |
 | GET    | `{prefix}/health`                                 | —               | Liveness, prefix-aware.                                              |
 
 ## Legacy aliases (`/api`)
@@ -26,6 +29,8 @@ Same handlers, no `/v1`:
 | Method | Path                                       |
 |--------|--------------------------------------------|
 | GET    | `/api/datasets`                            |
+| POST   | `/api/datasets`                            |
+| POST   | `/api/datasets/persist`                    |
 | GET    | `/api/datasets/{name}/schema`              |
 | POST   | `/api/datasets/{name}/query`               |
 | POST   | `/api/sql`                                 |
@@ -34,6 +39,7 @@ Same handlers, no `/v1`:
 | GET    | `/api/datasets/{name}/parquet`             |
 | GET    | `/api/datasets/{name}/all.parquet`         |
 | POST   | `/api/datasets/{name}/reload`              |
+| POST   | `/api/config/reload`                       |
 
 Prefer `/api/v1/...` in new code; the unversioned routes will
 eventually be deprecated.

@@ -14,6 +14,10 @@
     <button class="nav-link" id="terminal-tab" data-bs-toggle="tab" data-bs-target="#terminal-pane"
             type="button" role="tab"><i class="bi bi-terminal"></i> Terminal</button>
   </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" id="register-tab" data-bs-toggle="tab" data-bs-target="#register-pane"
+            type="button" role="tab"><i class="bi bi-plus-circle"></i> Register</button>
+  </li>
 </ul>
 
 <div class="tab-content">
@@ -223,6 +227,166 @@
         <div class="form-text px-3 py-2 mb-0">
           A full DuckDB shell running in your browser. Every dataset is
           pre-registered as a view &mdash; try <code>SELECT * FROM &lt;name&gt; LIMIT 10;</code>.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---------------------------------------------------------------- -->
+  <!-- Register (live dataset registration + TOML export) -->
+  <!-- ---------------------------------------------------------------- -->
+  <div class="tab-pane fade" id="register-pane" role="tabpanel">
+    <div class="row g-3">
+      <div class="col-12 col-lg-7">
+        <div class="card">
+          <div class="card-header"><i class="bi bi-plus-circle"></i> Register a dataset</div>
+          <div class="card-body">
+            <p class="small text-secondary">
+              Add a Parquet or Delta source to this running server without a restart.
+              The dataset is loaded in memory only &mdash; use the export options after
+              registering to keep it across restarts.
+            </p>
+            {% if can_persist %}
+            <p class="small text-secondary">
+              <i class="bi bi-save"></i> This server can append datasets to
+              <code>{{ config_path }}</code>.
+            </p>
+            {% else %}
+            <p class="small text-secondary">
+              <i class="bi bi-info-circle"></i> This server has no on-disk config file,
+              so persistence is limited to downloading the exported TOML.
+            </p>
+            {% endif %}
+            <form hx-post="{{ explorer_base }}/datasets" hx-target="#register-result"
+                  hx-swap="innerHTML" hx-disabled-elt="find button[type='submit']">
+              <div class="row g-2">
+                <div class="col-12 col-md-6">
+                  <label class="form-label small mb-1">Name</label>
+                  <input name="name" class="form-control form-control-sm" required
+                         pattern="[A-Za-z0-9_.\-]+" placeholder="my_dataset"
+                         title="Letters, digits, dot, underscore and hyphen only">
+                </div>
+                <div class="col-12 col-md-6">
+                  <label class="form-label small mb-1">Source kind</label>
+                  <select name="kind" class="form-select form-select-sm">
+                    <option value="parquet" selected>Parquet</option>
+                    <option value="delta">Delta</option>
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label small mb-1">Location</label>
+                  <input name="location" class="form-control form-control-sm mono" required
+                         placeholder="/path/to/data.parquet or s3://bucket/prefix/">
+                </div>
+                <div class="col-12 col-md-6">
+                  <label class="form-label small mb-1">Columns <span class="text-secondary">(optional, comma-separated projection)</span></label>
+                  <input name="columns" class="form-control form-control-sm mono" placeholder="id, name, ts">
+                </div>
+                <div class="col-12 col-md-6 d-flex align-items-end gap-3">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="dict_encode" id="reg-dict" checked>
+                    <label class="form-check-label small" for="reg-dict">Dictionary encode</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="lazy" id="reg-lazy">
+                    <label class="form-check-label small" for="reg-lazy">Lazy</label>
+                  </div>
+                </div>
+              </div>
+
+              <hr class="my-3">
+              <div class="row g-2">
+                <div class="col-12 col-md-4">
+                  <label class="form-label small mb-1">Index mode</label>
+                  <select name="index_mode" class="form-select form-select-sm">
+                    <option value="auto" selected>Auto</option>
+                    <option value="none">None</option>
+                    <option value="list">List</option>
+                  </select>
+                </div>
+                <div class="col-12 col-md-5">
+                  <label class="form-label small mb-1">Index columns <span class="text-secondary">(for list mode)</span></label>
+                  <input name="index_columns" class="form-control form-control-sm mono" placeholder="category, region">
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="form-label small mb-1">Max cardinality</label>
+                  <input name="index_max_cardinality" class="form-control form-control-sm" inputmode="numeric" placeholder="100000">
+                </div>
+              </div>
+
+              <div class="form-check mt-3 mb-2">
+                <input class="form-check-input" type="checkbox" name="s3_enabled" id="reg-s3-enabled"
+                       data-bs-toggle="collapse" data-bs-target="#reg-s3-section"
+                       aria-expanded="false" aria-controls="reg-s3-section">
+                <label class="form-check-label small fw-semibold" for="reg-s3-enabled">
+                  <i class="bi bi-hdd-network"></i> S3 / object-store source
+                </label>
+              </div>
+              <div class="collapse" id="reg-s3-section">
+                <div class="card card-body bg-body-secondary">
+                  <div class="row g-2">
+                    <div class="col-12 col-md-6">
+                      <label class="form-label small mb-1">Region</label>
+                      <input name="s3_region" class="form-control form-control-sm" placeholder="us-east-1">
+                    </div>
+                    <div class="col-12 col-md-6">
+                      <label class="form-label small mb-1">Endpoint</label>
+                      <input name="s3_endpoint" class="form-control form-control-sm mono" placeholder="http://localhost:9000">
+                    </div>
+                    <div class="col-12 col-md-6">
+                      <label class="form-label small mb-1">Addressing style</label>
+                      <select name="s3_addressing" class="form-select form-select-sm">
+                        <option value="virtual" selected>Virtual-hosted</option>
+                        <option value="path">Path</option>
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-6">
+                      <label class="form-label small mb-1">Partitioning</label>
+                      <select name="s3_partitioning" class="form-select form-select-sm">
+                        <option value="auto" selected>Auto</option>
+                        <option value="hive">Hive</option>
+                        <option value="none">None</option>
+                      </select>
+                    </div>
+                    <div class="col-12">
+                      <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="s3_allow_http" id="reg-s3-http">
+                        <label class="form-check-label small" for="reg-s3-http">Allow plain HTTP (dev / MinIO)</label>
+                      </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                      <label class="form-label small mb-1">Access key ID</label>
+                      <input name="s3_access_key_id" class="form-control form-control-sm mono" autocomplete="off">
+                    </div>
+                    <div class="col-12 col-md-6">
+                      <label class="form-label small mb-1">Secret access key</label>
+                      <input name="s3_secret_access_key" type="password" class="form-control form-control-sm mono" autocomplete="off">
+                    </div>
+                    <div class="col-12">
+                      <label class="form-label small mb-1">Session token <span class="text-secondary">(optional)</span></label>
+                      <input name="s3_session_token" class="form-control form-control-sm mono" autocomplete="off">
+                    </div>
+                  </div>
+                  <p class="form-text mb-0">
+                    Leave keys blank to use the server's environment / provider chain.
+                  </p>
+                </div>
+              </div>
+
+              <div class="mt-3">
+                <button type="submit" class="btn btn-sm btn-primary">
+                  <i class="bi bi-plus-circle"></i> Register dataset
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <div id="register-result">
+          <div class="text-secondary small p-3">
+            Register a dataset to see its live status and TOML config here.
+          </div>
         </div>
       </div>
     </div>

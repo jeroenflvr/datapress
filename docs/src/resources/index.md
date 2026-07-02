@@ -62,6 +62,11 @@ For the wider DataFusion / DuckDB / Spark / pandas / Polars landscape, the
 ClickBench leaderboard and the benchmark harnesses above are the most current,
 reproducible references.
 
+## Roadmap
+
+See the [Roadmap](roadmap.md) for what's planned next — including a JDBC
+driver targeted for Q3 2026.
+
 ## People
 
 The maintainers and creators whose work DataPress builds on.

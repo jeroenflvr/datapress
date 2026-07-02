@@ -99,6 +99,10 @@ class DatasetConfig:
     index_columns: Optional[list[str]]
     index_max_cardinality: Optional[int]
     lazy: bool
+    predicate_include: Optional[list[str]]
+    predicate_exclude: Optional[list[str]]
+    projection_include: Optional[list[str]]
+    projection_exclude: Optional[list[str]]
 
     def __init__(
         self,
@@ -113,6 +117,10 @@ class DatasetConfig:
         index_columns: Optional[list[str]] = None,
         index_max_cardinality: Optional[int] = None,
         lazy: bool = False,
+        predicate_include: Optional[list[str]] = None,
+        predicate_exclude: Optional[list[str]] = None,
+        projection_include: Optional[list[str]] = None,
+        projection_exclude: Optional[list[str]] = None,
     ) -> None:
         """Build a :class:`DatasetConfig`.
 
@@ -133,6 +141,17 @@ class DatasetConfig:
                 indexed column.
             lazy: Stream from disk instead of loading into RAM.
                 DataFusion backend (parquet or delta). Defaults to ``False``.
+            predicate_include: Access control — only these columns may be
+                used in filters (``where``/``having``). Mutually exclusive
+                with ``predicate_exclude``.
+            predicate_exclude: Access control — these columns may not be
+                used in filters. Mutually exclusive with ``predicate_include``.
+            projection_include: Access control — only these columns are
+                visible (selectable, groupable, in the schema). Others are
+                hidden everywhere. Mutually exclusive with
+                ``projection_exclude``.
+            projection_exclude: Access control — these columns are hidden
+                everywhere. Mutually exclusive with ``projection_include``.
         """
         ...
 

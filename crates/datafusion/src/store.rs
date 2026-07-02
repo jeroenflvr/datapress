@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use arc_swap::ArcSwap;
@@ -94,7 +94,9 @@ pub struct Store {
     max_page_size: u64,
     /// Original dataset configs, indexed by name. Reload reads the source
     /// path from here — clients can't redirect a reload at an arbitrary file.
-    configs: HashMap<String, DatasetConfig>,
+    /// Behind an `RwLock` so datasets registered at runtime can be added
+    /// without a restart.
+    configs: RwLock<HashMap<String, DatasetConfig>>,
     /// Hot-swappable snapshot of all currently loaded datasets.
     datasets: ArcSwap<HashMap<String, Arc<DatasetState>>>,
     /// Per-name reload mutex. Serialises concurrent reloads of the same
@@ -179,7 +181,7 @@ impl Store {
         Ok(Self {
             ctx,
             max_page_size: cfg.server.max_page_size.max(1),
-            configs,
+            configs: RwLock::new(configs),
             datasets: ArcSwap::from_pointee(datasets),
             reload_locks: Mutex::new(HashMap::new()),
         })
@@ -246,6 +248,8 @@ impl Store {
         // 1. Look up the dataset config. Not finding it = 404.
         let cfg = self
             .configs
+            .read()
+            .unwrap()
             .get(name)
             .ok_or_else(|| AppError::NotFound(format!("dataset: {name}")))?
             .clone();
@@ -301,6 +305,73 @@ impl Store {
         let elapsed_ms = started.elapsed().as_millis();
         log::info!("reloaded dataset '{name}': {rows} rows in {elapsed_ms} ms");
         Ok(ReloadStats { rows, elapsed_ms })
+    }
+
+    /// Register a brand-new dataset from `cfg` at runtime. Opens the source,
+    /// registers a provider in the shared `SessionContext`, and inserts it
+    /// into the live snapshot so it is immediately queryable — no restart.
+    pub async fn register(&self, cfg: DatasetConfig) -> Result<DatasetSummary, AppError> {
+        cfg.validate_for_register()?;
+
+        // Fast pre-check before taking the (async) per-name lock.
+        if self.datasets.load().contains_key(&cfg.name) {
+            return Err(AppError::InvalidValue(format!(
+                "dataset '{}' already exists",
+                cfg.name
+            )));
+        }
+
+        // Serialise against a concurrent register/reload of the same name.
+        let lock = {
+            let mut locks = self.reload_locks.lock().unwrap();
+            locks
+                .entry(cfg.name.clone())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                .clone()
+        };
+        let _guard = lock.lock().await;
+
+        // Re-check under the lock — another task may have won the race.
+        if self.datasets.load().contains_key(&cfg.name) {
+            return Err(AppError::InvalidValue(format!(
+                "dataset '{}' already exists",
+                cfg.name
+            )));
+        }
+
+        // One-shot init for the deltalake S3 backend, mirroring `load`.
+        // Idempotent — safe to call again for a runtime-registered dataset.
+        if cfg.source.kind == SourceKind::Delta && cfg.source.is_s3() {
+            deltalake::aws::register_handlers(None);
+        }
+
+        let started = std::time::Instant::now();
+        let (state, provider) = build_dataset(&cfg, &self.ctx).await?;
+        let rows = state.num_rows();
+        let columns = state.schema.columns.len();
+
+        self.ctx.register_table(cfg.name.as_str(), provider)?;
+
+        let mut new_map = (**self.datasets.load()).clone();
+        new_map.insert(cfg.name.clone(), Arc::new(state));
+        self.datasets.store(Arc::new(new_map));
+        self.configs
+            .write()
+            .unwrap()
+            .insert(cfg.name.clone(), cfg.clone());
+
+        let elapsed_ms = started.elapsed().as_millis();
+        log::info!(
+            "registered dataset '{}' ({} @ {}): {rows} rows in {elapsed_ms} ms",
+            cfg.name,
+            cfg.source.kind.as_str(),
+            cfg.source.location
+        );
+        Ok(DatasetSummary {
+            name: cfg.name,
+            columns,
+            rows,
+        })
     }
 
     /// Run a `QueryRequest` against `name`. Empty predicates → O(1) Arrow
@@ -785,7 +856,8 @@ async fn build_dataset(
             }
         })
         .collect();
-    let schema = DatasetSchema::new(&d.name, columns);
+    let schema = DatasetSchema::new(&d.name, columns)
+        .with_filters(d.predicate_filter.clone(), d.projection_filter.clone())?;
 
     // Build the equality index per the per-dataset policy. Operates on the
     // chunked representation directly so we never have to materialise a
@@ -912,7 +984,8 @@ async fn build_lazy_local_parquet(
             }
         })
         .collect();
-    let schema = DatasetSchema::new(&d.name, columns);
+    let schema = DatasetSchema::new(&d.name, columns)
+        .with_filters(d.predicate_filter.clone(), d.projection_filter.clone())?;
 
     log::info!(
         "dataset '{}' [{}, lazy]: {} cols ({} partition), no materialise, no index",
@@ -1080,7 +1153,8 @@ async fn build_lazy_s3_parquet(
             }
         })
         .collect();
-    let schema = DatasetSchema::new(&d.name, columns);
+    let schema = DatasetSchema::new(&d.name, columns)
+        .with_filters(d.predicate_filter.clone(), d.projection_filter.clone())?;
 
     log::info!(
         "dataset '{}' [{}, lazy, s3]: {} cols ({} partition, no materialise, no index)",
@@ -1619,7 +1693,8 @@ async fn build_lazy_delta(
             }
         })
         .collect();
-    let schema = DatasetSchema::new(&d.name, columns);
+    let schema = DatasetSchema::new(&d.name, columns)
+        .with_filters(d.predicate_filter.clone(), d.projection_filter.clone())?;
 
     log::info!(
         "dataset '{}' [{}, lazy]: {} cols, no materialise, no index",
@@ -3248,6 +3323,10 @@ impl Backend for Store {
 
     async fn reload(&self, name: &str) -> Result<ReloadStats, AppError> {
         Store::reload(self, name).await
+    }
+
+    async fn register(&self, cfg: DatasetConfig) -> Result<DatasetSummary, AppError> {
+        Store::register(self, cfg).await
     }
 }
 

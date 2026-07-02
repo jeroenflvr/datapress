@@ -25,9 +25,20 @@ use std::collections::HashSet;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::errors::AppError;
+
+/// Absolute path of the `datasets.toml` this process was loaded from, set
+/// once by [`AppConfig::load`]. `None` when the config was constructed
+/// in-process (e.g. the Python bindings) rather than read from a file — in
+/// that case the explorer's "append to server config" export is unavailable.
+static SOURCE_CONFIG_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Path of the config file this process was loaded from, if any.
+pub fn source_config_path() -> Option<&'static std::path::Path> {
+    SOURCE_CONFIG_PATH.get().map(|p| p.as_path())
+}
 
 /// Mount paths the user MUST NOT pick for `[docs].path` or
 /// `[swagger].path` — they would shadow first-party routes (probes,
@@ -558,7 +569,7 @@ impl Backend {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DatasetConfig {
     pub name: String,
     pub source: SourceConfig,
@@ -590,20 +601,93 @@ pub struct DatasetConfig {
     /// (local + S3 parquet, and delta) rather than materialising a table.
     #[serde(default)]
     pub lazy: bool,
+    /// Column-level access control for query **predicates** — which columns
+    /// a caller may filter on (structured `predicates` / `count`, and any
+    /// reference on the raw-SQL endpoint). Mutually-exclusive `include`
+    /// (allowlist) / `exclude` (denylist). Empty (default) = no restriction.
+    #[serde(default)]
+    pub predicate_filter: ColumnFilter,
+    /// Column-level access control for **projection** — which columns a
+    /// caller may see or return (the `columns` projection, `group_by`,
+    /// aggregations, `order_by`, the `/schema` response and row sample, and
+    /// any reference on the raw-SQL endpoint). Columns denied here are
+    /// hidden as if they did not exist. Mutually-exclusive `include`
+    /// (allowlist) / `exclude` (denylist). Empty (default) = no restriction.
+    #[serde(default)]
+    pub projection_filter: ColumnFilter,
 }
 
 fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// A mutually-exclusive column allow/deny list.
+///
+/// Set `include` to turn it into an **allowlist** — only the listed columns
+/// pass. Set `exclude` to turn it into a **denylist** — every column except
+/// the listed ones passes. Setting *both* is a configuration error (caught
+/// by [`ColumnFilter::validate`]). Leaving both empty (the default) imposes
+/// no restriction at all. Names are matched case-insensitively against the
+/// dataset's canonical column names.
+#[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct ColumnFilter {
+    #[serde(default)]
+    pub include: Vec<String>,
+    #[serde(default)]
+    pub exclude: Vec<String>,
+}
+
+impl ColumnFilter {
+    /// Whether this filter restricts anything (either list is non-empty).
+    pub fn is_active(&self) -> bool {
+        !self.include.is_empty() || !self.exclude.is_empty()
+    }
+
+    /// Whether `col` passes the filter. Case-insensitive. An empty filter
+    /// (neither list set) admits every column.
+    pub fn allows(&self, col: &str) -> bool {
+        let lc = col.to_lowercase();
+        if !self.include.is_empty() {
+            return self.include.iter().any(|c| c.to_lowercase() == lc);
+        }
+        if !self.exclude.is_empty() {
+            return !self.exclude.iter().any(|c| c.to_lowercase() == lc);
+        }
+        true
+    }
+
+    /// Reject a filter that sets both `include` and `exclude`. `ctx`
+    /// identifies the filter in the error message (e.g. `"predicate_filter"`).
+    pub fn validate(&self, dataset: &str, ctx: &str) -> Result<(), AppError> {
+        if !self.include.is_empty() && !self.exclude.is_empty() {
+            return Err(AppError::InvalidValue(format!(
+                "dataset '{dataset}': {ctx} may set 'include' or 'exclude', not both"
+            )));
+        }
+        Ok(())
+    }
+
+    /// The names listed by whichever side is active, for cross-checking
+    /// against the real schema at registration time (typos in a denylist
+    /// would otherwise silently expose a column).
+    pub fn listed(&self) -> &[String] {
+        if !self.include.is_empty() {
+            &self.include
+        } else {
+            &self.exclude
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SourceConfig {
     pub kind: SourceKind,
     /// Either a local filesystem path or an `s3://bucket/key` URL.
     pub location: String,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SourceKind {
     #[default]
@@ -622,7 +706,7 @@ impl SourceKind {
 
 /// Non-secret S3 connection settings. Credentials are pulled from env / the
 /// AWS credential chain — see [`DatasetConfig::resolved_creds`].
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct S3Config {
     pub region: Option<String>,
@@ -708,7 +792,7 @@ impl S3Config {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AddressingStyle {
     #[default]
@@ -728,7 +812,7 @@ impl AddressingStyle {
 /// How hive-style partition columns (`key=value/` path segments) are handled
 /// for an S3 parquet source. Local parquet always auto-detects; this option
 /// brings S3 in line and lets you force or disable the behaviour.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Partitioning {
     /// Detect `key=value` segments from the location glob or by listing the
@@ -757,7 +841,7 @@ impl Partitioning {
 /// virtual-hosted-style requests against a custom endpoint. This aligns the
 /// DataFusion object-store path with DuckDB, which builds the virtual host
 /// itself — so the same plain `endpoint` works on both backends.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BucketInHost {
     /// Fold the bucket into the host when `addressing_style = "virtual"` and
@@ -780,7 +864,7 @@ impl BucketInHost {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct IndexConfig {
     pub mode: IndexMode,
@@ -798,7 +882,7 @@ impl Default for IndexConfig {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IndexMode {
     #[default]
@@ -835,6 +919,10 @@ impl AppConfig {
             toml::from_str(&raw).map_err(|e| AppError::Internal(format!("invalid {path}: {e}")))?;
         cfg.normalize();
         cfg.validate()?;
+        // Remember where we loaded from so the explorer can optionally
+        // append newly-registered datasets back to this file. Ignore the
+        // error if it was already set (only the first load wins).
+        let _ = SOURCE_CONFIG_PATH.set(PathBuf::from(path));
         Ok(cfg)
     }
 
@@ -1178,6 +1266,134 @@ impl SourceConfig {
 }
 
 impl DatasetConfig {
+    /// Validate a dataset config supplied at runtime (e.g. registered live
+    /// through the explorer) with the same rules the startup loader applies
+    /// to each `[[dataset]]`: non-empty, URL-safe name and a coherent index
+    /// configuration. Source reachability is left to the backend, which
+    /// surfaces a clear error when it tries to open the source.
+    pub fn validate_for_register(&self) -> Result<(), AppError> {
+        if self.name.is_empty() {
+            return Err(AppError::InvalidValue(
+                "dataset name must not be empty".into(),
+            ));
+        }
+        if !self
+            .name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+        {
+            return Err(AppError::InvalidValue(format!(
+                "dataset name '{}' must be alphanumeric (plus _ - .)",
+                self.name
+            )));
+        }
+        if self.index.mode == IndexMode::List && self.index.columns.is_empty() {
+            return Err(AppError::InvalidValue(format!(
+                "dataset '{}': index.mode = 'list' requires non-empty index.columns",
+                self.name
+            )));
+        }
+        self.predicate_filter.validate(&self.name, "predicate_filter")?;
+        self.projection_filter
+            .validate(&self.name, "projection_filter")?;
+        if self.source.is_s3() {
+            self.source.s3_bucket()?;
+        }
+        Ok(())
+    }
+
+    /// Render this dataset as a standalone TOML `[[dataset]]` block suitable
+    /// for pasting into (or appending to) a `datasets.toml`. Fields are
+    /// emitted scalars-first so the output is valid TOML, and default-valued
+    /// sections (`[dataset.s3]`, a default `[dataset.index]`, an empty
+    /// projection) are omitted to keep the snippet minimal.
+    pub fn to_toml_block(&self) -> Result<String, AppError> {
+        #[derive(Serialize)]
+        struct Block {
+            name: String,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            columns: Vec<String>,
+            dict_encode: bool,
+            lazy: bool,
+            source: SourceConfig,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            s3: Option<S3Config>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            index: Option<IndexConfig>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            predicate_filter: Option<ColumnFilter>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            projection_filter: Option<ColumnFilter>,
+        }
+        #[derive(Serialize)]
+        struct Doc {
+            dataset: [Block; 1],
+        }
+        let doc = Doc {
+            dataset: [Block {
+                name: self.name.clone(),
+                columns: self.columns.clone(),
+                dict_encode: self.dict_encode,
+                lazy: self.lazy,
+                source: self.source.clone(),
+                s3: self.s3.clone(),
+                index: if self.index.is_default() {
+                    None
+                } else {
+                    Some(self.index.clone())
+                },
+                predicate_filter: self
+                    .predicate_filter
+                    .is_active()
+                    .then(|| self.predicate_filter.clone()),
+                projection_filter: self
+                    .projection_filter
+                    .is_active()
+                    .then(|| self.projection_filter.clone()),
+            }],
+        };
+        toml::to_string_pretty(&doc)
+            .map_err(|e| AppError::Internal(format!("failed to render dataset TOML: {e}")))
+    }
+
+    /// Append this dataset's `[[dataset]]` block to the config file this
+    /// process was loaded from, so a runtime-registered dataset survives a
+    /// restart. Returns the path written to.
+    ///
+    /// Errors with `AppError::InvalidValue` when the process has no on-disk
+    /// config ([`source_config_path`] is `None` — e.g. the Python bindings),
+    /// and with `AppError::Internal` when rendering or the file write fails.
+    /// Shared by the versioned API (`POST /api/v1/datasets/persist`) and the
+    /// explorer's persist action.
+    pub fn persist_to_source_config(&self) -> Result<PathBuf, AppError> {
+        use std::io::Write;
+        let path = source_config_path().ok_or_else(|| {
+            AppError::InvalidValue("server has no on-disk config file to append to".into())
+        })?;
+        let block = self.to_toml_block()?;
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .map_err(|e| {
+                AppError::Internal(format!("failed to open config {}: {e}", path.display()))
+            })?;
+        // Separate the appended block from existing content by a blank line.
+        write!(file, "\n{block}").map_err(|e| {
+            AppError::Internal(format!("failed to write config {}: {e}", path.display()))
+        })?;
+        Ok(path.to_path_buf())
+    }
+}
+
+impl IndexConfig {
+    /// Whether this equals the serde default (used to omit the section from
+    /// exported TOML when it carries no information).
+    fn is_default(&self) -> bool {
+        self.mode == IndexMode::Auto && self.columns.is_empty() && self.max_cardinality == 100_000
+    }
+}
+
+impl DatasetConfig {
     /// Expand `source.location` to a concrete list of local `.parquet`
     /// files. Only valid for `kind = parquet` on local paths — S3 and
     /// Delta sources are resolved by the backend itself.
@@ -1463,6 +1679,8 @@ mod tests {
             columns: vec![],
             dict_encode: true,
             lazy,
+            predicate_filter: Default::default(),
+            projection_filter: Default::default(),
         };
         let server = |mb: u64| ServerConfig {
             force_lazy_above_mb: mb,
@@ -1595,6 +1813,8 @@ mod tests {
                 columns: vec![],
                 dict_encode: true,
                 lazy: false,
+                predicate_filter: Default::default(),
+                projection_filter: Default::default(),
             }],
         };
 
@@ -1632,6 +1852,8 @@ mod tests {
                 columns: vec![],
                 dict_encode: true,
                 lazy: false,
+                predicate_filter: Default::default(),
+                projection_filter: Default::default(),
             }],
         };
         let err = cfg.validate().unwrap_err();
@@ -1787,6 +2009,8 @@ mod tests {
             columns: vec![],
             dict_encode: true,
             lazy: false,
+            predicate_filter: Default::default(),
+            projection_filter: Default::default(),
         };
         assert_eq!(mk("accidents").env_prefix(), "ACCIDENTS");
         assert_eq!(mk("sales.eu-1").env_prefix(), "SALES_EU_1");
@@ -1814,6 +2038,8 @@ mod tests {
             columns: vec![],
             dict_encode: true,
             lazy: false,
+            predicate_filter: Default::default(),
+            projection_filter: Default::default(),
         };
 
         // Direct file.

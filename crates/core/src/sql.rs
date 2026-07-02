@@ -24,13 +24,14 @@ use std::collections::{HashMap, HashSet};
 use std::ops::ControlFlow;
 
 use sqlparser::ast::{
-    DescribeAlias, Expr, Ident, ObjectName, ObjectNamePart, Query, Statement, Visit, VisitMut,
-    Visitor, VisitorMut,
+    DescribeAlias, Expr, Ident, ObjectName, ObjectNamePart, Query, SelectItem, SetExpr, Statement,
+    TableFactor, Visit, VisitMut, Visitor, VisitorMut,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
 use crate::errors::AppError;
+use crate::schema::DatasetSchema;
 
 /// File-reading / external-access functions that must never run through
 /// the SQL endpoint, in either table or scalar position. Table-position
@@ -297,6 +298,144 @@ impl Visitor for ScopeCheck<'_> {
     }
 }
 
+/// Enforce a dataset's column-level access filters on a raw-SQL statement.
+///
+/// The structured `/query` endpoint can tell a projection column from a
+/// filter column, so it distinguishes the two filters precisely. Raw SQL
+/// cannot be re-planned that cheaply, so the SQL endpoint applies a single
+/// conservative rule: **a column that is hidden from projection or blocked
+/// from predicates may not be referenced at all**, and `SELECT *` is
+/// rejected whenever any column is hidden (it would otherwise expand to
+/// include the hidden ones). A column reference that does not name a real
+/// schema column (an alias, CTE column, or function) is ignored — only the
+/// engine can resolve those.
+///
+/// `schema` is the referenced dataset's schema. A no-op when the schema
+/// carries no active filters. On a parse failure the statement is passed
+/// through unchanged so the backend surfaces the real parse error.
+pub fn enforce_column_access(sql: &str, schema: &DatasetSchema) -> Result<(), AppError> {
+    if !schema.has_column_filters() {
+        return Ok(());
+    }
+    let trimmed = sql.trim().trim_end_matches(';').trim();
+    let statements = match Parser::parse_sql(&GenericDialect {}, trimmed) {
+        Ok(s) if s.len() == 1 => s,
+        _ => return Ok(()),
+    };
+    let stmt = &statements[0];
+
+    if schema.projection_filter.is_active() && statement_has_wildcard(stmt) {
+        return Err(AppError::Forbidden(format!(
+            "SELECT * is not allowed on dataset '{}' because it hides columns; \
+             list the columns explicitly",
+            schema.name
+        )));
+    }
+
+    let mut refs = ColumnRefCollector {
+        columns: HashSet::new(),
+    };
+    let _ = stmt.visit(&mut refs);
+    for lc in &refs.columns {
+        // Only real schema columns are subject to the filters; aliases,
+        // CTE columns and function names are left for the engine.
+        let Some(col) = schema.by_name.get(lc).map(|&i| &schema.columns[i]) else {
+            continue;
+        };
+        if !schema.projection_filter.allows(&col.name) {
+            return Err(AppError::UnknownColumn(col.name.clone()));
+        }
+        if !schema.predicate_filter.allows(&col.name) {
+            return Err(AppError::Forbidden(format!(
+                "column '{}' may not be used on the SQL endpoint for dataset '{}'",
+                col.name, schema.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Collects every identifier used in column position (bare `col` or the
+/// trailing part of a qualified `t.col`) so it can be matched against the
+/// schema's access filters.
+struct ColumnRefCollector {
+    columns: HashSet<String>,
+}
+
+impl Visitor for ColumnRefCollector {
+    type Break = ();
+
+    fn pre_visit_expr(&mut self, expr: &Expr) -> ControlFlow<Self::Break> {
+        match expr {
+            Expr::Identifier(ident) => {
+                self.columns.insert(ident.value.to_lowercase());
+            }
+            Expr::CompoundIdentifier(idents) => {
+                if let Some(last) = idents.last() {
+                    self.columns.insert(last.value.to_lowercase());
+                }
+            }
+            _ => {}
+        }
+        ControlFlow::Continue(())
+    }
+}
+
+/// Whether any `SELECT` projection in the statement uses an (optionally
+/// qualified) wildcard. Walks the set-expression tree, CTEs and derived
+/// tables — the positions whose columns are returned to the caller.
+fn statement_has_wildcard(stmt: &Statement) -> bool {
+    match stmt {
+        Statement::Query(q) => query_has_wildcard(q),
+        _ => false,
+    }
+}
+
+fn query_has_wildcard(query: &Query) -> bool {
+    if let Some(with) = &query.with
+        && with
+            .cte_tables
+            .iter()
+            .any(|cte| query_has_wildcard(&cte.query))
+    {
+        return true;
+    }
+    set_expr_has_wildcard(&query.body)
+}
+
+fn set_expr_has_wildcard(set: &SetExpr) -> bool {
+    match set {
+        SetExpr::Select(select) => {
+            let proj_wildcard = select.projection.iter().any(|item| {
+                matches!(
+                    item,
+                    SelectItem::Wildcard(_) | SelectItem::QualifiedWildcard(_, _)
+                )
+            });
+            proj_wildcard
+                || select
+                    .from
+                    .iter()
+                    .any(|twj| table_factor_has_wildcard(&twj.relation))
+        }
+        SetExpr::Query(q) => query_has_wildcard(q),
+        SetExpr::SetOperation { left, right, .. } => {
+            set_expr_has_wildcard(left) || set_expr_has_wildcard(right)
+        }
+        _ => false,
+    }
+}
+
+fn table_factor_has_wildcard(factor: &TableFactor) -> bool {
+    match factor {
+        TableFactor::Derived { subquery, .. } => query_has_wildcard(subquery),
+        TableFactor::NestedJoin {
+            table_with_joins, ..
+        } => table_factor_has_wildcard(&table_with_joins.relation),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,5 +623,90 @@ mod tests {
         let (t, c) = maps(&[], &[]);
         let garbage = "SELECT FROM WHERE";
         assert_eq!(canonicalize_identifiers(garbage, &t, &c), garbage);
+    }
+
+    // ---- enforce_column_access ---------------------------------------------
+
+    fn filtered_schema(pred_excl: &[&str], proj_excl: &[&str]) -> DatasetSchema {
+        use crate::schema::{ColumnInfo, LogicalType};
+        let col = |name: &str| ColumnInfo {
+            name: name.into(),
+            logical: LogicalType::Int,
+            sql_type: "BIGINT".into(),
+            nullable: true,
+        };
+        let excl = |cols: &[&str]| crate::config::ColumnFilter {
+            include: vec![],
+            exclude: cols.iter().map(|s| s.to_string()).collect(),
+        };
+        DatasetSchema::new("events", vec![col("id"), col("email"), col("ts")])
+            .with_filters(excl(pred_excl), excl(proj_excl))
+            .unwrap()
+    }
+
+    #[test]
+    fn access_noop_without_filters() {
+        use crate::schema::{ColumnInfo, LogicalType};
+        let sch = DatasetSchema::new(
+            "events",
+            vec![ColumnInfo {
+                name: "id".into(),
+                logical: LogicalType::Int,
+                sql_type: "BIGINT".into(),
+                nullable: false,
+            }],
+        );
+        assert!(enforce_column_access("SELECT * FROM events", &sch).is_ok());
+    }
+
+    #[test]
+    fn access_rejects_wildcard_when_projection_hides() {
+        let sch = filtered_schema(&[], &["email"]);
+        let err = enforce_column_access("SELECT * FROM events", &sch).unwrap_err();
+        assert!(matches!(err, AppError::Forbidden(_)));
+    }
+
+    #[test]
+    fn access_allows_wildcard_when_only_predicate_filter() {
+        let sch = filtered_schema(&["email"], &[]);
+        assert!(enforce_column_access("SELECT * FROM events", &sch).is_ok());
+    }
+
+    #[test]
+    fn access_rejects_hidden_column_reference() {
+        let sch = filtered_schema(&[], &["email"]);
+        let err = enforce_column_access("SELECT id, email FROM events", &sch).unwrap_err();
+        assert!(matches!(err, AppError::UnknownColumn(_)));
+    }
+
+    #[test]
+    fn access_rejects_predicate_restricted_column_reference() {
+        let sch = filtered_schema(&["email"], &[]);
+        let err =
+            enforce_column_access("SELECT id FROM events WHERE email = 'x'", &sch).unwrap_err();
+        assert!(matches!(err, AppError::Forbidden(_)));
+    }
+
+    #[test]
+    fn access_allows_visible_columns() {
+        let sch = filtered_schema(&[], &["email"]);
+        assert!(enforce_column_access("SELECT id, ts FROM events WHERE id > 1", &sch).is_ok());
+    }
+
+    #[test]
+    fn access_ignores_aliases_and_functions() {
+        let sch = filtered_schema(&[], &["email"]);
+        // `total` is an alias, not a schema column, so it is ignored.
+        assert!(
+            enforce_column_access("SELECT count(id) AS total FROM events", &sch).is_ok()
+        );
+    }
+
+    #[test]
+    fn access_matches_qualified_column() {
+        let sch = filtered_schema(&[], &["email"]);
+        let err =
+            enforce_column_access("SELECT e.email FROM events e", &sch).unwrap_err();
+        assert!(matches!(err, AppError::UnknownColumn(_)));
     }
 }
