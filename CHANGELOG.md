@@ -3,6 +3,20 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.5.0] - 2026-07-02
+
+### Bug Fixes
+
+- Include client in version updates (follow) ([5e4d4aa](https://github.com/jeroenflvr/datapress/commit/5e4d4aa6eafb3679294df153eb542de7e1bdb189))
+
+### Features
+
+- Register live datasets, restrict columns in predicate/projection ([ac9c164](https://github.com/jeroenflvr/datapress/commit/ac9c1641d33bf094e1046880fea797d27288ba34))
+
+### Tests
+
+- Add end_to_end on filters and update doc ([c7de1d2](https://github.com/jeroenflvr/datapress/commit/c7de1d275df07d2fa7c6c19a560bcb1dd118363c))
+
 ## [0.4.27] - 2026-06-30
 
 ### Documentation
