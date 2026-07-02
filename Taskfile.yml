@@ -320,7 +320,7 @@ tasks:
         s = p.read_text()
         new, n = re.subn(r'(?m)^(version\s*=\s*\")[^\"]+(\"\s*(?:#.*)?)$', r'\g<1>{{.BARE_VERSION}}\g<2>', s, count=1)
         assert n == 1, 'workspace version line not found in Cargo.toml'
-        for crate in ('core', 'duckdb', 'datafusion'):
+        for crate in ('core', 'duckdb', 'datafusion', 'client'):
             pattern = rf'(path\s*=\s*\"crates/{crate}\",\s*version\s*=\s*\")[^\"]+(\")'
             new, n = re.subn(pattern, rf'\g<1>{{.BARE_VERSION}}\g<2>', new, count=1)
             assert n == 1, f'internal dependency version for crates/{crate} not found in Cargo.toml'
