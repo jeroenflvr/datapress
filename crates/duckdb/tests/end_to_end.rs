@@ -182,6 +182,83 @@ async fn names_and_summary() {
     assert!(reg.summary("missing").is_err());
 }
 
+/// Build a registry whose `people` dataset carries the given column-access
+/// filters, exercising the DuckDB `introspect_schema` + `with_filters`
+/// wiring end to end.
+fn make_registry_with_filters(
+    location: &str,
+    predicate_filter: datapress_core::config::ColumnFilter,
+    projection_filter: datapress_core::config::ColumnFilter,
+) -> Result<Arc<Registry>, datapress_core::errors::AppError> {
+    let cfg = AppConfig {
+        server: ServerConfig::default(),
+        docs: datapress_core::config::DocsConfig::default(),
+        swagger: datapress_core::config::SwaggerConfig::default(),
+        auth: datapress_core::config::AuthConfig::default(),
+        metrics: datapress_core::config::MetricsConfig::default(),
+        explorer: datapress_core::config::ExplorerConfig::default(),
+        sql: datapress_core::config::SqlConfig::default(),
+        datafusion: datapress_core::config::DataFusionConfig::default(),
+        datasets: vec![DatasetConfig {
+            name: "people".into(),
+            source: SourceConfig {
+                kind: SourceKind::Parquet,
+                location: location.to_string(),
+            },
+            s3: None,
+            index: IndexConfig::default(),
+            columns: vec![],
+            dict_encode: true,
+            lazy: false,
+            predicate_filter,
+            projection_filter,
+        }],
+    };
+    load_registry(&cfg).map(Arc::new)
+}
+
+#[actix_web::test]
+async fn projection_filter_is_attached_to_schema_at_registration() {
+    let tmp = TempDir::new().unwrap();
+    let parquet = write_sample_parquet(tmp.path());
+    let excl = datapress_core::config::ColumnFilter {
+        include: vec![],
+        exclude: vec!["score".into()],
+    };
+    let reg = make_registry_with_filters(
+        &parquet.display().to_string(),
+        Default::default(),
+        excl,
+    )
+    .expect("load_registry");
+
+    let schema = reg.schema("people").expect("schema");
+    assert!(schema.projection_filter.is_active());
+    assert!(!schema.is_visible("score"));
+    assert!(schema.is_visible("id"));
+    let visible: Vec<_> = schema.visible_columns().iter().map(|c| &c.name).collect();
+    assert_eq!(visible, vec!["id", "name", "city"]);
+}
+
+#[actix_web::test]
+async fn unknown_filter_column_fails_registration() {
+    let tmp = TempDir::new().unwrap();
+    let parquet = write_sample_parquet(tmp.path());
+    let bad = datapress_core::config::ColumnFilter {
+        include: vec![],
+        exclude: vec!["ghost".into()],
+    };
+    let err = match make_registry_with_filters(
+        &parquet.display().to_string(),
+        Default::default(),
+        bad,
+    ) {
+        Ok(_) => panic!("registration should fail on unknown filter column"),
+        Err(e) => e,
+    };
+    assert!(matches!(err, datapress_core::errors::AppError::InvalidValue(_)));
+}
+
 #[actix_web::test]
 async fn full_scan_returns_all_rows() {
     let tmp = TempDir::new().unwrap();

@@ -11,6 +11,8 @@ Each `[[dataset]]` block declares one table that DataPress will expose.
 | `s3`     | no       | absent         | Only meaningful when `location` starts with `s3://`. See [S3 / object storage](s3.md).           |
 | `index`  | no       | `mode="auto"`  | Equality-index policy (DataFusion only). See [Indexing](indexing.md).                            |
 | `lazy`   | no       | `false`        | Skip materialisation; stream row groups at query time. DataFusion + DuckDB, parquet + delta.     |
+| `predicate_filter`  | no | absent | Access control: restrict which columns may be filtered on. See [Column access control](#column-access-control). |
+| `projection_filter` | no | absent | Access control: hide columns from queries entirely. See [Column access control](#column-access-control). |
 
 ## `source` reference
 
@@ -106,6 +108,70 @@ location = "data/orders_delta/"
 
 For S3-backed parquet and delta tables, see
 [S3 / object storage](s3.md).
+
+## Column access control
+
+Two optional per-dataset filters restrict what callers can do with
+individual columns. Each takes **either** `include` (an allowlist) **or**
+`exclude` (a denylist) — setting both is a configuration error. Column
+names are matched case-insensitively.
+
+| Filter              | Effect                                                                                                   |
+|---------------------|----------------------------------------------------------------------------------------------------------|
+| `projection_filter` | **Hides** columns. A hidden column cannot be selected, grouped, ordered, aggregated, or seen in the schema — it behaves as if it does not exist. |
+| `predicate_filter`  | **Blocks filtering.** The column stays visible and selectable, but may not appear in a `where`/`having` predicate. |
+
+```toml
+[[dataset]]
+name = "people"
+
+[dataset.source]
+kind     = "parquet"
+location = "data/people.parquet"
+
+# Hide `ssn` and `internal_notes` everywhere.
+[dataset.projection_filter]
+exclude = ["ssn", "internal_notes"]
+
+# `email` is selectable, but callers may not filter/probe on it.
+[dataset.predicate_filter]
+exclude = ["email"]
+```
+
+Allowlist form (only the named columns are exposed / filterable):
+
+```toml
+[dataset.projection_filter]
+include = ["id", "city", "signup_date"]
+```
+
+**Enforcement** is uniform across every read surface and both backends
+(DataFusion and DuckDB), including the Python-embedded server:
+
+- Structured `/query` and `/count`: a predicate on a hidden column is
+  rejected as an **unknown column** (`400`, to avoid revealing that the
+  column exists); a predicate on a predicate-restricted-but-visible
+  column is **`403 Forbidden`**. Naming a hidden column in
+  `columns`/`group_by`/`order_by`/aggregations is a `400`. A default
+  (empty `columns`) query silently returns only the visible columns.
+- Schema, sample, and dataset listing endpoints omit hidden columns.
+- The raw **SQL endpoint** applies a conservative rule: a hidden or
+  predicate-restricted column may not be referenced **anywhere** in the
+  statement, and `SELECT *` is rejected whenever any column is hidden
+  (it would otherwise expand to include them). List the columns you want
+  explicitly.
+- **Parquet export** (`/datasets/{name}.parquet`) is disabled with a
+  `403` while a `projection_filter` is active, since it would stream the
+  raw source and bypass the filter.
+
+An unknown column name in either filter is rejected at startup (or at
+`register`/`reload` time), so a typo can't silently expose a column.
+
+!!! warning "Explorer DuckDB-WASM console"
+    The in-browser SQL console in the [explorer UI](../operations/register.md#explorer-ui)
+    downloads the raw parquet and runs entirely client-side, so it is not
+    subject to these server-side filters. Disable the explorer, or don't
+    rely on column access control, if untrusted users can reach it.
 
 ## Empty datasets are skipped, not fatal
 
