@@ -22,18 +22,31 @@
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
+use async_trait::async_trait;
+use datafusion::common::ParamValues;
+use datafusion::logical_expr::LogicalPlan;
 use datafusion::prelude::SessionContext;
+use datafusion::sql::sqlparser::ast::Statement;
 use tokio::sync::oneshot;
 
 use datafusion_postgres::auth::{AuthManager, DfAuthSource};
 use datafusion_postgres::datafusion_pg_catalog::pg_catalog::context::User;
 use datafusion_postgres::datafusion_pg_catalog::setup_pg_catalog;
+use datafusion_postgres::hooks::HookClient;
+use datafusion_postgres::hooks::cursor::CursorStatementHook;
+use datafusion_postgres::hooks::set_show::SetShowHook;
+use datafusion_postgres::hooks::transactions::TransactionStatementHook;
 use datafusion_postgres::pgwire::api::PgWireServerHandlers;
+use datafusion_postgres::pgwire::api::ClientInfo;
 use datafusion_postgres::pgwire::api::auth::StartupHandler;
 use datafusion_postgres::pgwire::api::auth::DefaultServerParameterProvider;
 use datafusion_postgres::pgwire::api::auth::cleartext::CleartextPasswordAuthStartupHandler;
 use datafusion_postgres::pgwire::api::query::{ExtendedQueryHandler, SimpleQueryHandler};
-use datafusion_postgres::{DfSessionService, ServerOptions, serve, serve_with_handlers};
+use datafusion_postgres::pgwire::api::results::{Response, Tag};
+use datafusion_postgres::pgwire::error::PgWireResult;
+use datafusion_postgres::{
+    DfSessionService, QueryHook, ServerOptions, serve_with_handlers, serve_with_hooks,
+};
 
 use datapress_core::config::PgwireConfig;
 
@@ -62,6 +75,112 @@ impl PgWireServerHandlers for DatapressHandlers {
     fn startup_handler(&self) -> Arc<impl StartupHandler> {
         self.startup.clone()
     }
+}
+
+/// Query hook that swallows the PostgreSQL session-maintenance statements the
+/// DataFusion planner does not implement.
+///
+/// Pooling drivers reset a pooled connection before returning it to the pool by
+/// issuing `DISCARD ALL` (Npgsql, used by Power BI) and friends. DataFusion has
+/// no planner support for these, so `datafusion-postgres` forwards them and the
+/// client gets `XX000: Unsupported SQL statement: DISCARD ALL`, which breaks the
+/// pool. We intercept them *before* planning and reply with the matching
+/// `CommandComplete` tag and no result set — the same "reasonable no-op"
+/// approach the library's own [`TransactionStatementHook`] takes for
+/// `BEGIN`/`COMMIT`/`ROLLBACK` (which is why those are deliberately left to it
+/// and not handled here).
+///
+/// Matching is on the parsed statement variant only, never a substring of the
+/// SQL text, so a query like `SELECT 'DISCARD ALL'` is passed straight through.
+///
+/// This behaviour is upstream-worthy for `datafusion-postgres`; until it ships
+/// there we carry it locally.
+#[derive(Debug)]
+struct SessionResetHook;
+
+impl SessionResetHook {
+    /// The `CommandComplete` tag to return for a swallowed statement, or `None`
+    /// if this hook does not handle the statement.
+    fn tag_for(statement: &Statement) -> Option<String> {
+        match statement {
+            // `DiscardObject`'s `Display` yields ALL/PLANS/SEQUENCES/TEMP, so the
+            // tag mirrors real PostgreSQL (`DISCARD ALL`, `DISCARD PLANS`, …).
+            Statement::Discard { object_type } => Some(format!("DISCARD {object_type}")),
+            // We don't track prepared statements here (the library owns the
+            // portal store), so `DEALLOCATE [PREPARE] { ALL | <name> }` is a
+            // no-op that just acknowledges success.
+            Statement::Deallocate { .. } => Some("DEALLOCATE".to_string()),
+            Statement::Reset(_) => Some("RESET".to_string()),
+            Statement::UNLISTEN { .. } => Some("UNLISTEN".to_string()),
+            _ => None,
+        }
+    }
+}
+
+#[async_trait]
+impl QueryHook for SessionResetHook {
+    async fn handle_simple_query(
+        &self,
+        statement: &Statement,
+        _session_context: &SessionContext,
+        _client: &mut dyn HookClient,
+    ) -> Option<PgWireResult<Response>> {
+        let tag = Self::tag_for(statement)?;
+        // Logged so a future "unsupported statement" report is diagnosable from
+        // the server logs; `Statement`'s `Display` prints the normalized SQL.
+        log::debug!("pgwire: swallowing session-maintenance statement: {statement}");
+        Some(Ok(Response::Execution(Tag::new(&tag))))
+    }
+
+    async fn handle_extended_parse_query(
+        &self,
+        statement: &Statement,
+        _session_context: &SessionContext,
+        _client: &(dyn ClientInfo + Send + Sync),
+    ) -> Option<PgWireResult<LogicalPlan>> {
+        // Extended-protocol clients (Npgsql among them) may prepare these too;
+        // hand back an empty plan so execution routes through the hook below
+        // instead of the planner. Mirrors `TransactionStatementHook`.
+        if Self::tag_for(statement).is_some() {
+            let schema = datafusion::common::DFSchema::empty();
+            return Some(Ok(LogicalPlan::EmptyRelation(
+                datafusion::logical_expr::EmptyRelation {
+                    produce_one_row: false,
+                    schema: Arc::new(schema),
+                },
+            )));
+        }
+        None
+    }
+
+    async fn handle_extended_query(
+        &self,
+        statement: &Statement,
+        _logical_plan: &LogicalPlan,
+        _params: &ParamValues,
+        session_context: &SessionContext,
+        client: &mut dyn HookClient,
+    ) -> Option<PgWireResult<Response>> {
+        self.handle_simple_query(statement, session_context, client)
+            .await
+    }
+}
+
+/// Assemble the query hooks installed on every pgwire session.
+///
+/// This is the library's default set (cursor, `SET`/`SHOW`, transaction
+/// statements) plus our [`SessionResetHook`]. `DfSessionService::new` installs
+/// the first three by default, but choosing hooks explicitly (via
+/// `new_with_hooks`/`serve_with_hooks`) is the only way to add ours, so we
+/// re-list the defaults here. The reset hook is purely additive — none of the
+/// defaults claim `DISCARD`/`DEALLOCATE`/`RESET`/`UNLISTEN`.
+fn query_hooks() -> Vec<Arc<dyn QueryHook>> {
+    vec![
+        Arc::new(CursorStatementHook),
+        Arc::new(SetShowHook),
+        Arc::new(TransactionStatementHook),
+        Arc::new(SessionResetHook),
+    ]
 }
 
 /// Per-worker stack size for the dedicated pgwire runtime (32 MiB).
@@ -224,7 +343,7 @@ pub async fn serve_pgwire(ctx: SessionContext, cfg: PgwireConfig) -> std::io::Re
                 DefaultServerParameterProvider::default(),
             ));
             let handlers = Arc::new(DatapressHandlers {
-                session_service: Arc::new(DfSessionService::new(ctx)),
+                session_service: Arc::new(DfSessionService::new_with_hooks(ctx, query_hooks())),
                 startup,
             });
 
@@ -232,6 +351,6 @@ pub async fn serve_pgwire(ctx: SessionContext, cfg: PgwireConfig) -> std::io::Re
         }
         // No password: config validation guarantees a loopback-only listener,
         // so the library's default (permit-all) startup handler is acceptable.
-        None => serve(ctx, &opts).await,
+        None => serve_with_hooks(ctx, &opts, query_hooks()).await,
     }
 }

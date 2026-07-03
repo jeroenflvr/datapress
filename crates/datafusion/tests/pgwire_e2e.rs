@@ -5,8 +5,10 @@
 //! psql / JDBC clients speak underneath. Two scenarios are covered:
 //!
 //!   1. Cleartext password auth (no TLS): simple queries, typed column
-//!      round-trips, an extended-protocol prepared statement with `$1`, and
-//!      a proof that the *wrong* password is rejected.
+//!      round-trips, an extended-protocol prepared statement with `$1`,
+//!      session-maintenance statements (`DISCARD ALL` & friends) that pooling
+//!      drivers issue on connection reset, and a proof that the *wrong*
+//!      password is rejected.
 //!   2. Password auth over TLS with a self-signed cert generated at runtime.
 //!
 //! The whole file is gated on the `pgwire` feature so the default build (and
@@ -208,6 +210,36 @@ async fn pgwire_password_auth_queries() {
         .expect("current_schema query");
     let schema: &str = row.get("s");
     assert_eq!(schema, "public");
+
+    // (e) session-maintenance statements — pooling drivers (Npgsql/Power BI)
+    // issue `DISCARD ALL` (and friends) when resetting a pooled connection.
+    // DataFusion can't plan them, so without our interception hook they'd fail
+    // with `XX000: Unsupported SQL statement`. Each must succeed over the simple
+    // protocol (`batch_execute`), and the connection must stay usable after.
+    for stmt in ["DISCARD ALL", "RESET ALL", "DEALLOCATE ALL", "UNLISTEN *"] {
+        client
+            .batch_execute(stmt)
+            .await
+            .unwrap_or_else(|e| panic!("session-maintenance statement `{stmt}` failed: {e}"));
+    }
+
+    // The connection still works after the resets.
+    let row = client
+        .query_one("SELECT count(*) AS c FROM people", &[])
+        .await
+        .expect("query after session reset");
+    let c: i64 = row.get("c");
+    assert_eq!(c, 3);
+
+    // Negative: a statement that merely *contains* DISCARD ALL as a string
+    // literal must NOT be swallowed — it must run and return the literal,
+    // proving the hook matches on the parsed statement, not a substring.
+    let row = client
+        .query_one("SELECT 'DISCARD ALL' AS s", &[])
+        .await
+        .expect("string-literal query");
+    let literal: &str = row.get("s");
+    assert_eq!(literal, "DISCARD ALL");
 
     // The wrong password must be rejected outright.
     let bad = format!("host=127.0.0.1 port={port} user={USER} password=wrong-pw dbname=datapress");
