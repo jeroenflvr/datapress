@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.5.5] - 2026-07-03
+
+### Bug Fixes
+
+- Add some more missing views on information_schema for powerbi ([ff3dd7f](https://github.com/jeroenflvr/datapress/commit/ff3dd7fe6b884f6c049d1c761e6de32f1b3d7458))
+
 ## [0.5.4] - 2026-07-03
 
 ### Bug Fixes
