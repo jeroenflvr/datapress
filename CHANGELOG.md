@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.5.2] - 2026-07-03
+
+### Bug Fixes
+
+- *(ci)* Add pgwire feature ([43ba7e8](https://github.com/jeroenflvr/datapress/commit/43ba7e8a369fa0dad239851eb2ffcb8bb7dc2b00))
+
+### Documentation
+
+- Correct comparison table ([f25e192](https://github.com/jeroenflvr/datapress/commit/f25e1921160509c107a5240885d869f760b8afac))
+
 ## [0.5.1] - 2026-07-03
 
 ### Bug Fixes
