@@ -14,6 +14,7 @@ products that also handle writes, governance, and broad federation.
 |---|---|---|---|---|
 | Language / engine | Rust · DuckDB and Arrow+DataFusion | Rust · DataFusion | Rust · DataFusion + delta-rs | Python · SQLite |
 | Query interface | Structured JSON predicates (raw SQL opt-in) | SQL · GraphQL · REST · FlightSQL | SQL (HTTP) | SQL · JSON REST · web UI |
+| PostgreSQL wire protocol | **Yes** (DataFusion backend, opt-in) | No | No | No |
 | Engine choice | **Two, interchangeable, identical API** | One | One | One |
 | Native sources | Parquet, Delta (local / S3) | Parquet, CSV, JSON, XLS, Delta, MySQL, Postgres, Sheets, Airtable | Parquet/CSV external tables; internal Delta storage | SQLite (plus loaders/plugins) |
 | Output formats | JSON, Arrow IPC | JSON, Arrow, MessagePack, Parquet | JSON (CDN/HTTP-cache friendly) | JSON, CSV, web UI |
@@ -30,6 +31,11 @@ products that also handle writes, governance, and broad federation.
   Clients keep the same contract while you choose DuckDB or Arrow+DataFusion at runtime.
 - **Safe-by-default query surface.**
   Structured JSON predicates are first-class; raw SQL is opt-in and hidden when disabled.
+- **Speak PostgreSQL when you need to.**
+  The DataFusion backend can expose an opt-in PostgreSQL wire-protocol
+  endpoint, so `psql`, BI tools, and Postgres drivers can query your
+  datasets directly — no HTTP client required. See
+  [PostgreSQL (pgwire)](../clients/postgresql.md).
 - **Flexible memory strategy.**
   Both engines materialise resident data by default and can stream
   large datasets with `lazy = true`; DataFusion adds optional equality

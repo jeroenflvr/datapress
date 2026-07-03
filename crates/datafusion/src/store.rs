@@ -110,6 +110,13 @@ pub struct Store {
 }
 
 impl Store {
+    /// Shared `SessionContext` all datasets are registered in. Handed to the
+    /// optional pgwire server so it queries the exact same tables as the HTTP
+    /// API (never a fresh context). Clone it before moving it into a task.
+    pub fn session_context(&self) -> &SessionContext {
+        &self.ctx
+    }
+
     /// Load every dataset declared in `cfg`.
     pub async fn load(cfg: &AppConfig) -> Result<Self, AppError> {
         // One-shot init for the deltalake S3 backend. Safe to call more
@@ -775,6 +782,13 @@ fn build_tuned_context(cfg: &DataFusionConfig) -> SessionContext {
         let opts = config.options_mut();
         opts.execution.parquet.pushdown_filters = cfg.pushdown_filters;
         opts.execution.parquet.reorder_filters = cfg.reorder_filters;
+        // Expose the `information_schema.tables`/`columns` virtual tables. BI
+        // navigators (Npgsql/Power BI, DBeaver) query them alongside
+        // `pg_catalog` to enumerate tables, and the pgwire front-end needs
+        // them for schema browsing. They live in their own `information_schema`
+        // schema, so they don't affect dataset listing (which reads the
+        // Store's own registry, not the catalog) or the HTTP endpoints.
+        opts.catalog.information_schema = true;
     }
 
     // Name of the session's default schema, surfaced by the `current_schema()`
@@ -813,6 +827,14 @@ fn build_tuned_context(cfg: &DataFusionConfig) -> SessionContext {
 /// * `current_schema()` — DuckDB returns the active schema (`main`);
 ///   DataFusion has no such function, so we return the session's default
 ///   schema name (`public`).
+///
+/// Note: when the optional `pgwire` feature is enabled and the listener is
+/// started, `datafusion_pg_catalog::setup_pg_catalog` runs *after* this on the
+/// same shared context and re-registers `current_schema()` (plus siblings) with
+/// its own implementation, which also returns `public`. The library version
+/// wins there by construction (later `register_udf` replaces by name); we keep
+/// ours here so the behavior is identical whether or not pgwire is compiled in
+/// or enabled, and so the DuckDB-parity `/api/v1/sql` contract holds by default.
 fn register_compat_udfs(ctx: &SessionContext, default_schema: String) {
     ctx.register_udf(ScalarUDF::from(CurrentSchemaUdf::new(default_schema)));
 }

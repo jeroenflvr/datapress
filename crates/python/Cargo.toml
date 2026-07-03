@@ -31,6 +31,11 @@ swagger = ["datapress-duckdb/swagger", "datapress-datafusion/swagger"]
 metrics = ["datapress-duckdb/metrics", "datapress-datafusion/metrics"]
 auth    = ["datapress-duckdb/auth", "datapress-datafusion/auth"]
 explorer = ["datapress-duckdb/explorer", "datapress-datafusion/explorer"]
+# Start the DataFusion PostgreSQL wire-protocol server from the embedded
+# wheel. DuckDB has no pgwire path, so this forwards to the DataFusion crate
+# only; a `pgwire_enabled=True` config on a wheel built without this feature
+# logs a warning and is otherwise a no-op.
+pgwire  = ["datapress-datafusion/pgwire"]
 
 [dependencies]
 datapress-core       = { workspace = true, features = ["duckdb", "datafusion"] }

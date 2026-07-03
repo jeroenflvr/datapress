@@ -160,6 +160,7 @@ nav:
       - Python: clients/python.md
       - Rust: clients/rust.md
       - JDBC driver: clients/jdbc.md
+      - PostgreSQL (pgwire): clients/postgresql.md
   - Python:
       - python/index.md
       - Config classes: python/config.md

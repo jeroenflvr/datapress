@@ -196,6 +196,13 @@ class DataPressConfig:
     datafusion_list_files_cache: bool
     datafusion_list_files_cache_mb: int
     datafusion_list_files_cache_ttl_secs: int
+    pgwire_enabled: bool
+    pgwire_listen: str
+    pgwire_port: int
+    pgwire_username: str
+    pgwire_password: Optional[str]
+    pgwire_tls_cert: Optional[str]
+    pgwire_tls_key: Optional[str]
 
     def __init__(
         self,
@@ -233,6 +240,13 @@ class DataPressConfig:
         datafusion_list_files_cache: bool = False,
         datafusion_list_files_cache_mb: int = 64,
         datafusion_list_files_cache_ttl_secs: int = 60,
+        pgwire_enabled: bool = False,
+        pgwire_listen: str = "127.0.0.1",
+        pgwire_port: int = 5432,
+        pgwire_username: str = "datapress",
+        pgwire_password: Optional[str] = None,
+        pgwire_tls_cert: Optional[str] = None,
+        pgwire_tls_key: Optional[str] = None,
     ) -> None:
         """Build a :class:`DataPressConfig`.
 
@@ -325,6 +339,23 @@ class DataPressConfig:
             datafusion_list_files_cache_ttl_secs: How long a cached listing
                 stays valid, in seconds. ``0`` = no expiry. Only used with
                 ``datafusion_list_files_cache``. Default ``60``.
+            pgwire_enabled: Start the DataFusion PostgreSQL wire-protocol
+                server after datasets are registered. Requires a wheel built
+                with the ``pgwire`` Cargo feature and
+                ``backend="datafusion"``. Default ``False``.
+            pgwire_listen: Bind address for the pgwire listener. Keep
+                loopback unless a password and TLS are configured. Default
+                ``"127.0.0.1"``.
+            pgwire_port: TCP port for the pgwire listener. Default ``5432``.
+            pgwire_username: Username PostgreSQL clients must present.
+                Default ``"datapress"``.
+            pgwire_password: Password PostgreSQL clients must present.
+                Optional for a loopback-only listener; required for any
+                non-loopback bind. Default ``None``.
+            pgwire_tls_cert: PEM certificate path enabling TLS. Must be set
+                together with ``pgwire_tls_key``. Default ``None``.
+            pgwire_tls_key: PKCS#8 private-key path enabling TLS. Must be set
+                together with ``pgwire_tls_cert``. Default ``None``.
         """
         ...
 

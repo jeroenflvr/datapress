@@ -75,6 +75,53 @@ cfg = DataPressConfig(
 See [Configuration › DataFusion performance tuning](../configuration/server.md#datafusion-performance-tuning)
 for the equivalent TOML knobs and their defaults.
 
+### PostgreSQL wire protocol (pgwire)
+
+Seven `pgwire_*` kwargs mirror the TOML `[server.pgwire]` block. When enabled,
+DataPress starts a **PostgreSQL wire-protocol** listener alongside the HTTP
+API so `psql`, JDBC/ODBC drivers, and BI tools can query your datasets
+directly. It is **DataFusion-only**, **read-only**, and **off by default**,
+and requires a wheel built with the `pgwire` Cargo feature:
+
+```python
+cfg = DataPressConfig(
+    backend="datafusion",
+    port=8000,
+    pgwire_enabled=True,
+    pgwire_listen="127.0.0.1",   # loopback-only unless password + TLS are set
+    pgwire_port=5432,
+    pgwire_username="datapress",
+    pgwire_password="change-me",  # required for any non-loopback bind
+)
+```
+
+Authentication is cleartext password, so the same safety rules as the TOML
+config apply and are validated when the config is built:
+
+- A **loopback** bind may omit `pgwire_password`.
+- Any **non-loopback** bind (e.g. `pgwire_listen="0.0.0.0"`) **requires** both
+  `pgwire_password` and TLS (`pgwire_tls_cert` + `pgwire_tls_key`).
+- `pgwire_tls_cert` and `pgwire_tls_key` must be set together.
+
+```python
+cfg = DataPressConfig(
+    backend="datafusion",
+    pgwire_enabled=True,
+    pgwire_listen="0.0.0.0",
+    pgwire_username="datapress",
+    pgwire_password="change-me",
+    pgwire_tls_cert="/etc/datapress/pg.crt",
+    pgwire_tls_key="/etc/datapress/pg.key",
+)
+```
+
+A `pgwire_enabled=True` config on a wheel built **without** the `pgwire`
+feature logs a warning and is otherwise a no-op. See
+[Clients › PostgreSQL (pgwire)](../clients/postgresql.md) for connecting
+`psql` and BI tools, and
+[Configuration › PostgreSQL wire protocol](../configuration/server.md#postgresql-wire-protocol-pgwire)
+for the equivalent TOML block.
+
 ### Swagger UI OAuth2 / OIDC
 
 `AuthConfig` protects the API. The `swagger_oauth2_*` fields only make

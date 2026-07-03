@@ -32,6 +32,11 @@ curl http://localhost:8080/api/datasets
 `docs`, `swagger`, `metrics`, `auth`, and `explorer` forward to the matching
 [`datapress-core`](https://crates.io/crates/datapress-core) features.
 
+`pgwire` additionally starts a PostgreSQL wire-protocol server (via
+[`datafusion-postgres`](https://crates.io/crates/datafusion-postgres)) that
+exposes the loaded datasets to any PostgreSQL client, configured under
+`[server.pgwire]`.
+
 ## License
 
 MIT — see [LICENSE](../../LICENSE).
