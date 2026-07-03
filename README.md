@@ -425,7 +425,41 @@ startup so that `eq` / `in` predicates resolve in O(1).
 
 Override the config path with `DATASETS_CONFIG=/path/to/file.toml`.
 
+### PostgreSQL wire protocol (pgwire) *(DataFusion only, opt-in)*
+
+The DataFusion binary can additionally expose its datasets over the
+PostgreSQL wire protocol, so any PostgreSQL client — `psql`, the JDBC/ODBC
+drivers, Power BI, Tableau, DBeaver — can query them with plain SQL. Build
+with the `pgwire` feature and enable it under `[server.pgwire]`:
+
+```bash
+task build:datafusion:pgwire
+# or: cargo build --release -p datapress-datafusion --bin datapress-datafusion --features pgwire
+```
+
+```toml
+[server.pgwire]
+enabled  = true
+listen   = "127.0.0.1"   # bind address; keep loopback unless TLS is set
+port     = 5432
+username = "datapress"
+password = "change-me"    # cleartext auth; require TLS off-loopback
+# tls_cert = "/etc/datapress/server.crt"
+# tls_key  = "/etc/datapress/server.key"
+```
+
+```bash
+psql "host=127.0.0.1 port=5432 user=datapress password=change-me dbname=datapress" \
+  -c "SELECT count(*) FROM my_dataset"
+```
+
+Password auth is cleartext-over-the-wire, so binding to a non-loopback
+address requires both a password **and** a TLS cert/key pair — the server
+refuses to start otherwise. In Power BI, connect with the PostgreSQL
+connector pointed at `host:port` and the same credentials.
+
 ## HTTP API
+
 
 Five core routes, both backends — list / schema / query / count / reload —
 plus an opt-in raw-SQL endpoint (see below):

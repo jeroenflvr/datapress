@@ -127,6 +127,10 @@ pub struct ServerConfig {
     /// Optional DuckDB Quack remote SQL server. Only used by the DuckDB
     /// backend; ignored by DataFusion.
     pub quack: QuackConfig,
+    /// Optional PostgreSQL wire-protocol server. Only used by the DataFusion
+    /// backend (and only when compiled with the `pgwire` feature); ignored by
+    /// DuckDB.
+    pub pgwire: PgwireConfig,
 }
 
 impl Default for ServerConfig {
@@ -144,6 +148,7 @@ impl Default for ServerConfig {
             request_timeout_ms: 30_000,
             shutdown_timeout_secs: 30,
             quack: QuackConfig::default(),
+            pgwire: PgwireConfig::default(),
         }
     }
 }
@@ -226,6 +231,94 @@ impl QuackConfig {
         let rest = rest.strip_prefix("//").unwrap_or(rest);
         let host = rest.split([':', '/', '?', '#']).next().unwrap_or_default();
         (!host.is_empty()).then_some(host)
+    }
+}
+
+/// Experimental PostgreSQL wire-protocol server (`[server.pgwire]` block).
+///
+/// When enabled on the DataFusion backend, BI tools (Power BI via Npgsql,
+/// `psql`, DBeaver, …) can connect and query the registered datasets as if
+/// this process were PostgreSQL. Off by default and a no-op unless the binary
+/// was built with the `pgwire` feature on `datapress-datafusion`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct PgwireConfig {
+    /// Start the pgwire listener after datasets are registered.
+    pub enabled: bool,
+    /// Listen address. Defaults to loopback (127.0.0.1). Binding a
+    /// non-loopback address requires a password (and, since only cleartext
+    /// password auth is available, TLS as well).
+    pub listen: IpAddr,
+    /// TCP port. Defaults to the PostgreSQL default 5432.
+    pub port: u16,
+    /// Username clients must present. Defaults to `datapress`.
+    pub username: String,
+    /// Password clients must present. Optional only for a loopback-only
+    /// listener; required for any non-loopback bind.
+    pub password: Option<String>,
+    /// PEM certificate path for TLS. Must be set together with `tls_key`.
+    pub tls_cert: Option<PathBuf>,
+    /// PKCS#8 private-key path for TLS. Must be set together with `tls_cert`.
+    pub tls_key: Option<PathBuf>,
+}
+
+impl Default for PgwireConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            listen: IpAddr::from([127, 0, 0, 1]),
+            port: 5432,
+            username: "datapress".into(),
+            password: None,
+            tls_cert: None,
+            tls_key: None,
+        }
+    }
+}
+
+impl PgwireConfig {
+    /// Validate the enabled pgwire configuration. Because the only available
+    /// authentication mechanism is cleartext password (SCRAM would need a
+    /// salted verifier the integration library does not expose), the rules
+    /// are deliberately strict about exposing an off-box listener:
+    ///
+    /// * a non-loopback `listen` requires a `password` — an unauthenticated
+    ///   SQL endpoint must never be reachable off the local host;
+    /// * `tls_cert` and `tls_key` must be set together or not at all;
+    /// * a non-loopback `listen` also requires TLS, so the cleartext password
+    ///   never crosses a plaintext TCP connection off the box.
+    pub fn validate_enabled(&self) -> Result<(), AppError> {
+        let is_loopback = self.listen.is_loopback();
+        let tls_configured = match (self.tls_cert.as_ref(), self.tls_key.as_ref()) {
+            (Some(_), Some(_)) => true,
+            (None, None) => false,
+            _ => {
+                return Err(AppError::Internal(
+                    "server.pgwire.tls_cert and server.pgwire.tls_key must be set together \
+                     (both or neither)"
+                        .into(),
+                ));
+            }
+        };
+
+        if !is_loopback && self.password.is_none() {
+            return Err(AppError::Internal(format!(
+                "server.pgwire.password is required when server.pgwire.listen is not a \
+                 loopback address (got '{}')",
+                self.listen
+            )));
+        }
+
+        if !is_loopback && !tls_configured {
+            return Err(AppError::Internal(format!(
+                "server.pgwire requires TLS (server.pgwire.tls_cert + tls_key) when \
+                 server.pgwire.listen is not a loopback address (got '{}'): cleartext \
+                 password auth must not cross a plaintext connection off the host",
+                self.listen
+            )));
+        }
+
+        Ok(())
     }
 }
 
@@ -968,6 +1061,10 @@ impl AppConfig {
 
         if self.server.quack.enabled {
             self.server.quack.validate_enabled()?;
+        }
+
+        if self.server.pgwire.enabled {
+            self.server.pgwire.validate_enabled()?;
         }
 
         // Validate the docs mount path even when the section is disabled,
@@ -2063,4 +2160,63 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn pgwire_loopback_without_password_is_allowed() {
+        let cfg = PgwireConfig {
+            enabled: true,
+            ..Default::default()
+        };
+        assert!(cfg.validate_enabled().is_ok());
+    }
+
+    #[test]
+    fn pgwire_non_loopback_without_password_is_rejected() {
+        let cfg = PgwireConfig {
+            enabled: true,
+            listen: IpAddr::from([0, 0, 0, 0]),
+            password: None,
+            ..Default::default()
+        };
+        let err = cfg.validate_enabled().unwrap_err();
+        assert!(matches!(err, AppError::Internal(m) if m.contains("password is required")));
+    }
+
+    #[test]
+    fn pgwire_non_loopback_with_password_but_no_tls_is_rejected() {
+        let cfg = PgwireConfig {
+            enabled: true,
+            listen: IpAddr::from([0, 0, 0, 0]),
+            password: Some("pw".into()),
+            ..Default::default()
+        };
+        let err = cfg.validate_enabled().unwrap_err();
+        assert!(matches!(err, AppError::Internal(m) if m.contains("requires TLS")));
+    }
+
+    #[test]
+    fn pgwire_tls_cert_without_key_is_rejected() {
+        let cfg = PgwireConfig {
+            enabled: true,
+            tls_cert: Some(PathBuf::from("/tmp/server.crt")),
+            tls_key: None,
+            ..Default::default()
+        };
+        let err = cfg.validate_enabled().unwrap_err();
+        assert!(matches!(err, AppError::Internal(m) if m.contains("must be set together")));
+    }
+
+    #[test]
+    fn pgwire_non_loopback_with_password_and_tls_is_allowed() {
+        let cfg = PgwireConfig {
+            enabled: true,
+            listen: IpAddr::from([0, 0, 0, 0]),
+            password: Some("pw".into()),
+            tls_cert: Some(PathBuf::from("/tmp/server.crt")),
+            tls_key: Some(PathBuf::from("/tmp/server.key")),
+            ..Default::default()
+        };
+        assert!(cfg.validate_enabled().is_ok());
+    }
 }
+

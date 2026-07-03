@@ -23,6 +23,15 @@ uri = "quack:localhost"             # default port 9494; use literal localhost
 # token = "change-me"               # optional; generated and logged if omitted
 allow_other_hostname = false        # true for quack:0.0.0.0:9494 behind TLS proxy
 read_only = true                    # allow reads plus Quack attach handshake
+
+[server.pgwire]                     # DataFusion backend only; opt-in build feature
+enabled  = false
+listen   = "127.0.0.1"              # loopback-only unless a password + TLS are set
+port     = 5432
+username = "datapress"
+# password  = "change-me"           # required for any non-loopback bind
+# tls_cert  = "/etc/datapress/pg.crt"   # PEM cert; set together with tls_key
+# tls_key   = "/etc/datapress/pg.key"   # PKCS#8 key; set together with tls_cert
 ```
 
 ## Reference
@@ -118,6 +127,80 @@ FROM remote_db.accidents LIMIT 10;
 Omit `DISABLE_SSL true` (the default) when the server is fronted by TLS.
 
 <sup>1</sup> Quack is still highly experimental. Among other things, `SHOW TABLES;` is not yet supported.
+
+
+## PostgreSQL wire protocol (pgwire)
+
+!!! warning "Experimental"
+    The pgwire endpoint is **experimental** — behaviour and configuration may
+    change between releases, and some Postgres clients or introspection queries
+    may not work yet. It's not recommended for production-critical workloads.
+
+DataFusion builds compiled with the `pgwire` Cargo feature can expose a
+**PostgreSQL wire-protocol** endpoint alongside the HTTP API. Any PostgreSQL
+client — `psql`, JDBC/ODBC drivers, or BI tools like Power BI and Tableau —
+can then query your datasets directly. Each dataset appears as a table in the
+default catalog/schema (`public` to Postgres clients).
+
+The endpoint is **read-only** (DataFusion has no write path here) and **off by
+default**. It is only available on the `datafusion` backend and only when the
+binary/wheel was built with the `pgwire` feature; a `pgwire.enabled = true`
+config on a build without the feature logs a warning and is otherwise a no-op.
+
+```toml
+[server]
+backend = "datafusion"
+
+[server.pgwire]
+enabled  = true
+listen   = "127.0.0.1"
+port     = 5432
+username = "datapress"
+# password = "change-me"
+```
+
+Authentication is **cleartext password**, so DataPress enforces these rules at
+startup (the process refuses to start otherwise):
+
+- A **loopback** bind (`127.0.0.1` / `::1`) may omit the password — handy for
+  local development.
+- Any **non-loopback** bind (for example `0.0.0.0`) **requires** both a
+  `password` **and** TLS (`tls_cert` + `tls_key`), so credentials never cross
+  the network in the clear.
+- `tls_cert` and `tls_key` must be set together (both or neither).
+
+Enabling TLS for a network-exposed listener:
+
+```toml
+[server.pgwire]
+enabled  = true
+listen   = "0.0.0.0"
+port     = 5432
+username = "datapress"
+password = "change-me"
+tls_cert = "/etc/datapress/pg.crt"   # PEM certificate
+tls_key  = "/etc/datapress/pg.key"   # PKCS#8 private key
+```
+
+| Field      | Default       | Notes                                                                                  |
+|------------|---------------|----------------------------------------------------------------------------------------|
+| `enabled`  | `false`       | Master switch. Requires the `pgwire` feature and `backend = "datafusion"`.              |
+| `listen`   | `127.0.0.1`   | Bind address. Loopback-only unless a `password` **and** TLS are configured.             |
+| `port`     | `5432`        | TCP port (the PostgreSQL default).                                                      |
+| `username` | `datapress`   | Username clients must present.                                                          |
+| `password` | *(unset)*     | Cleartext password. Optional on loopback; required for any non-loopback bind.           |
+| `tls_cert` | *(unset)*     | PEM certificate path. Enables TLS; must be paired with `tls_key`.                       |
+| `tls_key`  | *(unset)*     | PKCS#8 private-key path. Must be paired with `tls_cert`.                                 |
+
+Connect with `psql`:
+
+```bash
+psql "host=127.0.0.1 port=5432 user=datapress password=change-me dbname=datapress" \
+  -c "SELECT count(*) FROM accidents"
+```
+
+See [PostgreSQL (pgwire)](../clients/postgresql.md) for client-specific setup
+(BI tools, DBeaver/DataGrip, connection strings, TLS).
 
 
 ## Behind a reverse proxy

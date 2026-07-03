@@ -19,6 +19,9 @@ swagger = ["datapress-core/swagger"]
 metrics = ["datapress-core/metrics"]
 auth    = ["datapress-core/auth"]
 explorer = ["datapress-core/explorer"]
+# PostgreSQL wire-protocol server. Off by default; pulls in datafusion-postgres
+# (which re-exports pgwire) only when explicitly enabled.
+pgwire  = ["dep:datafusion-postgres"]
 
 [dependencies]
 datapress-core = { workspace = true, features = ["datafusion"] }
@@ -45,9 +48,17 @@ object_store.workspace = true
 url.workspace          = true
 deltalake.workspace    = true
 
+# pgwire feature only.
+datafusion-postgres = { workspace = true, optional = true }
+
 [dev-dependencies]
 tempfile = "3"
 criterion = { version = "0.5", features = ["html_reports"] }
+# pgwire e2e tests (gated at runtime by #![cfg(feature = "pgwire")]).
+tokio-postgres = "0.7"
+tokio-postgres-rustls = "0.13"
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+rcgen = "0.13"
 
 [[bin]]
 name = "datapress-datafusion"

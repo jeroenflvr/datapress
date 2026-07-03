@@ -15,6 +15,7 @@
 //! `DataPressConfig(backend=...)`.
 
 use std::net::IpAddr;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
 
@@ -25,7 +26,8 @@ use datapress_core::config::{
     AddressingStyle, AppConfig, AuthConfig as CoreAuthConfig, Backend, BucketInHost,
     ColumnFilter, DataFusionConfig as CoreDataFusionConfig, DatasetConfig as CoreDatasetConfig,
     ExplorerConfig as CoreExplorerConfig, IndexConfig, IndexMode,
-    MetricsConfig as CoreMetricsConfig, Partitioning, S3Config as CoreS3Config,
+    MetricsConfig as CoreMetricsConfig, Partitioning, PgwireConfig as CorePgwireConfig,
+    S3Config as CoreS3Config,
     ServerConfig, SourceConfig, SourceKind, SqlConfig as CoreSqlConfig,
     SwaggerConfig as CoreSwaggerConfig, SwaggerOAuth2Config as CoreSwaggerOAuth2Config,
 };
@@ -622,6 +624,23 @@ impl PyDatasetConfig {
 ///     datafusion_list_files_cache_ttl_secs (int): How long a cached
 ///         listing stays valid, in seconds. ``0`` = no expiry. Only used
 ///         with ``datafusion_list_files_cache``. Default ``60``.
+///     pgwire_enabled (bool): Start the DataFusion PostgreSQL wire-protocol
+///         server after datasets are registered. Requires a wheel built
+///         with the ``pgwire`` Cargo feature and ``backend="datafusion"``.
+///         Default ``False``.
+///     pgwire_listen (str): Bind address for the pgwire listener. Keep
+///         loopback unless a password and TLS are configured. Default
+///         ``"127.0.0.1"``.
+///     pgwire_port (int): TCP port for the pgwire listener. Default ``5432``.
+///     pgwire_username (str): Username PostgreSQL clients must present.
+///         Default ``"datapress"``.
+///     pgwire_password (str | None): Password PostgreSQL clients must
+///         present. Optional for a loopback-only listener; required for any
+///         non-loopback bind. Default ``None``.
+///     pgwire_tls_cert (str | None): PEM certificate path enabling TLS.
+///         Must be set together with ``pgwire_tls_key``. Default ``None``.
+///     pgwire_tls_key (str | None): PKCS#8 private-key path enabling TLS.
+///         Must be set together with ``pgwire_tls_cert``. Default ``None``.
 #[pyclass(
     name = "DataPressConfig",
     module = "datap_rs.datapress",
@@ -746,6 +765,33 @@ pub struct PyDataPressConfig {
     /// Default ``60``.
     #[pyo3(get, set)]
     pub datafusion_list_files_cache_ttl_secs: u64,
+    /// Start the DataFusion PostgreSQL wire-protocol server after datasets
+    /// are registered. Requires a wheel built with the ``pgwire`` Cargo
+    /// feature and the ``datafusion`` backend. Default ``False``.
+    #[pyo3(get, set)]
+    pub pgwire_enabled: bool,
+    /// Bind address for the pgwire listener. Keep loopback unless a
+    /// password and TLS are configured. Default ``"127.0.0.1"``.
+    #[pyo3(get, set)]
+    pub pgwire_listen: String,
+    /// TCP port for the pgwire listener. Default ``5432``.
+    #[pyo3(get, set)]
+    pub pgwire_port: u16,
+    /// Username PostgreSQL clients must present. Default ``"datapress"``.
+    #[pyo3(get, set)]
+    pub pgwire_username: String,
+    /// Password PostgreSQL clients must present. Optional for a
+    /// loopback-only listener; required for any non-loopback bind.
+    #[pyo3(get, set)]
+    pub pgwire_password: Option<String>,
+    /// PEM certificate path enabling TLS. Must be set together with
+    /// ``pgwire_tls_key``.
+    #[pyo3(get, set)]
+    pub pgwire_tls_cert: Option<String>,
+    /// PKCS#8 private-key path enabling TLS. Must be set together with
+    /// ``pgwire_tls_cert``.
+    #[pyo3(get, set)]
+    pub pgwire_tls_key: Option<String>,
 }
 
 #[pymethods]
@@ -811,6 +857,18 @@ impl PyDataPressConfig {
     ///     datafusion_list_files_cache_ttl_secs (int): Cached-listing TTL,
     ///         in seconds. ``0`` = no expiry. Only used with
     ///         ``datafusion_list_files_cache``. Default ``60``.
+    ///     pgwire_enabled (bool): Start the DataFusion PostgreSQL
+    ///         wire-protocol server. Requires the ``pgwire`` Cargo feature
+    ///         and ``backend="datafusion"``. Default ``False``.
+    ///     pgwire_listen (str): pgwire bind address. Default ``"127.0.0.1"``.
+    ///     pgwire_port (int): pgwire TCP port. Default ``5432``.
+    ///     pgwire_username (str): pgwire username. Default ``"datapress"``.
+    ///     pgwire_password (str | None): pgwire password. Required for any
+    ///         non-loopback bind. Default ``None``.
+    ///     pgwire_tls_cert (str | None): PEM certificate path enabling TLS
+    ///         (with ``pgwire_tls_key``). Default ``None``.
+    ///     pgwire_tls_key (str | None): PKCS#8 key path enabling TLS (with
+    ///         ``pgwire_tls_cert``). Default ``None``.
     #[new]
     #[pyo3(signature = (
         backend            = "duckdb".to_string(),
@@ -847,6 +905,13 @@ impl PyDataPressConfig {
         datafusion_list_files_cache = false,
         datafusion_list_files_cache_mb = 64,
         datafusion_list_files_cache_ttl_secs = 60,
+        pgwire_enabled     = false,
+        pgwire_listen      = "127.0.0.1".to_string(),
+        pgwire_port        = 5432,
+        pgwire_username    = "datapress".to_string(),
+        pgwire_password    = None,
+        pgwire_tls_cert    = None,
+        pgwire_tls_key     = None,
     ))]
     #[allow(clippy::too_many_arguments)] // user-facing kwargs surface
     fn new(
@@ -884,6 +949,13 @@ impl PyDataPressConfig {
         datafusion_list_files_cache: bool,
         datafusion_list_files_cache_mb: usize,
         datafusion_list_files_cache_ttl_secs: u64,
+        pgwire_enabled: bool,
+        pgwire_listen: String,
+        pgwire_port: u16,
+        pgwire_username: String,
+        pgwire_password: Option<String>,
+        pgwire_tls_cert: Option<String>,
+        pgwire_tls_key: Option<String>,
     ) -> Self {
         Self {
             backend,
@@ -920,6 +992,13 @@ impl PyDataPressConfig {
             datafusion_list_files_cache,
             datafusion_list_files_cache_mb,
             datafusion_list_files_cache_ttl_secs,
+            pgwire_enabled,
+            pgwire_listen,
+            pgwire_port,
+            pgwire_username,
+            pgwire_password,
+            pgwire_tls_cert,
+            pgwire_tls_key,
         }
     }
 }
@@ -952,6 +1031,26 @@ impl PyDataPressConfig {
                 )));
             }
         }
+        let pgwire_listen = IpAddr::from_str(&self.pgwire_listen).map_err(|e| {
+            PyValueError::new_err(format!(
+                "invalid pgwire_listen address '{}': {e}",
+                self.pgwire_listen
+            ))
+        })?;
+        let pgwire = CorePgwireConfig {
+            enabled: self.pgwire_enabled,
+            listen: pgwire_listen,
+            port: self.pgwire_port,
+            username: self.pgwire_username,
+            password: self.pgwire_password,
+            tls_cert: self.pgwire_tls_cert.map(PathBuf::from),
+            tls_key: self.pgwire_tls_key.map(PathBuf::from),
+        };
+        if pgwire.enabled {
+            pgwire
+                .validate_enabled()
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        }
         Ok(ServerConfig {
             backend,
             listen,
@@ -971,6 +1070,7 @@ impl PyDataPressConfig {
                 allow_other_hostname: self.quack_allow_other_hostname,
                 read_only: self.quack_read_only,
             },
+            pgwire,
         })
     }
 
@@ -1437,6 +1537,7 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
             request_timeout_ms: cfg.server.request_timeout_ms,
             shutdown_timeout_secs: cfg.server.shutdown_timeout_secs,
             quack: cfg.server.quack.clone(),
+            pgwire: cfg.server.pgwire.clone(),
         },
         docs: cfg.docs.clone(),
         swagger: cfg.swagger.clone(),

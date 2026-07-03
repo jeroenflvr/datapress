@@ -38,11 +38,16 @@ tasks:
     cmds:
       - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion
 
+  build:datafusion:pgwire:
+    desc: Build the DataFusion binary with the PostgreSQL wire protocol server
+    cmds:
+      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion --features pgwire
+
   build:cli:
     desc: Build the unified `datapress` CLI (both backends bundled, release)
     deps: [docs:build]
     cmds:
-      - cargo build {{.RELEASE}} -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer
+      - cargo build {{.RELEASE}} -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer,pgwire
 
   # ---------------------------------------------------------------------
   # Static (musl) Linux binaries — glibc-free, run on any Linux regardless
@@ -68,7 +73,7 @@ tasks:
     cmds:
       # CXXFLAGS bypasses DuckDB's `__GNUC__ < 5` ABI guard, which zig cc
       # (reporting GCC 4.2.1) would otherwise trip.
-      - CXXFLAGS="-DDUCKDB_CUSTOM_PLATFORM={{.DUCKDB_PLATFORM}}" cargo zigbuild --release --target {{.TARGET}} -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer
+      - CXXFLAGS="-DDUCKDB_CUSTOM_PLATFORM={{.DUCKDB_PLATFORM}}" cargo zigbuild --release --target {{.TARGET}} -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer,pgwire
       - cargo zigbuild --release --target {{.TARGET}} -p datapress-cli --bin datapress-cli
       - 'echo "Built: target/{{.TARGET}}/release/datapress and datapress-cli"'
 
@@ -145,7 +150,7 @@ tasks:
     desc: Run the DataFusion binary (release, with embedded docs site + swagger UI)
     deps: [docs:build]
     cmds:
-      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion --features docs,swagger,metrics,explorer
+      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion --features docs,swagger,metrics,explorer,pgwire
       - RUST_LOG=info ./target/release/datapress-datafusion
 
   check:
@@ -174,13 +179,13 @@ tasks:
     deps: [docs:build]
     cmds:
       - uv venv --allow-existing
-      - uv tool run --with maturin maturin develop --release --uv --features docs,swagger,auth,metrics,explorer
+      - uv tool run --with maturin maturin develop --release --uv --features docs,swagger,auth,metrics,explorer,pgwire
 
   py:build:
     desc: Build a release wheel into ./target/wheels/ with the published feature set
     deps: [docs:build]
     cmds:
-      - uv tool run --with maturin maturin build --release --features docs,swagger,auth,metrics,explorer
+      - uv tool run --with maturin maturin build --release --features docs,swagger,auth,metrics,explorer,pgwire
 
   # ---------------------------------------------------------------------
   # Documentation (MkDocs + Material)

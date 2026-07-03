@@ -31,6 +31,15 @@ uri = "quack:localhost"       # default port 9494; use literal localhost
 allow_other_hostname = false  # true for quack:0.0.0.0:9494 behind TLS proxy
 read_only = true              # allow reads plus Quack attach handshake
 
+[server.pgwire]               # DataFusion backend only; requires the `pgwire` build feature
+enabled = false
+listen   = "127.0.0.1"        # non-loopback requires password AND TLS
+port     = 5432               # PostgreSQL default
+username = "datapress"
+# password = "change-me"      # required for any non-loopback listen
+# tls_cert = "/path/server.crt"  # PEM cert; set together with tls_key
+# tls_key  = "/path/server.key"  # PKCS#8 key; set together with tls_cert
+
 [[dataset]]               # one block per dataset
 name = "..."
 # source, s3, index, lazy follow
