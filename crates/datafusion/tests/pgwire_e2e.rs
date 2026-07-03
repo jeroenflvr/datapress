@@ -211,6 +211,39 @@ async fn pgwire_password_auth_queries() {
     let schema: &str = row.get("s");
     assert_eq!(schema, "public");
 
+    // (d2) Npgsql type-load query — the verbatim SQL Npgsql 4.x sends on
+    // `Open()` to populate its type map. The `datafusion-pg-catalog` emulation
+    // links `pg_type.typnamespace`/`typreceive` to `pg_namespace`/`pg_proc` in a
+    // way that makes both inner joins match nothing, so unrepaired this returns
+    // ZERO rows — which Npgsql accepts silently and then blows up on the first
+    // result set ("type currently unknown to Npgsql"). Our `NpgsqlTypeLoadHook`
+    // rewrites it at parse time. A silent-empty catalog result is worse than an
+    // error, so this asserts the base types come back and makes a regression
+    // loud. Sent via `query` (extended protocol) — the path the hook repairs.
+    const NPGSQL_TYPE_LOAD: &str = "SELECT ns.nspname, a.typname, a.oid, a.typrelid, a.typbasetype, CASE WHEN pg_proc.proname = 'array_recv' THEN 'a' ELSE a.typtype END AS type, CASE WHEN pg_proc.proname = 'array_recv' THEN a.typelem WHEN a.typtype = 'r' THEN rngsubtype ELSE 0 END AS elemoid, CASE WHEN pg_proc.proname IN ('array_recv', 'oidvectorrecv') THEN 3 WHEN a.typtype = 'r' THEN 2 WHEN a.typtype = 'd' THEN 1 ELSE 0 END AS ord FROM pg_catalog.pg_type AS a JOIN pg_catalog.pg_namespace AS ns ON (ns.oid = a.typnamespace) JOIN pg_catalog.pg_proc ON pg_proc.oid = a.typreceive LEFT OUTER JOIN pg_catalog.pg_class AS cls ON (cls.oid = a.typrelid) LEFT OUTER JOIN pg_catalog.pg_type AS b ON (b.oid = a.typelem) LEFT OUTER JOIN pg_catalog.pg_class AS elemcls ON (elemcls.oid = b.typrelid) LEFT OUTER JOIN pg_catalog.pg_range ON (pg_range.rngtypid = a.oid) WHERE a.typtype IN ('b', 'r', 'e', 'd') OR (a.typtype = 'c' AND cls.relkind = 'c') OR (pg_proc.proname = 'array_recv' AND (b.typtype IN ('b', 'r', 'e', 'd') OR (b.typtype = 'p' AND b.typname IN ('record', 'void')) OR (b.typtype = 'c' AND elemcls.relkind = 'c'))) OR (a.typtype = 'p' AND a.typname IN ('record', 'void')) ORDER BY ord";
+    let rows = client
+        .query(NPGSQL_TYPE_LOAD, &[])
+        .await
+        .expect("Npgsql type-load query");
+    let typnames: Vec<String> = rows.iter().map(|r| r.get::<_, String>("typname")).collect();
+    assert!(
+        !typnames.is_empty(),
+        "Npgsql type-load query must not return an empty result set"
+    );
+    for want in ["text", "int4", "bool", "int8", "float8", "varchar"] {
+        assert!(
+            typnames.iter().any(|t| t == want),
+            "Npgsql type-load result must include base type '{want}', got {typnames:?}"
+        );
+    }
+    // The array types must resolve too (their `type`='a' with `elemoid` set is
+    // what lets Npgsql read array columns) — a proxy that the rewrite kept the
+    // elem/receive linkage intact, not just the scalar rows.
+    assert!(
+        typnames.iter().any(|t| t == "_int4"),
+        "Npgsql type-load result must include array type '_int4', got {typnames:?}"
+    );
+
     // (e) session-maintenance statements — pooling drivers (Npgsql/Power BI)
     // issue `DISCARD ALL` (and friends) when resetting a pooled connection.
     // DataFusion can't plan them, so without our interception hook they'd fail

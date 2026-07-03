@@ -166,20 +166,143 @@ impl QueryHook for SessionResetHook {
     }
 }
 
+/// Query hook that repairs the connect-time type-load query sent by Npgsql
+/// (the driver behind Power BI and other .NET clients).
+///
+/// On `NpgsqlConnection.Open()`, Npgsql 4.x loads its type map with one large
+/// query against `pg_type`/`pg_namespace`/`pg_proc`. Two data mismatches in the
+/// `datafusion-pg-catalog` (0.17.2) emulation each make that query return **zero
+/// rows**, which Npgsql accepts silently and then fails on the first result set
+/// with `"type currently unknown to Npgsql (OID …)"` / `"Can't cast database
+/// type .<unknown>"`:
+///
+/// 1. `pg_type.typnamespace` is populated with PostgreSQL's fixed catalog OIDs
+///    (`pg_catalog` = 11) but `pg_namespace.oid` is generated from a runtime
+///    counter (`pg_catalog` ≈ 16458), so the inner
+///    `JOIN pg_namespace ON ns.oid = a.typnamespace` matches nothing.
+/// 2. `pg_type.typreceive` stores the receive function's *name* (`int4recv`)
+///    rather than its `regproc` OID, so the inner
+///    `JOIN pg_proc ON pg_proc.oid = a.typreceive` matches nothing.
+///
+/// Either mismatch alone empties the result. We repair the query at parse time
+/// with two surgical substitutions that keep every projected column and its
+/// order intact:
+///
+/// * the namespace join becomes an inline `(VALUES)`-style derived table mapping
+///   the two catalog OIDs `pg_type` actually uses to their names, and
+/// * the `pg_proc` join keys on `proname` (which the surrounding `CASE`
+///   expressions already compare against) instead of `oid`.
+///
+/// The rewrite is gated on the verbatim broken predicate so no other query is
+/// touched, and it is a follow-up to fix upstream in `datafusion-pg-catalog`.
+#[derive(Debug)]
+struct NpgsqlTypeLoadHook;
+
+impl NpgsqlTypeLoadHook {
+    /// The broken `pg_proc` join predicate that fingerprints the Npgsql 4.x
+    /// type-load query. Present in no other statement we serve.
+    const PROC_JOIN_ORIG: &'static str =
+        "JOIN pg_catalog.pg_proc ON pg_proc.oid = a.typreceive";
+    /// Join `pg_proc` by name so `pg_type.typreceive` (a name in the emulation)
+    /// resolves; the projected `CASE` arms already key on `pg_proc.proname`.
+    const PROC_JOIN_FIX: &'static str =
+        "JOIN pg_catalog.pg_proc ON pg_proc.proname = a.typreceive";
+    /// The namespace join whose OID linkage is broken.
+    const NS_JOIN_ORIG: &'static str =
+        "JOIN pg_catalog.pg_namespace AS ns ON (ns.oid = a.typnamespace)";
+    /// Replace it with a derived table mapping the fixed catalog OIDs that
+    /// `pg_type.typnamespace` actually carries to their schema names, so the
+    /// projected `ns.nspname` still resolves and the join stays INNER (only the
+    /// `pg_catalog`/`information_schema` types Npgsql needs survive).
+    const NS_JOIN_FIX: &'static str = "JOIN (SELECT 11 AS oid, 'pg_catalog' AS nspname \
+UNION ALL SELECT 13283 AS oid, 'information_schema' AS nspname) AS ns \
+ON (ns.oid = a.typnamespace)";
+
+    /// If `statement` is the Npgsql type-load query, return the repaired SQL.
+    fn rewrite(statement: &Statement) -> Option<String> {
+        if !matches!(statement, Statement::Query(_)) {
+            return None;
+        }
+        // `Display` yields the normalized single-line SQL the library also logs;
+        // that is the exact form the substitutions below target.
+        let sql = statement.to_string();
+        if !sql.contains(Self::PROC_JOIN_ORIG) {
+            return None;
+        }
+        let rewritten = sql
+            .replace(Self::PROC_JOIN_ORIG, Self::PROC_JOIN_FIX)
+            .replace(Self::NS_JOIN_ORIG, Self::NS_JOIN_FIX);
+        // Both substitutions must have fired; otherwise the query drifted from
+        // the pattern we validated and we must not serve a half-rewritten plan.
+        if rewritten.contains(Self::PROC_JOIN_ORIG) || rewritten.contains(Self::NS_JOIN_ORIG) {
+            return None;
+        }
+        Some(rewritten)
+    }
+}
+
+#[async_trait]
+impl QueryHook for NpgsqlTypeLoadHook {
+    async fn handle_simple_query(
+        &self,
+        _statement: &Statement,
+        _session_context: &SessionContext,
+        _client: &mut dyn HookClient,
+    ) -> Option<PgWireResult<Response>> {
+        // Npgsql issues this query over the extended protocol only, which is
+        // handled at parse time below. Building a full simple-query `Response`
+        // here would duplicate the library's result encoding for no client, so
+        // the simple path is intentionally left to the default planner.
+        None
+    }
+
+    async fn handle_extended_parse_query(
+        &self,
+        statement: &Statement,
+        session_context: &SessionContext,
+        _client: &(dyn ClientInfo + Send + Sync),
+    ) -> Option<PgWireResult<LogicalPlan>> {
+        let rewritten = Self::rewrite(statement)?;
+        log::debug!("pgwire: rewriting Npgsql type-load query for catalog compatibility");
+        let plan = match session_context.sql(&rewritten).await {
+            Ok(df) => df.into_optimized_plan(),
+            Err(e) => return Some(Err(datafusion_postgres::pgwire::error::PgWireError::ApiError(Box::new(e)))),
+        };
+        Some(plan.map_err(|e| {
+            datafusion_postgres::pgwire::error::PgWireError::ApiError(Box::new(e))
+        }))
+    }
+
+    async fn handle_extended_query(
+        &self,
+        _statement: &Statement,
+        _logical_plan: &LogicalPlan,
+        _params: &ParamValues,
+        _session_context: &SessionContext,
+        _client: &mut dyn HookClient,
+    ) -> Option<PgWireResult<Response>> {
+        // The rewritten plan produced at parse time carries no parameters, so we
+        // let the library's default execution path run it.
+        None
+    }
+}
+
 /// Assemble the query hooks installed on every pgwire session.
 ///
 /// This is the library's default set (cursor, `SET`/`SHOW`, transaction
-/// statements) plus our [`SessionResetHook`]. `DfSessionService::new` installs
-/// the first three by default, but choosing hooks explicitly (via
-/// `new_with_hooks`/`serve_with_hooks`) is the only way to add ours, so we
-/// re-list the defaults here. The reset hook is purely additive — none of the
-/// defaults claim `DISCARD`/`DEALLOCATE`/`RESET`/`UNLISTEN`.
+/// statements) plus our local hooks: [`SessionResetHook`] and
+/// [`NpgsqlTypeLoadHook`]. `DfSessionService::new` installs the first three by
+/// default, but choosing hooks explicitly (via `new_with_hooks`/
+/// `serve_with_hooks`) is the only way to add ours, so we re-list the defaults
+/// here. Both local hooks are purely additive — none of the defaults claim
+/// `DISCARD`/`DEALLOCATE`/`RESET`/`UNLISTEN` or the Npgsql type-load query.
 fn query_hooks() -> Vec<Arc<dyn QueryHook>> {
     vec![
         Arc::new(CursorStatementHook),
         Arc::new(SetShowHook),
         Arc::new(TransactionStatementHook),
         Arc::new(SessionResetHook),
+        Arc::new(NpgsqlTypeLoadHook),
     ]
 }
 
