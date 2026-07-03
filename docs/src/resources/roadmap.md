@@ -19,9 +19,11 @@ refreshed as work lands. For shipped changes see the
   [Quack protocol](../backends/duckdb.md#quack-remote-protocol) with a driver
   the wider Java ecosystem can use out of the box.
 
+- **pgwire.** A native postgreSQL interface so PowerBI and other Postgres-speaking tools (Tableau, DBeaver, psql, pandas, Alteryx via postgreSQL ODBC, ..) can connect directly.
+
 ## Q4 2026
 
-- **pgwire.** A native postgreSQL interface so PowerBI and other Postgres-speaking tools (Tableau, DBeaver, psql, pandas, Alteryx via postgreSQL ODBC, ..) can connect directly.
+- PowerBI [DirectQuery](https://learn.microsoft.com/en-us/power-bi/connect-data/desktop-use-directquery) support.  
 
 ## Have a request?
 
