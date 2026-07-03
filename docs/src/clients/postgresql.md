@@ -165,3 +165,10 @@ Tables (your datasets) appear under the `public` schema. Queries are read-only
 - The endpoint reflects the datasets currently registered with the server; use
   the HTTP [reload](../operations/reload.md) / [register](../operations/register.md)
   operations to change what is visible.
+- **Connection pooling is supported.** Pooling drivers (notably Npgsql, used by
+  Power BI) reset a pooled connection by issuing session-maintenance statements
+  such as `DISCARD ALL`. DataFusion doesn't model these, so DataPress
+  transparently acknowledges `DISCARD`, `DEALLOCATE`, `RESET`, and `UNLISTEN` as
+  no-ops (transactions — `BEGIN`/`COMMIT`/`ROLLBACK` — are likewise accepted but
+  not real transactions, since the endpoint is read-only). You should not need
+  to disable pooling.
