@@ -19,6 +19,8 @@ use parquet::arrow::ProjectionMask;
 use parquet::arrow::arrow_reader::{ArrowReaderOptions, ParquetRecordBatchReaderBuilder};
 use serde_json::Value as JsonValue;
 
+use datafusion::catalog::information_schema::InformationSchemaProvider;
+use datafusion::catalog::{CatalogProviderList, SchemaProvider};
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
@@ -788,7 +790,14 @@ fn build_tuned_context(cfg: &DataFusionConfig) -> SessionContext {
         // them for schema browsing. They live in their own `information_schema`
         // schema, so they don't affect dataset listing (which reads the
         // Store's own registry, not the catalog) or the HTTP endpoints.
-        opts.catalog.information_schema = true;
+        //
+        // We deliberately leave DataFusion's *built-in* `information_schema`
+        // short-circuit OFF and register our own provider instead (see
+        // `register_information_schema_shim`). The built-in provider only
+        // implements seven views and can't be extended; BI tools also probe
+        // `table_constraints` & friends, so our provider delegates to the
+        // built-in views and adds those missing (empty) constraint relations.
+        opts.catalog.information_schema = false;
     }
 
     // Name of the session's default schema, surfaced by the `current_schema()`
@@ -798,6 +807,7 @@ fn build_tuned_context(cfg: &DataFusionConfig) -> SessionContext {
     if !cfg.list_files_cache {
         let ctx = SessionContext::new_with_config(config);
         register_compat_udfs(&ctx, default_schema);
+        register_information_schema_shim(&ctx);
         return ctx;
     }
 
@@ -818,6 +828,7 @@ fn build_tuned_context(cfg: &DataFusionConfig) -> SessionContext {
 
     let ctx = SessionContext::new_with_config_rt(config, runtime);
     register_compat_udfs(&ctx, default_schema);
+    register_information_schema_shim(&ctx);
     ctx
 }
 
@@ -837,6 +848,158 @@ fn build_tuned_context(cfg: &DataFusionConfig) -> SessionContext {
 /// or enabled, and so the DuckDB-parity `/api/v1/sql` contract holds by default.
 fn register_compat_udfs(ctx: &SessionContext, default_schema: String) {
     ctx.register_udf(ScalarUDF::from(CurrentSchemaUdf::new(default_schema)));
+}
+
+// ---------------------------------------------------------------------------
+// information_schema constraint views
+// ---------------------------------------------------------------------------
+
+/// Register an `information_schema` schema provider that serves DataFusion's
+/// seven built-in virtual views *and* the empty constraint relations BI tools
+/// probe when loading a table.
+///
+/// Why not simply `opts.catalog.information_schema = true`? DataFusion's
+/// built-in `information_schema` is special-cased in the planner:
+/// `SessionState::schema_for_ref` short-circuits *any* `information_schema`
+/// reference straight to a fresh built-in `InformationSchemaProvider`, so a
+/// schema registered under that name would be silently ignored. We therefore
+/// leave that flag OFF (see `build_tuned_context`) and register our own
+/// provider here, which *delegates* to the same built-in provider for its
+/// seven views (tables/columns/views/schemata/routines/parameters/df_settings)
+/// while adding the three constraint views below.
+///
+/// Power BI / Npgsql query `information_schema.table_constraints` — and,
+/// immediately after, `key_column_usage` and `referential_constraints` — when
+/// loading a table. DataFusion implements none of them, so the table load
+/// fails with "table 'information_schema.table_constraints' not found". These
+/// relations are served empty and correctly-shaped: DataPress datasets have no
+/// declared constraints, so zero rows is the *truthful* answer, not a stub. If
+/// DataPress ever gains declared keys, these views are where they'd surface.
+fn register_information_schema_shim(ctx: &SessionContext) {
+    let default_catalog = ctx
+        .state()
+        .config()
+        .options()
+        .catalog
+        .default_catalog
+        .clone();
+    let Some(catalog) = ctx.catalog(&default_catalog) else {
+        return;
+    };
+    let catalog_list = Arc::clone(ctx.state().catalog_list());
+    let provider = Arc::new(InformationSchemaWithConstraints::new(catalog_list));
+    // Registering under an existing schema name replaces it; the default
+    // catalog has no `information_schema` (the built-in one is virtual), so
+    // this is an insert. Ignore the returned previous provider, if any.
+    let _ = catalog.register_schema("information_schema", provider);
+}
+
+/// An `information_schema` provider that delegates to DataFusion's built-in
+/// [`InformationSchemaProvider`] and adds empty PostgreSQL constraint views.
+#[derive(Debug)]
+struct InformationSchemaWithConstraints {
+    /// The built-in provider; serves the seven standard virtual views on
+    /// demand from the session's catalog list.
+    inner: InformationSchemaProvider,
+    /// Empty, correctly-shaped constraint relations keyed by lowercase name.
+    constraints: HashMap<&'static str, Arc<dyn TableProvider>>,
+}
+
+impl InformationSchemaWithConstraints {
+    fn new(catalog_list: Arc<dyn CatalogProviderList>) -> Self {
+        let mut constraints: HashMap<&'static str, Arc<dyn TableProvider>> = HashMap::new();
+        constraints.insert("table_constraints", empty_table(table_constraints_schema()));
+        constraints.insert("key_column_usage", empty_table(key_column_usage_schema()));
+        constraints.insert(
+            "referential_constraints",
+            empty_table(referential_constraints_schema()),
+        );
+        Self {
+            inner: InformationSchemaProvider::new(catalog_list),
+            constraints,
+        }
+    }
+}
+
+#[async_trait]
+impl SchemaProvider for InformationSchemaWithConstraints {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn table_names(&self) -> Vec<String> {
+        let mut names = self.inner.table_names();
+        names.extend(self.constraints.keys().map(|k| (*k).to_string()));
+        names
+    }
+
+    async fn table(&self, name: &str) -> DfResult<Option<Arc<dyn TableProvider>>> {
+        if let Some(table) = self.constraints.get(name.to_ascii_lowercase().as_str()) {
+            return Ok(Some(Arc::clone(table)));
+        }
+        self.inner.table(name).await
+    }
+
+    fn table_exist(&self, name: &str) -> bool {
+        self.constraints
+            .contains_key(name.to_ascii_lowercase().as_str())
+            || self.inner.table_exist(name)
+    }
+}
+
+/// Build a zero-row [`MemTable`] with the given schema.
+fn empty_table(schema: Arc<Schema>) -> Arc<dyn TableProvider> {
+    Arc::new(MemTable::try_new(schema, vec![Vec::new()]).expect("empty MemTable schema is valid"))
+}
+
+/// `information_schema.table_constraints` columns, per the SQL standard /
+/// PostgreSQL. All columns are `character_data`/`sql_identifier`/`yes_or_no`,
+/// which we surface as nullable `Utf8`.
+fn table_constraints_schema() -> Arc<Schema> {
+    Arc::new(Schema::new(vec![
+        Field::new("constraint_catalog", DataType::Utf8, true),
+        Field::new("constraint_schema", DataType::Utf8, true),
+        Field::new("constraint_name", DataType::Utf8, true),
+        Field::new("table_catalog", DataType::Utf8, true),
+        Field::new("table_schema", DataType::Utf8, true),
+        Field::new("table_name", DataType::Utf8, true),
+        Field::new("constraint_type", DataType::Utf8, true),
+        Field::new("is_deferrable", DataType::Utf8, true),
+        Field::new("initially_deferred", DataType::Utf8, true),
+        Field::new("enforced", DataType::Utf8, true),
+    ]))
+}
+
+/// `information_schema.key_column_usage` columns. The two positional columns
+/// are `cardinal_number` (a positive integer) → nullable `Int32`.
+fn key_column_usage_schema() -> Arc<Schema> {
+    Arc::new(Schema::new(vec![
+        Field::new("constraint_catalog", DataType::Utf8, true),
+        Field::new("constraint_schema", DataType::Utf8, true),
+        Field::new("constraint_name", DataType::Utf8, true),
+        Field::new("table_catalog", DataType::Utf8, true),
+        Field::new("table_schema", DataType::Utf8, true),
+        Field::new("table_name", DataType::Utf8, true),
+        Field::new("column_name", DataType::Utf8, true),
+        Field::new("ordinal_position", DataType::Int32, true),
+        Field::new("position_in_unique_constraint", DataType::Int32, true),
+    ]))
+}
+
+/// `information_schema.referential_constraints` columns. All columns are
+/// `sql_identifier`/`character_data` → nullable `Utf8`.
+fn referential_constraints_schema() -> Arc<Schema> {
+    Arc::new(Schema::new(vec![
+        Field::new("constraint_catalog", DataType::Utf8, true),
+        Field::new("constraint_schema", DataType::Utf8, true),
+        Field::new("constraint_name", DataType::Utf8, true),
+        Field::new("unique_constraint_catalog", DataType::Utf8, true),
+        Field::new("unique_constraint_schema", DataType::Utf8, true),
+        Field::new("unique_constraint_name", DataType::Utf8, true),
+        Field::new("match_option", DataType::Utf8, true),
+        Field::new("update_rule", DataType::Utf8, true),
+        Field::new("delete_rule", DataType::Utf8, true),
+    ]))
 }
 
 /// `current_schema()` — a no-argument scalar UDF returning the session's

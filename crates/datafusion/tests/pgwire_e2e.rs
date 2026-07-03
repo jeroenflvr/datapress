@@ -211,6 +211,30 @@ async fn pgwire_password_auth_queries() {
     let schema: &str = row.get("s");
     assert_eq!(schema, "public");
 
+    // (d1) constraint views — Power BI / Npgsql query
+    // `information_schema.table_constraints` (and, right after,
+    // `key_column_usage` / `referential_constraints`) when loading a table.
+    // DataFusion's built-in `information_schema` implements none of them, so an
+    // unpatched server fails the table load with "table
+    // 'information_schema.table_constraints' not found". Our provider serves
+    // them empty and correctly-shaped (datasets have no declared constraints,
+    // so zero rows is truthful). Each must return 0 rows, not error.
+    for view in [
+        "table_constraints",
+        "key_column_usage",
+        "referential_constraints",
+    ] {
+        let row = client
+            .query_one(
+                &format!("SELECT count(*) AS n FROM information_schema.{view}"),
+                &[],
+            )
+            .await
+            .unwrap_or_else(|e| panic!("information_schema.{view} must be queryable: {e}"));
+        let n: i64 = row.get("n");
+        assert_eq!(n, 0, "information_schema.{view} must be empty, got {n} rows");
+    }
+
     // (d2) Npgsql type-load query — the verbatim SQL Npgsql 4.x sends on
     // `Open()` to populate its type map. The `datafusion-pg-catalog` emulation
     // links `pg_type.typnamespace`/`typreceive` to `pg_namespace`/`pg_proc` in a
