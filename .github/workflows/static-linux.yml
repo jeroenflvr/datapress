@@ -70,7 +70,7 @@ jobs:
           # Full server binary: both backends bundled + all optional features.
           cargo zigbuild --release --target ${{ matrix.target }} \
             -p datapress --bin datapress \
-            --features docs,swagger,auth,metrics,explorer
+            --features docs,swagger,auth,metrics,explorer,pgwire
           # CLI client: pure Rust (reqwest + rustls, no OpenSSL), so musl is
           # trivial here.
           cargo zigbuild --release --target ${{ matrix.target }} \
