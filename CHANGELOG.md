@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.5.3] - 2026-07-03
+
+### Bug Fixes
+
+- Add no-op on DISCARD/DEALLOCATE/RESET/UNLISTEN from PowerBI in pgwire ([3f1751c](https://github.com/jeroenflvr/datapress/commit/3f1751c753b981cca090a2b999959a30fc1795af))
+
 ## [0.5.2] - 2026-07-03
 
 ### Bug Fixes
