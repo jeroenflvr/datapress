@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.5.4] - 2026-07-03
+
+### Bug Fixes
+
+- Oid handling bug ([1286d6c](https://github.com/jeroenflvr/datapress/commit/1286d6cfe115964570f5dbf74b5cf4f589413b9e))
+
+### Documentation
+
+- Update with downstream comment ([1fa602f](https://github.com/jeroenflvr/datapress/commit/1fa602fe26f5ff8cb34b197b7ad6472a94521006))
+
 ## [0.5.3] - 2026-07-03
 
 ### Bug Fixes
