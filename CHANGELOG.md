@@ -3,6 +3,23 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.5.1] - 2026-07-03
+
+### Bug Fixes
+
+- Allow SELECT current_schema() with datafusion ([85e409b](https://github.com/jeroenflvr/datapress/commit/85e409bfdad5b33f041e79c716456f8ce758b6d8))
+- *(ci)* Docs ([f844db2](https://github.com/jeroenflvr/datapress/commit/f844db251f162da8db6fb9152a320baadedb6d72))
+- *(doc)* Mermaid syntax error ([2f2a41f](https://github.com/jeroenflvr/datapress/commit/2f2a41f499a02d9d1e4805ac0491e6eb383dd3ad))
+
+### Documentation
+
+- Update roadmap ([ff7caa1](https://github.com/jeroenflvr/datapress/commit/ff7caa1573743315880112109ff062ee4f3f47cb))
+- Update for jdbc client driver ([22bde10](https://github.com/jeroenflvr/datapress/commit/22bde10663d0ea7fde550b7357cc4f7520e1add9))
+
+### Features
+
+- Pgwire for datafusion backend (using datafusion-postgres) ([fc27df0](https://github.com/jeroenflvr/datapress/commit/fc27df066f99ca94612672c74937cfb273a6f7d6))
+
 ## [0.5.0] - 2026-07-02
 
 ### Bug Fixes
