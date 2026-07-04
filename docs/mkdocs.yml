@@ -136,6 +136,10 @@ nav:
       - Datasets: configuration/datasets.md
       - S3 / object storage: configuration/s3.md
       - Indexing: configuration/indexing.md
+      - Explorer UI: configuration/explorer.md
+      - Swagger UI: configuration/swagger.md
+      - Prometheus metrics: configuration/metrics.md
+      - Authentication: configuration/auth.md
       - Documentation site: configuration/docs-site.md
   - Querying:
       - query/index.md

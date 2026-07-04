@@ -32,7 +32,39 @@ username = "datapress"
 # password  = "change-me"           # required for any non-loopback bind
 # tls_cert  = "/etc/datapress/pg.crt"   # PEM cert; set together with tls_key
 # tls_key   = "/etc/datapress/pg.key"   # PKCS#8 key; set together with tls_cert
+
+[swagger]
+enabled = true     # default; set false to suppress the UI
+path    = "/docs"  # mount point for the UI and openapi.json
+
+[explorer]
+enabled = true        # default; set false to hide the UI at runtime
+path    = "/explore"  # mount point
+
+[metrics]
+enabled = true       # off by default
+path    = "/metrics" # scrape path
+
+[docs]
+enabled = true           # default: false
+path    = "/mkdocs"      # default: /mkdocs
+
+[auth]
+enabled              = true
+issuer               = "https://login.microsoftonline.com/<tenant-id>/v2.0"
+audience             = "api://datapress"
+algorithms           = ["RS256"]            # RS/ES/PS variants only
+leeway_secs          = 60
+jwks_refresh_secs    = 3600
+read_scopes          = ["datasets:read"]
+reload_scopes        = ["datasets:reload"]
+anonymous_read       = false                # true = keep GETs public
+tenant_claim         = "/tid"               # JSON-pointer into JWT claims
+allowed_tenants      = ["<tenant-id>"]      # empty = allow any tenant
+admin_token_fallback = true                 # keep X-Admin-Token working
+start_degraded       = true                 # warn-and-continue if IdP unreachable at boot
 ```
+
 
 ## Reference
 

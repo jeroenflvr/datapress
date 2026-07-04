@@ -33,22 +33,36 @@ name = "..."
 - [S3 / object storage](s3.md) — credentials, endpoints, addressing
   styles, per-dataset env overrides.
 - [Indexing](indexing.md) — DataFusion equality-index policy.
+- [Explorer UI](explorer.md) — the built-in dataset browser, API query
+  tab, and DuckDB-WASM terminal (`[explorer]`).
+- [Swagger UI](swagger.md) — embedded interactive API docs and optional
+  OIDC "Authorize" button (`[swagger]` / `[swagger.oauth2]`).
+- [Prometheus metrics](metrics.md) — the `/metrics` scrape endpoint
+  (`[metrics]`).
 - [Documentation site](docs-site.md) — enabling the embedded MkDocs site.
-- [Authentication](../operations/auth.md) — OIDC / OAuth2 bearer
-  validation and scope-based authorization (`[auth]`).
+- [Authentication](auth.md) — OIDC / OAuth2 bearer validation and
+  scope-based authorization (`[auth]`).
 
 ## Optional feature blocks
 
 A few features are opt-in and configured in their own block:
 
+- `[explorer]` — the [dataset explorer UI](explorer.md). Enabled by
+  default when the `explorer` feature is compiled in. Set `enabled = false`
+  to suppress it at runtime.
+- `[swagger]` — the [embedded Swagger UI](swagger.md) and OpenAPI spec.
+  Enabled by default when the `swagger` feature is compiled in.
+- `[swagger.oauth2]` — drives the Swagger UI's "Authorize" button through
+  an OIDC Authorization Code + PKCE flow. See
+  [Swagger UI](swagger.md#oidc-single-sign-on-optional) and
+  [Authentication › Swagger UI SSO](../operations/auth.md#swagger-ui-sso).
+- `[metrics]` — the [Prometheus metrics endpoint](metrics.md)
+  (`/metrics`). Disabled by default; requires the `metrics` feature.
 - `[sql]` — the [raw SQL endpoint](../query/sql.md) (`POST /api/v1/sql`).
   Disabled by default; set `enabled = true` to expose it.
-- `[auth]` — [OIDC / OAuth2 authentication](../operations/auth.md) with
-  scope-based authorization. Disabled by default; requires a binary built
-  with the `auth` feature. Set `enabled = true` to enforce bearer tokens.
-- `[swagger.oauth2]` — drives the embedded Swagger UI's "Authorize"
-  button through an OIDC Authorization Code + PKCE flow. See
-  [Authentication › Swagger UI SSO](../operations/auth.md#swagger-ui-sso).
+- `[auth]` — [OIDC / OAuth2 authentication](auth.md) with scope-based
+  authorization. Disabled by default; requires the `auth` feature. Set
+  `enabled = true` to enforce bearer tokens.
 
 ## Examples
 

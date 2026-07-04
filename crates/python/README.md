@@ -102,7 +102,7 @@ Seven public classes, no module-level state:
 
 | Class             | Purpose                                                              |
 |-------------------|----------------------------------------------------------------------|
-| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `max_page_size`, `force_lazy_above_mb`, `request_timeout_ms`, `shutdown_timeout_secs`, `metrics_enabled`, `metrics_path`, `sql_enabled`, `sql_max_rows`, `admin_token`, `datafusion_pushdown_filters`, `datafusion_reorder_filters`, `datafusion_list_files_cache`, `datafusion_list_files_cache_mb`, `datafusion_list_files_cache_ttl_secs`. |
+| `DataPressConfig` | Server tuning: `backend`, `listen`, `port`, `workers`, `prefix`, `compress`, `max_body_bytes`, `max_page_size`, `force_lazy_above_mb`, `request_timeout_ms`, `shutdown_timeout_secs`, `metrics_enabled`, `metrics_path`, `sql_enabled`, `sql_max_rows`, `admin_token`, `datafusion_pushdown_filters`, `datafusion_reorder_filters`, `datafusion_list_files_cache`, `datafusion_list_files_cache_mb`, `datafusion_list_files_cache_ttl_secs`, `pgwire_enabled`, `pgwire_listen`, `pgwire_port`, `pgwire_username`, `pgwire_password`, `pgwire_tls_cert`, `pgwire_tls_key`. |
 | `DatasetConfig`   | One dataset: `name`, `source`, `format`, `mode`, optional S3 + index.|
 | `S3Config`        | S3 / S3-compatible credentials and endpoint config.                  |
 | `HMACKeyPair`     | Access/secret key pair returned by an `S3Config` credentials provider. |
@@ -635,6 +635,77 @@ The repo ships a one-command Keycloak stack at
 with a pre-provisioned realm, service-account client, scopes and a test
 user. `docker compose up -d` and point `issuer` at
 `http://localhost:8080/realms/datapress`.
+
+---
+
+## PostgreSQL wire protocol (pgwire)
+
+When the `datap-rs` wheel is built with the `pgwire` feature (the default for
+published PyPI wheels), the `datafusion` backend can expose a native
+**PostgreSQL wire-protocol** endpoint alongside the HTTP API. Any PostgreSQL
+client — `psql`, JDBC/ODBC drivers, BI tools like Power BI and Tableau — can
+then query your datasets directly without knowing anything about the
+DataPress HTTP API.
+
+```python
+cfg = DataPressConfig(
+    backend="datafusion",
+    pgwire_enabled=True,
+    pgwire_listen="127.0.0.1",   # loopback-only unless password + TLS set
+    pgwire_port=5432,
+    pgwire_username="datapress",
+    # pgwire_password="change-me",   # required for non-loopback binds
+    # pgwire_tls_cert="/etc/datapress/pg.crt",
+    # pgwire_tls_key="/etc/datapress/pg.key",
+)
+```
+
+Security rules enforced at startup (the server refuses to start otherwise):
+
+- A **loopback** bind (`127.0.0.1` / `::1`) may omit the password.
+- Any **non-loopback** bind (e.g. `0.0.0.0`) **requires** both a `password`
+  and TLS — credentials must never cross the network in the clear.
+- `tls_cert` and `tls_key` must be set together (both or neither).
+
+### JDBC and ODBC driver compatibility
+
+Two independent JDBC paths are available:
+
+**Dedicated JDBC driver (`datapress-jdbc`)** — a pure-Java Type-4 driver that
+talks directly to the DataPress **HTTP API** (Arrow IPC), without going through
+pgwire. It is the recommended choice for JVM applications and SQL tools like
+DBeaver and DataGrip. Requires `sql_enabled=True` on the server. Available on
+Maven Central:
+
+```xml
+<dependency>
+  <groupId>org.datap-rs</groupId>
+  <artifactId>datapress-jdbc</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+
+See [central.sonatype.com/artifact/org.datap-rs/datapress-jdbc](https://central.sonatype.com/artifact/org.datap-rs/datapress-jdbc)
+for the latest version and Gradle coordinates.
+
+**PostgreSQL wire protocol (JDBC/ODBC)** — any standard PostgreSQL JDBC driver
+(`org.postgresql:postgresql`) or ODBC driver ([psqlODBC](https://odbc.postgresql.org/))
+also works once pgwire is enabled. Use a standard PostgreSQL connection string:
+
+```
+jdbc:postgresql://127.0.0.1:5432/datapress?user=datapress&password=change-me&sslmode=disable
+```
+
+Power BI Desktop connects via its built-in "PostgreSQL database" connector,
+which uses the ODBC driver under the hood on Windows.
+
+> **Note:** The pgwire endpoint is **experimental**. It emulates
+> `pg_catalog` and `information_schema` to satisfy client introspection
+> queries (schema browsing, type loading), but some advanced driver features —
+> server-side cursors, `COPY`, write statements — are not supported. Standard
+> `SELECT` / `WITH … SELECT` queries work across all tested clients. See the
+> full [pgwire client guide](https://docs.datap-rs.org/clients/postgresql/)
+> for per-client setup, TLS, and known limitations.
 
 ---
 
