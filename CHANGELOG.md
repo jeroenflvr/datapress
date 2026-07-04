@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.5.6] - 2026-07-04
+
+### Bug Fixes
+
+- View columns loop ([2f6e587](https://github.com/jeroenflvr/datapress/commit/2f6e58754c80eb6c723438760720c66f8144c0a5))
+
+### Documentation
+
+- Update mkdocs ([8a586ee](https://github.com/jeroenflvr/datapress/commit/8a586eeab16266394ed2b87784c8b85dc5830862))
+- Update roadmap for PowerBI DirectQuery ([09c4259](https://github.com/jeroenflvr/datapress/commit/09c4259060bd9828453d0e1c03927a5959e02cd5))
+
 ## [0.5.5] - 2026-07-03
 
 ### Bug Fixes
