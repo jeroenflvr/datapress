@@ -439,7 +439,19 @@ pub async fn serve_pgwire(ctx: SessionContext, cfg: PgwireConfig) -> std::io::Re
         .catalog
         .default_catalog
         .clone();
-    setup_pg_catalog(&ctx, &default_catalog, auth_manager.clone())
+    // Pass the `AuthManager` *value* (not the `Arc`) as the catalog's role
+    // provider. `datafusion-pg-catalog` 0.17.2 ships a broken blanket
+    // `impl<T> PgCatalogContextProvider for Arc<T>` whose `roles()`/`role()`
+    // call `self.roles().await`, which re-dispatches to the `Arc<T>` impl
+    // itself instead of the inner `T` — unbounded self-recursion that
+    // overflows the stack and aborts the whole process the moment any client
+    // reads `pg_catalog.pg_roles` (e.g. DBeaver's "view columns"). `AuthManager`
+    // is `Clone` over `Arc<RwLock<…>>` fields, so a cloned value shares the same
+    // user/role state we register below while selecting the direct, non-recursive
+    // `impl PgCatalogContextProvider for AuthManager`. `DfAuthSource::new` still
+    // needs the `Arc`, so we keep that separately. (Upstream fix: the blanket
+    // impl must delegate to `(**self)`; filed upstream.)
+    setup_pg_catalog(&ctx, &default_catalog, (*auth_manager).clone())
         .map_err(|e| std::io::Error::other(*e))?;
 
     match &cfg.password {

@@ -503,3 +503,125 @@ async fn pgwire_dedicated_runtime_serves_and_stops() {
     drop(server);
     drop(store);
 }
+
+// ---------------------------------------------------------------------------
+// Test 4: pathological catalog query must not abort the process
+// ---------------------------------------------------------------------------
+
+/// Regression + crash-containment for the DBeaver "view columns" stack overflow.
+///
+/// DBeaver reads `pg_catalog.pg_roles` (via `SELECT a.oid, a.*, pd.description
+/// FROM pg_catalog.pg_roles a LEFT JOIN pg_catalog.pg_shdescription pd …`) when
+/// listing a table's columns. `datafusion-pg-catalog` 0.17.2 shipped a broken
+/// blanket `impl<T> PgCatalogContextProvider for Arc<T>` whose `roles()` calls
+/// `self.roles()` — re-dispatching to the `Arc<T>` impl itself, i.e. unbounded
+/// self-recursion. Because we previously handed `setup_pg_catalog` an
+/// `Arc<AuthManager>`, any read of `pg_roles` recursed until the stack
+/// overflowed and **aborted the whole process** (HTTP API included). The fix
+/// passes the `AuthManager` value so the direct, non-recursive impl is used.
+///
+/// A stack overflow is not `catch_unwind`-able (it aborts), so the only real
+/// containment is removing the infinite recursion. This test therefore asserts
+/// the *process survives*: the minimal crashing query returns, the exact
+/// DBeaver query returns the emulated role listing, a deeply nested
+/// (finite-but-pathological) query returns a clean error instead of crashing,
+/// the same connection stays usable afterwards, and a second independent
+/// connection is unaffected. Runs on the production `spawn_pgwire` path.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pgwire_pathological_pg_roles_query_survives() {
+    let dir = TempDir::new().unwrap();
+    let parquet = dir.path().join("people.parquet");
+    write_people_parquet(&parquet);
+    let store = make_people_store(parquet.to_str().unwrap()).await;
+
+    let port = free_port();
+    let cfg = PgwireConfig {
+        enabled: true,
+        listen: loopback(),
+        port,
+        username: USER.into(),
+        password: None,
+        tls_cert: None,
+        tls_key: None,
+    };
+    let ctx = store.session_context().clone();
+    let server = spawn_pgwire(ctx, cfg).expect("spawn pgwire runtime");
+
+    let conn = format!("host=127.0.0.1 port={port} user={USER} dbname=datapress");
+    let connect = || async {
+        let mut attempt = None;
+        for _ in 0..50 {
+            match tokio_postgres::connect(&conn, tokio_postgres::NoTls).await {
+                Ok((client, connection)) => {
+                    tokio::spawn(async move {
+                        let _ = connection.await;
+                    });
+                    attempt = Some(client);
+                    break;
+                }
+                Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
+            }
+        }
+        attempt.expect("pgwire server did not become reachable")
+    };
+    let client = connect().await;
+
+    // (a) Minimal crashing form from the bisect: `SELECT * FROM pg_roles`
+    // alone used to overflow the stack. It must now return without aborting.
+    let rows = client
+        .query("SELECT * FROM pg_catalog.pg_roles", &[])
+        .await
+        .expect("SELECT * FROM pg_catalog.pg_roles must not crash the server");
+    assert!(
+        !rows.is_empty(),
+        "pg_roles should list the seeded default role"
+    );
+
+    // (b) The verbatim DBeaver "view columns" query — correct results: the
+    // emulated `pg_roles` lists the default `postgres` role.
+    const DBEAVER_VIEW_COLUMNS: &str = "SELECT a.oid, a.*, pd.description \
+FROM pg_catalog.pg_roles a \
+LEFT JOIN pg_catalog.pg_shdescription pd ON a.oid = pd.objoid \
+ORDER BY a.rolname";
+    let rows = client
+        .query(DBEAVER_VIEW_COLUMNS, &[])
+        .await
+        .expect("DBeaver view-columns query must succeed");
+    let rolnames: Vec<String> = rows.iter().map(|r| r.get::<_, String>("rolname")).collect();
+    assert!(
+        rolnames.iter().any(|n| n == "postgres"),
+        "pg_roles listing must include the default 'postgres' role, got {rolnames:?}"
+    );
+
+    // (c) Defense-in-depth: a deeply nested (finite) expression exceeds the
+    // parser's recursion limit and must come back as a clean ERROR to this one
+    // statement — never a stack overflow that takes the process down.
+    let deep = format!("SELECT {}1{}", "(".repeat(256), ")".repeat(256));
+    let err = client.query(&deep, &[]).await;
+    assert!(
+        err.is_err(),
+        "a pathologically nested query should error, not crash"
+    );
+
+    // (d) The connection is still usable after the error — the failure was
+    // scoped to that one statement.
+    let row = client
+        .query_one("SELECT count(*) AS c FROM people", &[])
+        .await
+        .expect("connection must stay usable after a failed statement");
+    assert_eq!(row.get::<_, i64>("c"), 3);
+
+    // (e) A second, independent connection is unaffected — proving the earlier
+    // pathological queries never poisoned the shared server/runtime.
+    let client2 = connect().await;
+    let rows = client2
+        .query("SELECT * FROM pg_catalog.pg_roles", &[])
+        .await
+        .expect("second connection must serve pg_roles too");
+    assert!(!rows.is_empty());
+
+    drop(client);
+    drop(client2);
+    drop(server);
+    drop(store);
+}
