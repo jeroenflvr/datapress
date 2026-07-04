@@ -255,6 +255,24 @@ impl Registry {
 pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
     let conn = Connection::open_in_memory()?;
 
+    // The `duckdb` crate is built with the `parquet` and `json` features, which
+    // statically compile those extensions into the binary — there is nothing to
+    // fetch or dlopen for them (essential: the fully-static musl release binary
+    // cannot load dynamic `.duckdb_extension` files at all).  We still LOAD them
+    // explicitly so they are registered in the catalog regardless of autoload
+    // settings.
+    //
+    // We also disable network autoinstall: when the binary is built with
+    // DUCKDB_CUSTOM_PLATFORM (e.g. `linux_arm64_gcc4` — our manylinux GCC-4
+    // ABI-guard bypass), DuckDB constructs extension download URLs using that
+    // custom platform string, which 404 on extensions.duckdb.org.  Explicitly
+    // requested network extensions (httpfs, delta) are INSTALL/LOAD'd below.
+    conn.execute_batch(
+        "SET autoinstall_known_extensions=false;
+         LOAD parquet;
+         LOAD json;",
+    )?;
+
     // Install the extensions we'll need across the dataset list. Each
     // INSTALL is a no-op when the extension is already cached on disk;
     // the first run downloads from the DuckDB extension repo.

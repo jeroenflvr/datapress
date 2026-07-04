@@ -48,7 +48,11 @@ clap       = { version = "4.5", features = ["derive"] }
 arrow      = "58"
 parquet    = { version = "58", features = ["arrow"] }
 datafusion = "53"
-duckdb     = { version = "1.10503.0", features = ["bundled"] }
+# `parquet`/`json` statically compile those DuckDB extensions into the binary
+# (they build on the `cc` amalgamation, no cmake). This is required for the
+# fully-static musl release binary, which cannot dlopen loadable
+# `.duckdb_extension` files at runtime.
+duckdb     = { version = "1.10503.0", features = ["bundled", "parquet", "json"] }
 rayon      = "1.12.0"
 itoa       = "1.0.18"
 ryu        = "1.0.23"

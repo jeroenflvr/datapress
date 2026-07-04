@@ -1,0 +1,41 @@
+# syntax=docker/dockerfile:1
+#
+# Local-build variant of the datapress Docker image.
+#
+# Unlike the release Dockerfile (which downloads a prebuilt binary from
+# GitHub), this variant copies a locally-compiled static musl binary
+# directly into the image.  Used by `task docker:build`.
+#
+# Build via:
+#   task docker:build                  # auto-detects host arch
+#   task docker:build VERSION=0.5.6   # custom tag
+#
+# Or manually (binary must already exist):
+#   cargo zigbuild --release --target aarch64-unknown-linux-musl \
+#     -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer,pgwire
+#   docker buildx build \
+#     --build-arg LOCAL_BINARY=target/aarch64-unknown-linux-musl/release/datapress \
+#     -f packaging/docker/Dockerfile.local -t datapress:local --load .
+
+# ---- runtime stage: minimal distroless ----------------------------------
+# Same base as the release Dockerfile; the musl binary is fully static so
+# it only needs CA certs (for HTTPS dataset sources).
+FROM gcr.io/distroless/cc-debian13:nonroot
+
+# ARG must be re-declared after FROM to be visible inside this build stage.
+ARG LOCAL_BINARY=target/aarch64-unknown-linux-musl/release/datapress
+
+LABEL org.opencontainers.image.title="datapress" \
+      org.opencontainers.image.description="Configuration-driven HTTP query server over Parquet and Delta (DuckDB / DataFusion backends)." \
+      org.opencontainers.image.url="https://datap-rs.org" \
+      org.opencontainers.image.documentation="https://docs.datap-rs.org" \
+      org.opencontainers.image.source="https://github.com/jeroenflvr/datapress" \
+      org.opencontainers.image.licenses="MIT"
+
+COPY ${LOCAL_BINARY} /usr/local/bin/datapress
+
+ENV DATAPRESS_CONFIG_FILE=/etc/datapress/datasets.toml
+
+EXPOSE 8080
+
+ENTRYPOINT ["/usr/local/bin/datapress"]

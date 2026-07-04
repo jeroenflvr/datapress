@@ -17,6 +17,8 @@ version: '3'
 #   task build:client-py     # build the datap-rs-client Python wheel
 #   task build:clients       # build all three clients (release)
 #   task publish:clients     # publish all clients to crates.io + PyPI
+#   task docker:build        # build a local Docker image for the current arch
+#   task docker:push         # push versioned tag + update :latest on Docker Hub
 # ---------------------------------------------------------------------------
 
 vars:
@@ -84,6 +86,65 @@ tasks:
         vars: { TARGET: x86_64-unknown-linux-musl }
       - task: build:static:linux
         vars: { TARGET: aarch64-unknown-linux-musl }
+
+  # ---------------------------------------------------------------------
+  # Docker — local single-platform build for the current machine.
+  #
+  # Builds the static musl binary for the host arch first, then packages
+  # it into the Docker image without downloading a release from GitHub.
+  # Override the version tag with: task docker:build VERSION=0.5.6
+  #
+  # Prerequisites: Docker (buildx), cargo-zigbuild, zig.
+  # ---------------------------------------------------------------------
+  docker:build:
+    desc: "Build a Docker image for the current platform using a local musl binary (VERSION=dev)"
+    vars:
+      VERSION: '{{.VERSION | default "dev"}}'
+      DOCKERHUB_USERNAME: '{{.DOCKERHUB_USERNAME | default "datap-rs"}}'
+      TARGET:
+        sh: case "$(uname -m)" in arm64|aarch64) echo aarch64-unknown-linux-musl ;; *) echo x86_64-unknown-linux-musl ;; esac
+      DUCKDB_PLATFORM:
+        sh: case "$(uname -m)" in arm64|aarch64) echo linux_arm64_gcc4 ;; *) echo linux_amd64_gcc4 ;; esac
+    deps: [docs:build]
+    cmds:
+      - 'echo "Building static musl binary for {{.TARGET}} (DUCKDB_CUSTOM_PLATFORM={{.DUCKDB_PLATFORM}})"'
+      - rustup target add {{.TARGET}}
+      - CXXFLAGS="-DDUCKDB_CUSTOM_PLATFORM={{.DUCKDB_PLATFORM}}" cargo zigbuild --release --target {{.TARGET}} -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer,pgwire
+      - 'echo "Packaging Docker image {{.DOCKERHUB_USERNAME}}/datapress:{{.VERSION}}"'
+      - |
+        docker buildx build \
+          --build-arg VERSION={{.VERSION}} \
+          --build-arg LOCAL_BINARY=target/{{.TARGET}}/release/datapress \
+          --load \
+          --file packaging/docker/Dockerfile.local \
+          --tag {{.DOCKERHUB_USERNAME}}/datapress:{{.VERSION}} \
+          --tag {{.DOCKERHUB_USERNAME}}/datapress:local \
+          .
+      - 'echo "Image ready: {{.DOCKERHUB_USERNAME}}/datapress:{{.VERSION}}"'
+      - 'echo "Run with:  docker run --rm -p 8080:8080 -v \$$PWD/packaging/docker/datasets.example.toml:/etc/datapress/datasets.toml {{.DOCKERHUB_USERNAME}}/datapress:{{.VERSION}}"'
+
+  docker:push:
+    desc: "Push a versioned image to Docker Hub and update :latest (requires VERSION=x.y.z, no pre-release suffix)"
+    vars:
+      VERSION: '{{.VERSION | default ""}}'
+      DOCKERHUB_USERNAME: '{{.DOCKERHUB_USERNAME | default "datap-rs"}}'
+    cmds:
+      - |
+        if [ -z "{{.VERSION}}" ]; then
+          echo "error: VERSION is required (e.g. task docker:push VERSION=0.5.6)" >&2
+          exit 1
+        fi
+      # Push the versioned tag
+      - docker push {{.DOCKERHUB_USERNAME}}/datapress:{{.VERSION}}
+      # Re-tag as latest and push — only for non-prerelease versions (no hyphen)
+      - |
+        if echo "{{.VERSION}}" | grep -qv '-'; then
+          docker tag {{.DOCKERHUB_USERNAME}}/datapress:{{.VERSION}} {{.DOCKERHUB_USERNAME}}/datapress:latest
+          docker push {{.DOCKERHUB_USERNAME}}/datapress:latest
+          echo "Updated :latest → {{.VERSION}}"
+        else
+          echo "Pre-release version ({{.VERSION}} contains '-'); skipping :latest update."
+        fi
 
   # ---------------------------------------------------------------------
   # Clients (HTTP client crate, CLI client, Python bindings) — release only
