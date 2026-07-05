@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.6.0] - 2026-07-05
+
+### Bug Fixes
+
+- Alias utf8view for pgwire (powerbi directquery) ([2ac3beb](https://github.com/jeroenflvr/datapress/commit/2ac3beb6eb95b447ef4239cb092267dabb72095a))
+- When prefix is set, include all endpoints, also health ([08446d0](https://github.com/jeroenflvr/datapress/commit/08446d0b7e6db1666658ee7a0b1d4a4480d1ee99))
+
+### Features
+
+- Add pkce client on the explorer feature ([a62f3d9](https://github.com/jeroenflvr/datapress/commit/a62f3d9246380f86f3173781466ac61b53b9ab1a))
+
 ## [0.5.6] - 2026-07-04
 
 ### Bug Fixes
