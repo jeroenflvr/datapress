@@ -895,12 +895,30 @@ fn register_information_schema_shim(ctx: &SessionContext) {
 }
 
 /// An `information_schema` provider that delegates to DataFusion's built-in
-/// [`InformationSchemaProvider`] and adds empty PostgreSQL constraint views.
+/// [`InformationSchemaProvider`] for most views, adds empty PostgreSQL
+/// constraint views, and OVERRIDES `columns` so that `data_type` reports
+/// PostgreSQL type names (plus a `udt_name` column) instead of Arrow type
+/// names.
+///
+/// Why override `columns`? The built-in view fills `data_type` with Arrow's
+/// `DataType::to_string()` (`"Utf8View"`, `"Int64"`,
+/// `"Timestamp(Nanosecond, None)"`, …) and has no `udt_name`. PostgreSQL
+/// clients — Power BI DirectQuery in particular — read column metadata from
+/// `information_schema.columns` and treat the value as a PostgreSQL type name.
+/// `"Boolean"` happens to be valid Postgres, but `"Utf8View"` is not, so a
+/// string column silently fails to "fold" (Power BI abandons query pushdown
+/// and never sends SQL) while a boolean column works. Translating the Arrow
+/// type to its PostgreSQL name — aligned with `arrow-pg`'s `into_pg_type`, the
+/// same mapping that drives `RowDescription` OIDs and `pg_attribute.atttypid`
+/// — makes all three metadata surfaces agree.
 #[derive(Debug)]
 struct InformationSchemaWithConstraints {
-    /// The built-in provider; serves the seven standard virtual views on
-    /// demand from the session's catalog list.
+    /// The built-in provider; serves the standard virtual views on demand from
+    /// the session's catalog list.
     inner: InformationSchemaProvider,
+    /// Catalog list used to walk registered table schemas when building the
+    /// PostgreSQL-typed `columns` view (the same source the built-in uses).
+    catalog_list: Arc<dyn CatalogProviderList>,
     /// Empty, correctly-shaped constraint relations keyed by lowercase name.
     constraints: HashMap<&'static str, Arc<dyn TableProvider>>,
 }
@@ -915,9 +933,91 @@ impl InformationSchemaWithConstraints {
             empty_table(referential_constraints_schema()),
         );
         Self {
-            inner: InformationSchemaProvider::new(catalog_list),
+            inner: InformationSchemaProvider::new(Arc::clone(&catalog_list)),
+            catalog_list,
             constraints,
         }
+    }
+
+    /// Build the PostgreSQL-typed `information_schema.columns` relation as a
+    /// point-in-time [`MemTable`] by walking every registered schema/table
+    /// (except `information_schema` itself, mirroring the built-in). Built
+    /// fresh on each lookup so runtime-registered datasets appear without a
+    /// restart, exactly like the built-in view.
+    async fn build_pg_columns(&self) -> DfResult<Arc<dyn TableProvider>> {
+        let mut catalog_names_col: Vec<String> = Vec::new();
+        let mut schema_names_col: Vec<String> = Vec::new();
+        let mut table_names_col: Vec<String> = Vec::new();
+        let mut column_names_col: Vec<String> = Vec::new();
+        let mut ordinal_col: Vec<u64> = Vec::new();
+        let mut is_nullable_col: Vec<String> = Vec::new();
+        let mut data_type_col: Vec<String> = Vec::new();
+        let mut numeric_precision_col: Vec<Option<u64>> = Vec::new();
+        let mut numeric_scale_col: Vec<Option<u64>> = Vec::new();
+        let mut udt_name_col: Vec<String> = Vec::new();
+
+        for catalog_name in self.catalog_list.catalog_names() {
+            let Some(catalog) = self.catalog_list.catalog(&catalog_name) else {
+                continue;
+            };
+            for schema_name in catalog.schema_names() {
+                // Skip our own schema — the built-in `make_columns` also skips
+                // `information_schema`, and walking it would recurse into this
+                // very provider.
+                if schema_name == "information_schema" {
+                    continue;
+                }
+                let Some(schema) = catalog.schema(&schema_name) else {
+                    continue;
+                };
+                for table_name in schema.table_names() {
+                    let Some(table) = schema.table(&table_name).await? else {
+                        continue;
+                    };
+                    for (pos, field) in table.schema().fields().iter().enumerate() {
+                        let pg = arrow_to_pg_column_type(field.data_type());
+                        catalog_names_col.push(catalog_name.clone());
+                        schema_names_col.push(schema_name.clone());
+                        table_names_col.push(table_name.clone());
+                        column_names_col.push(field.name().clone());
+                        ordinal_col.push(pos as u64 + 1);
+                        is_nullable_col
+                            .push(if field.is_nullable() { "YES" } else { "NO" }.to_string());
+                        data_type_col.push(pg.data_type.to_string());
+                        numeric_precision_col.push(pg.numeric_precision);
+                        numeric_scale_col.push(pg.numeric_scale);
+                        udt_name_col.push(pg.udt_name);
+                    }
+                }
+            }
+        }
+
+        let n = catalog_names_col.len();
+        let none_u64 = || -> Vec<Option<u64>> { vec![None; n] };
+        let none_utf8 = || -> Vec<Option<String>> { vec![None; n] };
+        let schema = pg_columns_schema();
+        let batch = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(StringArray::from(catalog_names_col)),
+                Arc::new(StringArray::from(schema_names_col)),
+                Arc::new(StringArray::from(table_names_col)),
+                Arc::new(StringArray::from(column_names_col)),
+                Arc::new(UInt64Array::from(ordinal_col)),
+                Arc::new(StringArray::from(none_utf8())), // column_default
+                Arc::new(StringArray::from(is_nullable_col)),
+                Arc::new(StringArray::from(data_type_col)),
+                Arc::new(UInt64Array::from(none_u64())), // character_maximum_length
+                Arc::new(UInt64Array::from(none_u64())), // character_octet_length
+                Arc::new(UInt64Array::from(numeric_precision_col)),
+                Arc::new(UInt64Array::from(none_u64())), // numeric_precision_radix
+                Arc::new(UInt64Array::from(numeric_scale_col)),
+                Arc::new(UInt64Array::from(none_u64())), // datetime_precision
+                Arc::new(StringArray::from(none_utf8())), // interval_type
+                Arc::new(StringArray::from(udt_name_col)),
+            ],
+        )?;
+        Ok(Arc::new(MemTable::try_new(schema, vec![vec![batch]])?))
     }
 }
 
@@ -934,7 +1034,12 @@ impl SchemaProvider for InformationSchemaWithConstraints {
     }
 
     async fn table(&self, name: &str) -> DfResult<Option<Arc<dyn TableProvider>>> {
-        if let Some(table) = self.constraints.get(name.to_ascii_lowercase().as_str()) {
+        let lower = name.to_ascii_lowercase();
+        // Override `columns` with the PostgreSQL-typed variant.
+        if lower == "columns" {
+            return Ok(Some(self.build_pg_columns().await?));
+        }
+        if let Some(table) = self.constraints.get(lower.as_str()) {
             return Ok(Some(Arc::clone(table)));
         }
         self.inner.table(name).await
@@ -945,6 +1050,110 @@ impl SchemaProvider for InformationSchemaWithConstraints {
             .contains_key(name.to_ascii_lowercase().as_str())
             || self.inner.table_exist(name)
     }
+}
+
+/// PostgreSQL type metadata for one Arrow column: the `data_type` and
+/// `udt_name` reported by `information_schema.columns`, plus numeric
+/// precision/scale for decimals.
+struct PgColumnType {
+    data_type: &'static str,
+    udt_name: String,
+    numeric_precision: Option<u64>,
+    numeric_scale: Option<u64>,
+}
+
+impl PgColumnType {
+    fn simple(data_type: &'static str, udt_name: &str) -> Self {
+        Self {
+            data_type,
+            udt_name: udt_name.to_string(),
+            numeric_precision: None,
+            numeric_scale: None,
+        }
+    }
+}
+
+/// Translate an Arrow [`DataType`] to its PostgreSQL `information_schema`
+/// `data_type` name and `udt_name`, aligned with `arrow-pg`'s `into_pg_type`
+/// so that `RowDescription` OIDs, `pg_attribute.atttypid`, and
+/// `information_schema.columns` all agree. Unmapped types fall back to `text`
+/// with a debug log.
+fn arrow_to_pg_column_type(dt: &DataType) -> PgColumnType {
+    use DataType::*;
+    match dt {
+        Utf8 | LargeUtf8 | Utf8View => PgColumnType::simple("text", "text"),
+        Boolean => PgColumnType::simple("boolean", "bool"),
+        Int8 | Int16 | UInt8 => PgColumnType::simple("smallint", "int2"),
+        Int32 | UInt16 => PgColumnType::simple("integer", "int4"),
+        Int64 | UInt32 => PgColumnType::simple("bigint", "int8"),
+        // arrow-pg maps UInt64 to NUMERIC (no unsigned 64-bit pg integer).
+        UInt64 => PgColumnType::simple("numeric", "numeric"),
+        Float16 | Float32 => PgColumnType::simple("real", "float4"),
+        Float64 => PgColumnType::simple("double precision", "float8"),
+        Decimal128(p, s) | Decimal256(p, s) => PgColumnType {
+            data_type: "numeric",
+            udt_name: "numeric".to_string(),
+            numeric_precision: Some(*p as u64),
+            numeric_scale: Some(*s as u64),
+        },
+        Date32 | Date64 => PgColumnType::simple("date", "date"),
+        Timestamp(_, None) => {
+            PgColumnType::simple("timestamp without time zone", "timestamp")
+        }
+        Timestamp(_, Some(_)) => {
+            PgColumnType::simple("timestamp with time zone", "timestamptz")
+        }
+        Time32(_) | Time64(_) => PgColumnType::simple("time without time zone", "time"),
+        Binary | LargeBinary | BinaryView | FixedSizeBinary(_) => {
+            PgColumnType::simple("bytea", "bytea")
+        }
+        Interval(_) | Duration(_) => PgColumnType::simple("interval", "interval"),
+        // Dictionary encodes another type; report the value type's pg mapping
+        // (matches `into_pg_type`, which recurses into the value type).
+        Dictionary(_, value) => arrow_to_pg_column_type(value),
+        // Arrays: `data_type` is the SQL-standard literal `ARRAY`; `udt_name`
+        // is the element type's udt prefixed with `_` (PostgreSQL convention,
+        // e.g. `_int4`).
+        List(field) | LargeList(field) | FixedSizeList(field, _) => {
+            let elem = arrow_to_pg_column_type(field.data_type());
+            PgColumnType {
+                data_type: "ARRAY",
+                udt_name: format!("_{}", elem.udt_name),
+                numeric_precision: None,
+                numeric_scale: None,
+            }
+        }
+        other => {
+            log::debug!(
+                "information_schema.columns: no PostgreSQL type mapping for Arrow type {other:?}; \
+                 reporting 'text'"
+            );
+            PgColumnType::simple("text", "text")
+        }
+    }
+}
+
+/// Output schema for the overridden `information_schema.columns` view: the 15
+/// columns DataFusion's built-in view exposes, plus a trailing `udt_name`.
+fn pg_columns_schema() -> Arc<Schema> {
+    Arc::new(Schema::new(vec![
+        Field::new("table_catalog", DataType::Utf8, false),
+        Field::new("table_schema", DataType::Utf8, false),
+        Field::new("table_name", DataType::Utf8, false),
+        Field::new("column_name", DataType::Utf8, false),
+        Field::new("ordinal_position", DataType::UInt64, false),
+        Field::new("column_default", DataType::Utf8, true),
+        Field::new("is_nullable", DataType::Utf8, false),
+        Field::new("data_type", DataType::Utf8, false),
+        Field::new("character_maximum_length", DataType::UInt64, true),
+        Field::new("character_octet_length", DataType::UInt64, true),
+        Field::new("numeric_precision", DataType::UInt64, true),
+        Field::new("numeric_precision_radix", DataType::UInt64, true),
+        Field::new("numeric_scale", DataType::UInt64, true),
+        Field::new("datetime_precision", DataType::UInt64, true),
+        Field::new("interval_type", DataType::Utf8, true),
+        Field::new("udt_name", DataType::Utf8, false),
+    ]))
 }
 
 /// Build a zero-row [`MemTable`] with the given schema.

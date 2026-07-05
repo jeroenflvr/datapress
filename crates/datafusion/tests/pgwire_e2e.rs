@@ -88,6 +88,55 @@ async fn make_people_store(location: &str) -> Store {
     Store::load(&cfg).await.expect("Store::load")
 }
 
+/// Register an in-memory `types_fixture` table on the store's shared context
+/// covering a spread of Arrow types — including a `Utf8View` column (`s`), the
+/// exact type DataFusion infers for Parquet string columns and the one that
+/// used to leak the Arrow name `"Utf8View"` into `information_schema.columns`.
+/// Registering directly on the context (rather than via Parquet) lets us pin
+/// `Utf8View` deterministically without depending on Parquet view inference.
+fn register_types_fixture(store: &Store) {
+    use arrow::array::{
+        BooleanArray, Date32Array, Float32Array, Float64Array, Int16Array, Int32Array,
+        StringViewArray, TimestampMicrosecondArray,
+    };
+    use arrow::datatypes::TimeUnit;
+    use datafusion::datasource::MemTable;
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("s", DataType::Utf8View, true),
+        Field::new("t", DataType::Utf8, true),
+        Field::new("b", DataType::Boolean, true),
+        Field::new("i2", DataType::Int16, true),
+        Field::new("i4", DataType::Int32, true),
+        Field::new("i8", DataType::Int64, true),
+        Field::new("f4", DataType::Float32, true),
+        Field::new("f8", DataType::Float64, true),
+        Field::new("ts", DataType::Timestamp(TimeUnit::Microsecond, None), true),
+        Field::new("d", DataType::Date32, true),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(StringViewArray::from(vec!["CA"])),
+            Arc::new(StringArray::from(vec!["text-val"])),
+            Arc::new(BooleanArray::from(vec![true])),
+            Arc::new(Int16Array::from(vec![7_i16])),
+            Arc::new(Int32Array::from(vec![42_i32])),
+            Arc::new(Int64Array::from(vec![99_i64])),
+            Arc::new(Float32Array::from(vec![1.5_f32])),
+            Arc::new(Float64Array::from(vec![2.5_f64])),
+            Arc::new(TimestampMicrosecondArray::from(vec![1_700_000_000_000_000_i64])),
+            Arc::new(Date32Array::from(vec![19_000_i32])),
+        ],
+    )
+    .unwrap();
+    let table = MemTable::try_new(schema, vec![vec![batch]]).unwrap();
+    store
+        .session_context()
+        .register_table("types_fixture", Arc::new(table))
+        .expect("register types_fixture");
+}
+
 /// Grab an ephemeral loopback port by binding then immediately releasing it.
 /// There's an inherent (tiny) race between release and the pgwire server
 /// re-binding, but it's more than good enough for a local test.
@@ -634,3 +683,209 @@ ORDER BY a.rolname";
     drop(server);
     drop(store);
 }
+
+// ---------------------------------------------------------------------------
+// Test 5: information_schema.columns reports PostgreSQL type names
+// ---------------------------------------------------------------------------
+
+/// Regression for the Power BI DirectQuery "couldn't fold" bug: DataFusion's
+/// built-in `information_schema.columns` fills `data_type` with Arrow type
+/// names (`"Utf8View"`, `"Int64"`, …) and has no `udt_name`. Power BI reads
+/// column metadata from this view and treats `data_type` as a PostgreSQL type;
+/// `"Utf8View"` is not a valid pg type, so string columns silently failed to
+/// fold while `"Boolean"` (coincidentally pg-valid) worked. Our provider
+/// overrides `columns` to report pg type names + `udt_name`.
+///
+/// Asserts, for every column of the fixture table: (a) `data_type` is a
+/// PostgreSQL-valid name (allowlist), (b) `udt_name` is non-null; plus the
+/// explicit case that the `Utf8View` column `s` reports `text`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pgwire_information_schema_columns_reports_pg_types() {
+    let dir = TempDir::new().unwrap();
+    let parquet = dir.path().join("people.parquet");
+    write_people_parquet(&parquet);
+    let store = make_people_store(parquet.to_str().unwrap()).await;
+    register_types_fixture(&store);
+
+    let port = free_port();
+    let cfg = PgwireConfig {
+        enabled: true,
+        listen: loopback(),
+        port,
+        username: USER.into(),
+        password: None,
+        tls_cert: None,
+        tls_key: None,
+    };
+    let ctx = store.session_context().clone();
+    let server = spawn_pgwire(ctx, cfg).expect("spawn pgwire runtime");
+
+    let conn = format!("host=127.0.0.1 port={port} user={USER} dbname=datapress");
+    let client = {
+        let mut attempt = None;
+        for _ in 0..50 {
+            match tokio_postgres::connect(&conn, tokio_postgres::NoTls).await {
+                Ok((client, connection)) => {
+                    tokio::spawn(async move {
+                        let _ = connection.await;
+                    });
+                    attempt = Some(client);
+                    break;
+                }
+                Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
+            }
+        }
+        attempt.expect("pgwire server did not become reachable")
+    };
+
+    // The exact metadata query shape Power BI / pg clients issue.
+    let rows = client
+        .query(
+            "SELECT column_name, data_type, udt_name, is_nullable \
+             FROM information_schema.columns \
+             WHERE table_name = 'types_fixture' \
+             ORDER BY ordinal_position",
+            &[],
+        )
+        .await
+        .expect("information_schema.columns query");
+
+    assert_eq!(
+        rows.len(),
+        10,
+        "types_fixture has 10 columns, got {}",
+        rows.len()
+    );
+
+    // PostgreSQL-valid `data_type` values (SQL-standard / pg information_schema
+    // spellings). Any Arrow name (e.g. "Utf8View") would fail this allowlist.
+    const PG_DATA_TYPES: &[&str] = &[
+        "text",
+        "boolean",
+        "smallint",
+        "integer",
+        "bigint",
+        "real",
+        "double precision",
+        "numeric",
+        "date",
+        "timestamp without time zone",
+        "timestamp with time zone",
+        "time without time zone",
+        "bytea",
+        "ARRAY",
+        "interval",
+    ];
+
+    let mut seen_s = false;
+    for row in &rows {
+        let col: String = row.get("column_name");
+        let data_type: String = row.get("data_type");
+        let udt_name: Option<String> = row.get("udt_name");
+        assert!(
+            PG_DATA_TYPES.contains(&data_type.as_str()),
+            "column {col}: data_type '{data_type}' is not a PostgreSQL type name"
+        );
+        assert!(
+            udt_name.as_deref().is_some_and(|u| !u.is_empty()),
+            "column {col}: udt_name must be non-null/non-empty, got {udt_name:?}"
+        );
+        if col == "s" {
+            seen_s = true;
+            assert_eq!(
+                data_type, "text",
+                "the Utf8View column 's' must report 'text', got '{data_type}'"
+            );
+            assert_eq!(udt_name.as_deref(), Some("text"));
+        }
+    }
+    assert!(seen_s, "fixture must contain the Utf8View column 's'");
+
+    drop(client);
+    drop(server);
+    drop(store);
+}
+
+// ---------------------------------------------------------------------------
+// Test 6: binary-encoding sweep — one-row SELECT per column
+// ---------------------------------------------------------------------------
+
+/// Exercises the server's binary result encoding for every fixture column type
+/// over the extended protocol (tokio-postgres `query` prepares + requests
+/// binary results). A one-row `SELECT <col>` forces the server to binary-encode
+/// that column; the test asserts each returns exactly one row, and decodes the
+/// scalar types to their natural Rust type to prove the bytes round-trip.
+/// Temporal columns are exercised for encode-without-error but not decoded
+/// (that would need tokio-postgres's chrono/time feature).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pgwire_binary_encoding_sweep() {
+    let dir = TempDir::new().unwrap();
+    let parquet = dir.path().join("people.parquet");
+    write_people_parquet(&parquet);
+    let store = make_people_store(parquet.to_str().unwrap()).await;
+    register_types_fixture(&store);
+
+    let port = free_port();
+    let cfg = PgwireConfig {
+        enabled: true,
+        listen: loopback(),
+        port,
+        username: USER.into(),
+        password: None,
+        tls_cert: None,
+        tls_key: None,
+    };
+    let ctx = store.session_context().clone();
+    let server = spawn_pgwire(ctx, cfg).expect("spawn pgwire runtime");
+
+    let conn = format!("host=127.0.0.1 port={port} user={USER} dbname=datapress");
+    let client = {
+        let mut attempt = None;
+        for _ in 0..50 {
+            match tokio_postgres::connect(&conn, tokio_postgres::NoTls).await {
+                Ok((client, connection)) => {
+                    tokio::spawn(async move {
+                        let _ = connection.await;
+                    });
+                    attempt = Some(client);
+                    break;
+                }
+                Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
+            }
+        }
+        attempt.expect("pgwire server did not become reachable")
+    };
+
+    // Every column: one-row SELECT must return exactly one row over the binary
+    // extended protocol (proves the server binary-encodes the type at all).
+    for col in ["s", "t", "b", "i2", "i4", "i8", "f4", "f8", "ts", "d"] {
+        let rows = client
+            .query(
+                &format!("SELECT {col} FROM types_fixture LIMIT 1"),
+                &[],
+            )
+            .await
+            .unwrap_or_else(|e| panic!("binary SELECT of column {col} failed: {e}"));
+        assert_eq!(rows.len(), 1, "column {col}: expected one row");
+    }
+
+    // Decode the scalar types to their natural Rust type — proves the binary
+    // bytes decode, not just that a DataRow was sent.
+    let r = client
+        .query_one("SELECT s, t, b, i2, i4, i8, f4, f8 FROM types_fixture LIMIT 1", &[])
+        .await
+        .expect("typed binary row");
+    assert_eq!(r.get::<_, &str>("s"), "CA");
+    assert_eq!(r.get::<_, &str>("t"), "text-val");
+    assert!(r.get::<_, bool>("b"));
+    assert_eq!(r.get::<_, i16>("i2"), 7);
+    assert_eq!(r.get::<_, i32>("i4"), 42);
+    assert_eq!(r.get::<_, i64>("i8"), 99);
+    assert_eq!(r.get::<_, f32>("f4"), 1.5);
+    assert_eq!(r.get::<_, f64>("f8"), 2.5);
+
+    drop(client);
+    drop(server);
+    drop(store);
+}
+

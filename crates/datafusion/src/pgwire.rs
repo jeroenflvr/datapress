@@ -37,6 +37,7 @@ use datafusion_postgres::hooks::cursor::CursorStatementHook;
 use datafusion_postgres::hooks::set_show::SetShowHook;
 use datafusion_postgres::hooks::transactions::TransactionStatementHook;
 use datafusion_postgres::pgwire::api::ClientInfo;
+use datafusion_postgres::pgwire::api::ErrorHandler;
 use datafusion_postgres::pgwire::api::PgWireServerHandlers;
 use datafusion_postgres::pgwire::api::auth::DefaultServerParameterProvider;
 use datafusion_postgres::pgwire::api::auth::StartupHandler;
@@ -56,8 +57,11 @@ type CleartextStartup =
 
 /// Custom handler set for the authenticated (password) path. Query handling is
 /// delegated to the library's [`DfSessionService`]; only the startup handler is
-/// swapped for one that enforces cleartext-password auth. All other protocol
-/// concerns (copy, error, cancel) keep the trait's default handlers.
+/// swapped for one that enforces cleartext-password auth. The error handler is
+/// overridden to log every outgoing protocol error (SQL text is logged
+/// separately by [`QueryLoggingHook`] at entry, so the two lines together give
+/// the failing statement + its error). Copy/cancel concerns keep the trait's
+/// default handlers.
 struct DatapressHandlers {
     session_service: Arc<DfSessionService>,
     startup: Arc<CleartextStartup>,
@@ -74,6 +78,31 @@ impl PgWireServerHandlers for DatapressHandlers {
 
     fn startup_handler(&self) -> Arc<impl StartupHandler> {
         self.startup.clone()
+    }
+
+    fn error_handler(&self) -> Arc<impl ErrorHandler> {
+        // The library's default `PgWireServerHandlers::error_handler` is a
+        // no-op, so on the password path protocol errors would otherwise be
+        // invisible. Mirror the library's own `serve_with_hooks` path (which
+        // installs a logging error handler) so a failed statement's error text
+        // always reaches the log — the diagnostic hook for Power BI DirectQuery
+        // "couldn't fold"/server-error post-mortems.
+        Arc::new(QueryErrorLogger)
+    }
+}
+
+/// Logs every outgoing pgwire protocol error at `WARN`. Pairs with
+/// [`QueryLoggingHook`], which logs the SQL of each statement at `INFO`, so the
+/// log shows the statement followed by the error it produced.
+#[derive(Debug)]
+struct QueryErrorLogger;
+
+impl ErrorHandler for QueryErrorLogger {
+    fn on_error<C>(&self, _client: &C, error: &mut datafusion_postgres::pgwire::error::PgWireError)
+    where
+        C: ClientInfo,
+    {
+        log::warn!("pgwire: query error: {error}");
     }
 }
 
@@ -294,12 +323,13 @@ impl QueryHook for NpgsqlTypeLoadHook {
 /// Assemble the query hooks installed on every pgwire session.
 ///
 /// This is the library's default set (cursor, `SET`/`SHOW`, transaction
-/// statements) plus our local hooks: [`SessionResetHook`] and
-/// [`NpgsqlTypeLoadHook`]. `DfSessionService::new` installs the first three by
-/// default, but choosing hooks explicitly (via `new_with_hooks`/
-/// `serve_with_hooks`) is the only way to add ours, so we re-list the defaults
-/// here. Both local hooks are purely additive — none of the defaults claim
-/// `DISCARD`/`DEALLOCATE`/`RESET`/`UNLISTEN` or the Npgsql type-load query.
+/// statements) plus our local hooks: [`SessionResetHook`],
+/// [`NpgsqlTypeLoadHook`], and [`QueryLoggingHook`]. `DfSessionService::new`
+/// installs the first three by default, but choosing hooks explicitly (via
+/// `new_with_hooks`/ `serve_with_hooks`) is the only way to add ours, so we
+/// re-list the defaults here. All local hooks are purely additive — none of the
+/// defaults claim `DISCARD`/`DEALLOCATE`/`RESET`/`UNLISTEN` or the Npgsql
+/// type-load query, and the logging hook only observes.
 fn query_hooks() -> Vec<Arc<dyn QueryHook>> {
     vec![
         Arc::new(CursorStatementHook),
@@ -307,7 +337,64 @@ fn query_hooks() -> Vec<Arc<dyn QueryHook>> {
         Arc::new(TransactionStatementHook),
         Arc::new(SessionResetHook),
         Arc::new(NpgsqlTypeLoadHook),
+        // Purely observational; always returns `None` so it never short-circuits
+        // the planner or another hook. Listed last for clarity.
+        Arc::new(QueryLoggingHook),
     ]
+}
+
+/// Query hook that logs every incoming statement at `INFO` level before it is
+/// planned/executed by the library's default path.
+///
+/// The `QueryHook` API exposes only a *pre-execution* interception point
+/// (return `Some` to short-circuit, `None` to pass through); there is no
+/// post-execution callback, so this hook cannot itself observe the per-query
+/// success/error outcome without re-implementing the response codec. Instead it
+/// records the SQL text of every statement at `INFO`, and the library's own
+/// query path logs execution *errors* (with text) at `ERROR`/`WARN`. Together
+/// that yields, per statement: the SQL (always) and, on failure, the error —
+/// which is exactly what a Power BI DirectQuery post-mortem needs. Timing for
+/// the whole connection is visible via the actix/`env_logger` timestamps on
+/// these lines. Returns `None` everywhere so it is transparent to execution.
+#[derive(Debug)]
+struct QueryLoggingHook;
+
+#[async_trait]
+impl QueryHook for QueryLoggingHook {
+    async fn handle_simple_query(
+        &self,
+        statement: &Statement,
+        _session_context: &SessionContext,
+        _client: &mut dyn HookClient,
+    ) -> Option<PgWireResult<Response>> {
+        log::info!("pgwire: simple query: {statement}");
+        None
+    }
+
+    async fn handle_extended_parse_query(
+        &self,
+        statement: &Statement,
+        _session_context: &SessionContext,
+        _client: &(dyn ClientInfo + Send + Sync),
+    ) -> Option<PgWireResult<LogicalPlan>> {
+        // Parse is where the SQL text is available for prepared statements; log
+        // it here so extended-protocol queries (Npgsql/Power BI) are captured
+        // even when the later execute step fails.
+        log::info!("pgwire: prepare (extended): {statement}");
+        None
+    }
+
+    async fn handle_extended_query(
+        &self,
+        statement: &Statement,
+        _logical_plan: &LogicalPlan,
+        _params: &ParamValues,
+        _session_context: &SessionContext,
+        _client: &mut dyn HookClient,
+    ) -> Option<PgWireResult<Response>> {
+        log::debug!("pgwire: execute (extended): {statement}");
+        None
+    }
 }
 
 /// Per-worker stack size for the dedicated pgwire runtime (32 MiB).
