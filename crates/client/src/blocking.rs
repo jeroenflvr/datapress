@@ -81,11 +81,7 @@ impl Client {
 
     /// Run a structured query asking for Arrow IPC, returning the raw
     /// stream bytes.
-    pub fn query_arrow_bytes(
-        &self,
-        dataset: &str,
-        request: &QueryRequest,
-    ) -> Result<bytes::Bytes> {
+    pub fn query_arrow_bytes(&self, dataset: &str, request: &QueryRequest) -> Result<bytes::Bytes> {
         self.rt
             .block_on(self.inner.query_arrow_bytes(dataset, request))
     }

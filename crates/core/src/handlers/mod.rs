@@ -2,10 +2,11 @@
 //!
 //! ## Layout
 //!
-//! - This module hosts **unversioned** endpoints (liveness / readiness /
-//!   `/health`) plus shared utilities used by every version (content
-//!   negotiation, the [`BackendData`] extractor type, the Arrow IPC MIME
-//!   constant).
+//! - This module hosts the probe and health endpoints (`/healthz`,
+//!   `/readyz`, `/version`, `/health`), all mounted under the configured
+//!   `server.prefix` (empty by default), plus shared utilities used by
+//!   every version (content negotiation, the [`BackendData`] extractor
+//!   type, the Arrow IPC MIME constant).
 //! - Each API version lives in its own submodule ([`v1`], future
 //!   `v2`, …). Versions expose a single [`actix_web::web::ServiceConfig`]
 //!   registration function so the server can mount them under a scope:
@@ -37,7 +38,8 @@ use crate::backend::Backend;
 pub mod v1;
 
 /// Convenience alias — every handler extracts the backend through this.
-pub type BackendData = web::Data<Arc<dyn Backend>>;/// Query-related limits copied from `[server]` config into Actix app data.
+pub type BackendData = web::Data<Arc<dyn Backend>>;
+/// Query-related limits copied from `[server]` config into Actix app data.
 #[derive(Debug, Clone, Copy)]
 pub struct QueryLimits {
     pub max_page_size: u64,
@@ -70,15 +72,18 @@ impl Default for SqlSettings {
 }
 
 /// MIME type used for Arrow IPC stream responses.
-pub const ARROW_IPC_MIME: &str = "application/vnd.apache.arrow.stream";#[get("/health")]
+pub const ARROW_IPC_MIME: &str = "application/vnd.apache.arrow.stream";
+#[get("/health")]
 pub async fn health() -> HttpResponse {
     HttpResponse::Ok()
         .content_type("application/json")
         .body(r#"{"status":"ok"}"#)
 }
 
-/// Liveness probe. Mounted outside the configured `prefix` at a fixed
-/// path so orchestrators don't need to know how the server is exposed.
+/// Liveness probe. Mounted at `{prefix}/healthz` — orchestrators and
+/// load balancers must include the configured prefix in their probe path.
+/// Always unauthenticated: the handler requires no scope, so the auth
+/// middleware (when enabled) lets it through.
 #[get("/healthz")]
 pub async fn healthz() -> HttpResponse {
     HttpResponse::Ok()
@@ -155,9 +160,8 @@ impl BuildInfo {
     }
 }
 
-/// Build / version info. Mounted unprefixed so orchestrators and
-/// release-tracking tools can hit it without knowing how the server
-/// is exposed. Always returns `200` with a JSON object.
+/// Build / version info. Mounted at `{prefix}/version`. Always returns
+/// `200` with a JSON object.
 #[get("/version")]
 pub async fn version(info: web::Data<BuildInfo>) -> HttpResponse {
     HttpResponse::Ok().json(info.get_ref())
@@ -348,7 +352,10 @@ pub fn serve_bytes_with_range(
         Some(Ok(Some(ByteRange { start, end }))) => HttpResponse::PartialContent()
             .insert_header((header::CONTENT_TYPE, content_type.to_string()))
             .insert_header((header::ACCEPT_RANGES, "bytes"))
-            .insert_header((header::CONTENT_RANGE, format!("bytes {start}-{end}/{total}")))
+            .insert_header((
+                header::CONTENT_RANGE,
+                format!("bytes {start}-{end}/{total}"),
+            ))
             .body(body.slice(start as usize..(end as usize + 1))),
         // No (parseable) range → full body with 200.
         _ => HttpResponse::Ok()

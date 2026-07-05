@@ -90,19 +90,21 @@ class DataPressClient:
     # ------------------------------------------------------------------
 
     def healthz(self) -> dict:
-        """Liveness probe — hits ``GET /healthz`` (always at root).
+        """Liveness probe — hits ``GET {base_url}/healthz``.
 
+        The ``base_url`` must include any configured ``server.prefix``.
         Returns the parsed JSON body, e.g. ``{"status": "ok"}``.
         """
-        return self._request_json("GET", self._root_url("/healthz"))
+        return self._request_json("GET", self._url("/healthz"))
 
     def readyz(self) -> dict:
-        """Readiness probe — hits ``GET /readyz`` (always at root).
+        """Readiness probe — hits ``GET {base_url}/readyz``.
 
+        The ``base_url`` must include any configured ``server.prefix``.
         Returns the parsed JSON body. Raises :class:`DataPressHTTPError`
         with ``status == 503`` while the server is still loading.
         """
-        return self._request_json("GET", self._root_url("/readyz"))
+        return self._request_json("GET", self._url("/readyz"))
 
     def datasets(self) -> list[str]:
         """List dataset names registered by the server."""
@@ -247,13 +249,6 @@ class DataPressClient:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
-
-    def _root_url(self, path: str) -> str:
-        # /healthz and /readyz are mounted at the bare host root, outside
-        # any configured prefix. Strip whatever prefix the user gave us.
-        from urllib.parse import urlsplit, urlunsplit
-        parts = urlsplit(self.base_url)
-        return urlunsplit((parts.scheme, parts.netloc, path, "", ""))
 
     def _url(self, path: str) -> str:
         return f"{self.base_url}{path}"

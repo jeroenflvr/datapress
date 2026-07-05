@@ -283,9 +283,8 @@ impl QueryRequest {
         if self.having.is_empty() {
             return Ok(Vec::new());
         }
-        let plan = plan.ok_or_else(|| {
-            AppError::InvalidValue("having requires a non-empty group_by".into())
-        })?;
+        let plan = plan
+            .ok_or_else(|| AppError::InvalidValue("having requires a non-empty group_by".into()))?;
         self.having
             .iter()
             .map(|p| Ok((plan.having_lhs(&p.col)?, p)))

@@ -61,7 +61,9 @@ start_degraded       = true                 # warn-and-continue if IdP unreachab
 | `admin_token_fallback` | `true`       | Keep `X-Admin-Token` header working in parallel with OIDC for `reload_scopes`.                 |
 | `start_degraded`       | `true`       | If false, an unreachable JWKS at boot fails startup rather than warning and continuing.        |
 
-Health probes (`/healthz`, `/readyz`, `/version`) are always unauthenticated.
+Health probes (`{prefix}/healthz`, `{prefix}/readyz`, `{prefix}/version`) are
+always unauthenticated — the handlers require no scope, so the auth middleware
+lets them through regardless of the token.
 
 ## Swagger UI SSO
 

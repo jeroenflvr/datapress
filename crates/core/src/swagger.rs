@@ -5,8 +5,8 @@
 //! literal (no per-handler annotations — the curated spec lives here)
 //! and hands it to [`utoipa_swagger_ui::SwaggerUi`] for rendering.
 //!
-//! The UI is mounted at `[swagger].path` (default `/docs`); the raw
-//! spec is exposed at `<path>/openapi.json` so external tooling
+//! The UI is mounted at `{prefix}{[swagger].path}` (default `/docs`);
+//! the raw spec is exposed at `<mount>/openapi.json` so external tooling
 //! (Postman, code generators, …) can consume it directly.
 
 use actix_web::dev::HttpServiceFactory;
@@ -18,23 +18,17 @@ pub use crate::oauth2::{ResolvedOAuth2, resolve_oauth2};
 
 /// Build the [`SwaggerUi`] actix service for the given mount path.
 ///
-/// Visiting `<mount>/` (e.g. `/docs/`) loads the interactive UI;
-/// `<mount>/openapi.json` returns the raw OpenAPI 3.0 document.
-///
-/// The mount is registered with a tail-capture (`{_:.*}`) so Swagger
-/// UI's nested assets resolve correctly.
-///
-/// When `oauth2` is `Some`, the spec advertises an `oauth2`
-/// security scheme (`authorizationCode` flow with the issuer's
-/// discovered authorize/token endpoints) and the UI's `initOAuth` is
-/// preconfigured with `client_id`, scopes, and PKCE so users can sign
-/// in directly from the docs page.
+/// `mount` is the already-prefixed mount string (e.g. `/dp/docs`).
+/// `prefix` is the server prefix (e.g. `/dp`) used to set
+/// `servers[0].url` in the OpenAPI spec so "Try it out" targets the
+/// right base. Pass `""` when no prefix is configured.
 pub fn service(
     mount: &str,
     oauth2: Option<&ResolvedOAuth2>,
+    prefix: &str,
 ) -> impl HttpServiceFactory + use<> {
     let ui = SwaggerUi::new(format!("{mount}/{{_:.*}}"))
-        .url(format!("{mount}/openapi.json"), openapi(oauth2));
+        .url(format!("{mount}/openapi.json"), openapi(oauth2, prefix));
     if let Some(o) = oauth2 {
         let oauth_cfg = utoipa_swagger_ui::oauth::Config::new()
             .client_id(&o.client_id)
@@ -51,7 +45,15 @@ pub fn service(
 /// Without the redirect, visiting the bare mount path (e.g. `/docs`)
 /// 404s because `SwaggerUi`'s tail-capture route requires the trailing
 /// slash to match the empty asset path.
-pub fn configure(mount: &str, oauth2: Option<&ResolvedOAuth2>, cfg: &mut web::ServiceConfig) {
+///
+/// `mount` is the already-prefixed path; `prefix` is threaded into the
+/// OpenAPI `servers` entry so "Try it out" resolves against the right base.
+pub fn configure(
+    mount: &str,
+    oauth2: Option<&ResolvedOAuth2>,
+    prefix: &str,
+    cfg: &mut web::ServiceConfig,
+) {
     let redirect_target = format!("{mount}/");
     cfg.service(
         web::resource(mount.to_string()).route(web::get().to(move || {
@@ -63,7 +65,7 @@ pub fn configure(mount: &str, oauth2: Option<&ResolvedOAuth2>, cfg: &mut web::Se
             }
         })),
     )
-    .service(service(mount, oauth2));
+    .service(service(mount, oauth2, prefix));
 }
 
 /// Build the OpenAPI document. The spec is authored as a JSON literal
@@ -71,8 +73,13 @@ pub fn configure(mount: &str, oauth2: Option<&ResolvedOAuth2>, cfg: &mut web::Se
 /// the API surface is small and stable, and a hand-written spec gives
 /// us full control over examples + descriptions without scattering
 /// attributes across the handler tree.
-fn openapi(oauth2: Option<&ResolvedOAuth2>) -> OpenApi {
+///
+/// `prefix` is the configured `server.prefix` (e.g. `"/dp"` or `""`).
+/// It is set as `servers[0].url` so Swagger UI's "Try it out" targets
+/// the correct base path when the server is mounted behind a prefix.
+fn openapi(oauth2: Option<&ResolvedOAuth2>, prefix: &str) -> OpenApi {
     let version = env!("CARGO_PKG_VERSION");
+    let server_url = if prefix.is_empty() { "/" } else { prefix };
     // Reusable inline parameter — utoipa doesn't accept `$ref`-style
     // parameters at the Operation level, so we splice the object in
     // wherever it's needed instead.
@@ -92,7 +99,7 @@ fn openapi(oauth2: Option<&ResolvedOAuth2>) -> OpenApi {
             "version":     version,
         },
         "servers": [
-            { "url": "/", "description": "This server" }
+            { "url": server_url, "description": "This server" }
         ],
         "tags": [
             { "name": "probes",   "description": "Liveness / readiness / version" },
@@ -615,11 +622,8 @@ fn openapi(oauth2: Option<&ResolvedOAuth2>) -> OpenApi {
         serde_json::from_value(json).expect("hand-written OpenAPI spec is well-formed");
 
     if let Some(o) = oauth2 {
-        use utoipa::openapi::security::{
-            AuthorizationCode, Flow, OAuth2, Scopes, SecurityScheme,
-        };
-        let scopes =
-            Scopes::from_iter(o.scopes.iter().map(|s| (s.clone(), String::new())));
+        use utoipa::openapi::security::{AuthorizationCode, Flow, OAuth2, Scopes, SecurityScheme};
+        let scopes = Scopes::from_iter(o.scopes.iter().map(|s| (s.clone(), String::new())));
         let flow = Flow::AuthorizationCode(AuthorizationCode::new(
             o.authorization_url.clone(),
             o.token_url.clone(),
@@ -648,7 +652,7 @@ mod tests {
     #[test]
     fn openapi_deserialises() {
         // Smoke test: the spec must be a valid OpenAPI 3 document.
-        let _ = openapi(None);
+        let _ = openapi(None, "");
     }
 
     #[test]
@@ -660,7 +664,7 @@ mod tests {
             scopes: vec!["openid".into(), "datasets:read".into()],
             pkce: true,
         };
-        let spec = openapi(Some(&resolved));
+        let spec = openapi(Some(&resolved), "");
         let json = serde_json::to_value(&spec).unwrap();
         let scheme = &json["components"]["securitySchemes"]["OpenIdConnect"];
         assert_eq!(scheme["type"], "oauth2");
@@ -682,5 +686,14 @@ mod tests {
             json["paths"]["/api/v1/datasets/{name}/reload"]["post"]["security"],
             json["security"]
         );
+    }
+
+    #[test]
+    fn openapi_servers_url_reflects_prefix() {
+        let empty = serde_json::to_value(openapi(None, "")).unwrap();
+        assert_eq!(empty["servers"][0]["url"], "/");
+
+        let prefixed = serde_json::to_value(openapi(None, "/dp")).unwrap();
+        assert_eq!(prefixed["servers"][0]["url"], "/dp");
     }
 }

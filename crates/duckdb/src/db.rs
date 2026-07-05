@@ -563,8 +563,10 @@ fn register_dataset(conn: &Connection, cfg: &DatasetConfig) -> Result<DatasetSch
     let scan = build_scan_clause(cfg)?;
     let table = DatasetSchema::quote_ident(&cfg.name);
     let relation = if cfg.lazy { "VIEW" } else { "TABLE" };
-    conn.execute_batch(&format!("CREATE {relation} {table} AS SELECT * FROM {scan};"))
-        .map_err(|e| classify_scan_error(cfg, e))?;
+    conn.execute_batch(&format!(
+        "CREATE {relation} {table} AS SELECT * FROM {scan};"
+    ))
+    .map_err(|e| classify_scan_error(cfg, e))?;
     introspect_schema(conn, cfg)
 }
 

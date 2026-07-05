@@ -157,16 +157,14 @@ pub fn configure(state: web::Data<ExplorerState>, cfg: &mut web::ServiceConfig) 
     // htmx URLs resolve under the mount.
     let redirect_target = format!("{mount}/");
     cfg.app_data(state)
-        .service(
-            web::resource(mount.clone()).route(web::get().to(move || {
-                let to = redirect_target.clone();
-                async move {
-                    HttpResponse::MovedPermanently()
-                        .insert_header((header::LOCATION, to))
-                        .finish()
-                }
-            })),
-        )
+        .service(web::resource(mount.clone()).route(web::get().to(move || {
+            let to = redirect_target.clone();
+            async move {
+                HttpResponse::MovedPermanently()
+                    .insert_header((header::LOCATION, to))
+                    .finish()
+            }
+        })))
         .service(
             web::scope(&mount)
                 .route("/", web::get().to(index))
@@ -194,10 +192,7 @@ pub fn configure(state: web::Data<ExplorerState>, cfg: &mut web::ServiceConfig) 
                 )
                 .route("/datasets/{name}", web::get().to(dataset_detail))
                 .route("/datasets", web::post().to(register_dataset))
-                .route(
-                    "/datasets/{name}/persist",
-                    web::post().to(persist_dataset),
-                ),
+                .route("/datasets/{name}/persist", web::post().to(persist_dataset)),
         );
 }
 
@@ -306,8 +301,7 @@ const TERMINAL_CSS: &str = include_str!("../assets/explorer/terminal.css");
 const TERMINAL_JS: &str = include_str!("../assets/explorer/terminal.js");
 const OAUTH2_REDIRECT_HTML: &str = include_str!("../assets/explorer/oauth2-redirect.html");
 // Navbar link icons (PyPI / Docs), embedded from the docs asset tree.
-const PYPI_ICON_SVG: &str =
-    include_str!("../../../docs/src/assets/images/python-logo-only.svg");
+const PYPI_ICON_SVG: &str = include_str!("../../../docs/src/assets/images/python-logo-only.svg");
 const BOOK_ICON_SVG: &str = include_str!("../../../docs/src/assets/images/book.svg");
 const SWAGGER_ICON_SVG: &str = include_str!("../../../docs/src/assets/images/swagger.svg");
 
@@ -432,10 +426,7 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
             });
         }
     }
-    let column_count = summary
-        .as_ref()
-        .map(|s| s.columns)
-        .unwrap_or(columns.len());
+    let column_count = summary.as_ref().map(|s| s.columns).unwrap_or(columns.len());
 
     let sample_pretty = match state.backend.sample(&name).await {
         Ok(s) if s.trim() == "null" => "—".to_string(),
@@ -457,7 +448,9 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
             Some(s3) => (
                 true,
                 s3.region.clone().unwrap_or_else(|| "—".into()),
-                s3.endpoint.clone().unwrap_or_else(|| "(AWS default)".into()),
+                s3.endpoint
+                    .clone()
+                    .unwrap_or_else(|| "(AWS default)".into()),
                 s3.addressing_style.as_str().to_string(),
                 s3.partitioning.as_str().to_string(),
                 if s3.access_key_id.is_some() && s3.secret_access_key.is_some() {
@@ -587,7 +580,11 @@ fn build_register_config(f: &RegisterForm) -> Result<DatasetConfig, crate::error
     let kind = match f.kind.trim() {
         "delta" => SourceKind::Delta,
         "parquet" | "" => SourceKind::Parquet,
-        other => return Err(AppError::InvalidValue(format!("unknown source kind '{other}'"))),
+        other => {
+            return Err(AppError::InvalidValue(format!(
+                "unknown source kind '{other}'"
+            )));
+        }
     };
     let location = f.location.trim();
     if location.is_empty() {
@@ -600,7 +597,11 @@ fn build_register_config(f: &RegisterForm) -> Result<DatasetConfig, crate::error
         "none" => IndexMode::None,
         "list" => IndexMode::List,
         "auto" | "" => IndexMode::Auto,
-        other => return Err(AppError::InvalidValue(format!("unknown index mode '{other}'"))),
+        other => {
+            return Err(AppError::InvalidValue(format!(
+                "unknown index mode '{other}'"
+            )));
+        }
     };
     let mut index = IndexConfig {
         mode: index_mode,
@@ -785,4 +786,3 @@ async fn persist_dataset(
         Err(e) => html_alert("danger", &format!("Failed to write config: {e}")),
     }
 }
-

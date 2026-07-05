@@ -353,8 +353,8 @@ allowed_tenants = ["<tenant-id>"]
 admin_token_fallback = true  # keep X-Admin-Token working in parallel
 ```
 
-Health probes (`/healthz`, `/readyz`, `/version`) stay unauthenticated
-so load balancers keep working. The legacy `X-Admin-Token` header keeps
+Health probes (`{prefix}/healthz`, `{prefix}/readyz`, `{prefix}/version`)
+stay unauthenticated so load balancers keep working. The legacy `X-Admin-Token` header keeps
 working for `POST .../reload` as long as `admin_token_fallback = true`.
 
 To turn the Swagger UI itself into an SSO client, add an `[swagger.oauth2]`

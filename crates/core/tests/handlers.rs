@@ -165,14 +165,42 @@ fn mount(
     App::new()
         .app_data(web::Data::new(backend))
         .app_data(web::Data::new(handlers::BuildInfo::new("Mock")))
-        .service(handlers::healthz)
-        .service(handlers::readyz)
-        .service(handlers::version)
-        .service(handlers::health)
-        // Canonical versioned scope.
-        .service(web::scope("/api/v1").configure(handlers::v1::configure))
-        // Legacy alias kept for back-compat (tested below).
-        .service(web::scope("/api").configure(handlers::v1::configure))
+        .service(
+            web::scope("")
+                .service(handlers::healthz)
+                .service(handlers::readyz)
+                .service(handlers::version)
+                .service(handlers::health)
+                // Canonical versioned scope.
+                .service(web::scope("/api/v1").configure(handlers::v1::configure))
+                // Legacy alias kept for back-compat (tested below).
+                .service(web::scope("/api").configure(handlers::v1::configure)),
+        )
+}
+
+fn mount_prefixed(
+    backend: Arc<dyn Backend>,
+) -> App<
+    impl actix_web::dev::ServiceFactory<
+        actix_web::dev::ServiceRequest,
+        Config = (),
+        Response = actix_web::dev::ServiceResponse,
+        Error = actix_web::Error,
+        InitError = (),
+    >,
+> {
+    App::new()
+        .app_data(web::Data::new(backend))
+        .app_data(web::Data::new(handlers::BuildInfo::new("Mock")))
+        .service(
+            web::scope("/pre")
+                .service(handlers::healthz)
+                .service(handlers::readyz)
+                .service(handlers::version)
+                .service(handlers::health)
+                .service(web::scope("/api/v1").configure(handlers::v1::configure))
+                .service(web::scope("/api").configure(handlers::v1::configure)),
+        )
 }
 
 // ----------------------------------------------------------------- tests --
@@ -216,6 +244,44 @@ async fn version_returns_build_info() {
     assert_eq!(body["backend"], "Mock");
     // `profile` is "debug" under `cargo test` but assert it's set.
     assert!(body["profile"].is_string());
+}
+
+// -------------------------------------------------------- prefix tests --
+
+#[actix_web::test]
+async fn prefixed_probes_answer_under_prefix() {
+    let app = test::init_service(mount_prefixed(Arc::new(MockBackend::new()))).await;
+
+    // Prefixed paths respond.
+    for path in ["/pre/healthz", "/pre/readyz", "/pre/version", "/pre/health"] {
+        let resp = test::call_service(&app, test::TestRequest::get().uri(path).to_request()).await;
+        assert_eq!(resp.status(), StatusCode::OK, "expected 200 at {path}");
+    }
+}
+
+#[actix_web::test]
+async fn unprefixed_probes_404_when_prefix_set() {
+    let app = test::init_service(mount_prefixed(Arc::new(MockBackend::new()))).await;
+
+    // Bare (un-prefixed) paths must NOT be reachable.
+    for path in ["/healthz", "/readyz", "/version"] {
+        let resp = test::call_service(&app, test::TestRequest::get().uri(path).to_request()).await;
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "expected 404 at bare {path} when prefix=/pre"
+        );
+    }
+}
+
+#[actix_web::test]
+async fn prefixed_api_accessible_under_prefix() {
+    let app = test::init_service(mount_prefixed(Arc::new(MockBackend::new()))).await;
+    let req = test::TestRequest::get()
+        .uri("/pre/api/v1/datasets")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
 #[actix_web::test]

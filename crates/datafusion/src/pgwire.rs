@@ -36,10 +36,10 @@ use datafusion_postgres::hooks::HookClient;
 use datafusion_postgres::hooks::cursor::CursorStatementHook;
 use datafusion_postgres::hooks::set_show::SetShowHook;
 use datafusion_postgres::hooks::transactions::TransactionStatementHook;
-use datafusion_postgres::pgwire::api::PgWireServerHandlers;
 use datafusion_postgres::pgwire::api::ClientInfo;
-use datafusion_postgres::pgwire::api::auth::StartupHandler;
+use datafusion_postgres::pgwire::api::PgWireServerHandlers;
 use datafusion_postgres::pgwire::api::auth::DefaultServerParameterProvider;
+use datafusion_postgres::pgwire::api::auth::StartupHandler;
 use datafusion_postgres::pgwire::api::auth::cleartext::CleartextPasswordAuthStartupHandler;
 use datafusion_postgres::pgwire::api::query::{ExtendedQueryHandler, SimpleQueryHandler};
 use datafusion_postgres::pgwire::api::results::{Response, Tag};
@@ -201,12 +201,10 @@ struct NpgsqlTypeLoadHook;
 impl NpgsqlTypeLoadHook {
     /// The broken `pg_proc` join predicate that fingerprints the Npgsql 4.x
     /// type-load query. Present in no other statement we serve.
-    const PROC_JOIN_ORIG: &'static str =
-        "JOIN pg_catalog.pg_proc ON pg_proc.oid = a.typreceive";
+    const PROC_JOIN_ORIG: &'static str = "JOIN pg_catalog.pg_proc ON pg_proc.oid = a.typreceive";
     /// Join `pg_proc` by name so `pg_type.typreceive` (a name in the emulation)
     /// resolves; the projected `CASE` arms already key on `pg_proc.proname`.
-    const PROC_JOIN_FIX: &'static str =
-        "JOIN pg_catalog.pg_proc ON pg_proc.proname = a.typreceive";
+    const PROC_JOIN_FIX: &'static str = "JOIN pg_catalog.pg_proc ON pg_proc.proname = a.typreceive";
     /// The namespace join whose OID linkage is broken.
     const NS_JOIN_ORIG: &'static str =
         "JOIN pg_catalog.pg_namespace AS ns ON (ns.oid = a.typnamespace)";
@@ -266,11 +264,17 @@ impl QueryHook for NpgsqlTypeLoadHook {
         log::debug!("pgwire: rewriting Npgsql type-load query for catalog compatibility");
         let plan = match session_context.sql(&rewritten).await {
             Ok(df) => df.into_optimized_plan(),
-            Err(e) => return Some(Err(datafusion_postgres::pgwire::error::PgWireError::ApiError(Box::new(e)))),
+            Err(e) => {
+                return Some(Err(
+                    datafusion_postgres::pgwire::error::PgWireError::ApiError(Box::new(e)),
+                ));
+            }
         };
-        Some(plan.map_err(|e| {
-            datafusion_postgres::pgwire::error::PgWireError::ApiError(Box::new(e))
-        }))
+        Some(
+            plan.map_err(|e| {
+                datafusion_postgres::pgwire::error::PgWireError::ApiError(Box::new(e))
+            }),
+        )
     }
 
     async fn handle_extended_query(

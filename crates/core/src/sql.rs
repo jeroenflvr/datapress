@@ -289,8 +289,9 @@ impl Visitor for ScopeCheck<'_> {
                 .map(|i| i.value.to_lowercase())
                 .unwrap_or_default();
             if DENIED_FUNCTIONS.contains(&fname.as_str()) {
-                self.violation =
-                    Some(format!("function '{fname}' is not allowed in the SQL endpoint"));
+                self.violation = Some(format!(
+                    "function '{fname}' is not allowed in the SQL endpoint"
+                ));
                 return ControlFlow::Break(());
             }
         }
@@ -446,7 +447,12 @@ mod tests {
 
     #[test]
     fn accepts_single_dataset_select() {
-        let v = validate("SELECT a, b FROM events WHERE a > 1", &allowed(&["events"]), 1).unwrap();
+        let v = validate(
+            "SELECT a, b FROM events WHERE a > 1",
+            &allowed(&["events"]),
+            1,
+        )
+        .unwrap();
         assert_eq!(v.datasets, vec!["events".to_string()]);
     }
 
@@ -537,15 +543,23 @@ mod tests {
 
     #[test]
     fn rejects_multiple_statements() {
-        let err = validate("SELECT 1 FROM events; SELECT 2 FROM events", &allowed(&["events"]), 1)
-            .unwrap_err();
+        let err = validate(
+            "SELECT 1 FROM events; SELECT 2 FROM events",
+            &allowed(&["events"]),
+            1,
+        )
+        .unwrap_err();
         assert!(matches!(err, AppError::InvalidValue(_)));
     }
 
     #[test]
     fn rejects_file_table_function() {
-        let err = validate("SELECT * FROM read_parquet('/etc/passwd')", &allowed(&["events"]), 1)
-            .unwrap_err();
+        let err = validate(
+            "SELECT * FROM read_parquet('/etc/passwd')",
+            &allowed(&["events"]),
+            1,
+        )
+        .unwrap_err();
         assert!(matches!(err, AppError::InvalidValue(_)));
     }
 
@@ -697,16 +711,13 @@ mod tests {
     fn access_ignores_aliases_and_functions() {
         let sch = filtered_schema(&[], &["email"]);
         // `total` is an alias, not a schema column, so it is ignored.
-        assert!(
-            enforce_column_access("SELECT count(id) AS total FROM events", &sch).is_ok()
-        );
+        assert!(enforce_column_access("SELECT count(id) AS total FROM events", &sch).is_ok());
     }
 
     #[test]
     fn access_matches_qualified_column() {
         let sch = filtered_schema(&[], &["email"]);
-        let err =
-            enforce_column_access("SELECT e.email FROM events e", &sch).unwrap_err();
+        let err = enforce_column_access("SELECT e.email FROM events e", &sch).unwrap_err();
         assert!(matches!(err, AppError::UnknownColumn(_)));
     }
 }

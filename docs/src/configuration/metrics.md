@@ -38,7 +38,7 @@ path    = "/metrics" # scrape path
 | Key       | Default      | Notes                                                                                                    |
 |-----------|--------------|----------------------------------------------------------------------------------------------------------|
 | `enabled` | `false`      | Master switch.                                                                                           |
-| `path`    | `"/metrics"` | Scrape path. Served at the bare host root — independent of any configured `server.prefix`. Must start with `/` and not end with `/`. |
+| `path`    | `"/metrics"` | Scrape path. Served at `{prefix}{path}` — scrape configs must include the configured `server.prefix`. Must start with `/` and not end with `/`. |
 
 The endpoint is **unauthenticated** and sits in front of the `[auth]` layer,
 just like the health probes. It exposes only aggregate request counters, never

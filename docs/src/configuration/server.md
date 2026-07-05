@@ -37,10 +37,6 @@ username = "datapress"
 enabled = true     # default; set false to suppress the UI
 path    = "/docs"  # mount point for the UI and openapi.json
 
-[explorer]
-enabled = true        # default; set false to hide the UI at runtime
-path    = "/explore"  # mount point
-
 [metrics]
 enabled = true       # off by default
 path    = "/metrics" # scrape path
@@ -48,6 +44,17 @@ path    = "/metrics" # scrape path
 [docs]
 enabled = true           # default: false
 path    = "/mkdocs"      # default: /mkdocs
+
+[explorer]
+enabled = true        # default; set false to hide the UI at runtime
+path    = "/explore"  # mount point
+
+[explorer.oauth2]
+client_id = "datapress-explorer"
+issuer    = "http://localhost:8080/realms/datapress"
+scopes    = ["datasets:read", "datasets:reload"]
+pkce      = true
+
 
 [auth]
 enabled              = true
@@ -243,12 +250,13 @@ When nginx / Traefik / Caddy forwards a path prefix verbatim, set
 ```toml
 [server]
 prefix = "/datapress"
-# → GET /datapress/api/v1/datasets, GET /datapress/health, ...
+# → GET /datapress/api/v1/datasets, GET /datapress/health,
+#   GET /datapress/healthz, GET /datapress/readyz, ...
 ```
 
-The unprefixed probes — `/healthz`, `/readyz`, `/version` — stay at the
-bare host root regardless. That way orchestrators don't need to know how
-the service is exposed.
+Every route — including the probes `/healthz`, `/readyz`, `/version` — is
+mounted under the prefix. Orchestrator liveness and readiness probe paths
+must include it.
 
 ## Compression
 

@@ -6,7 +6,7 @@ Okta, Google, GitHub via an OIDC bridge, …). When enabled, every
 request to `/api/...` must carry an `Authorization: Bearer <jwt>`
 header that the server validates against the issuer's JWKS.
 
-Health probes (`/healthz`, `/readyz`, `/version`) stay unauthenticated
+Health probes (`{prefix}/healthz`, `{prefix}/readyz`, `{prefix}/version`) stay unauthenticated
 so load balancers and Kubernetes liveness/readiness checks keep working.
 
 ## Build

@@ -1,10 +1,10 @@
 # Endpoints
 
-Every route mounted by the server. The probe endpoints live at the
-bare host root regardless of any configured URL prefix; everything
-under `/api/v1/` and `/api/` is shifted by `prefix` when set.
+Every route mounted by the server. All paths are relative to the configured
+`server.prefix` (empty by default). When `prefix = "/dp"`, add `/dp`
+before every path shown here.
 
-## Versioned API (`/api/v1`)
+## Versioned API (`{prefix}/api/v1`)
 
 | Method | Path                                              | Body            | Purpose                                                              |
 |--------|---------------------------------------------------|-----------------|----------------------------------------------------------------------|
@@ -44,13 +44,13 @@ Same handlers, no `/v1`:
 Prefer `/api/v1/...` in new code; the unversioned routes will
 eventually be deprecated.
 
-## Probes (unprefixed)
+## Probes
 
-| Method | Path        | Code           | Purpose                                       |
-|--------|-------------|----------------|-----------------------------------------------|
-| GET    | `/healthz`  | `200`          | Liveness; always OK.                          |
-| GET    | `/readyz`   | `200` / `503`  | Ready once at least one dataset is loaded.    |
-| GET    | `/version`  | `200`          | Build/version metadata.                       |
+| Method | Path                 | Code           | Purpose                                       |
+|--------|----------------------|----------------|-----------------------------------------------|
+| GET    | `{prefix}/healthz`   | `200`          | Liveness; always OK.                          |
+| GET    | `{prefix}/readyz`    | `200` / `503`  | Ready once at least one dataset is loaded.    |
+| GET    | `{prefix}/version`   | `200`          | Build/version metadata.                       |
 
 Full descriptions: [Operations › Probes](../operations/probes.md).
 

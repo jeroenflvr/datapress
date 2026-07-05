@@ -274,7 +274,10 @@ async fn delta_local_reads_and_filters() {
     // Predicate pushdown filters through the materialised table.
     let filtered = parse_rows(
         &store
-            .query("people", &req_with(vec![pred("name", "eq", Value::from("Bob"))]))
+            .query(
+                "people",
+                &req_with(vec![pred("name", "eq", Value::from("Bob"))]),
+            )
             .await
             .unwrap(),
     );
@@ -306,7 +309,10 @@ async fn delta_local_lazy_reads_and_filters() {
     // skipping + parquet row-group pruning).
     let filtered = parse_rows(
         &store
-            .query("people", &req_with(vec![pred("name", "eq", Value::from("Bob"))]))
+            .query(
+                "people",
+                &req_with(vec![pred("name", "eq", Value::from("Bob"))]),
+            )
             .await
             .unwrap(),
     );
@@ -380,7 +386,10 @@ async fn delta_with_missing_data_files_is_skipped() {
             removed += 1;
         }
     }
-    assert!(removed > 0, "expected at least one parquet data file to delete");
+    assert!(
+        removed > 0,
+        "expected at least one parquet data file to delete"
+    );
 
     let loc = tmp.path().to_str().unwrap();
     for lazy in [false, true] {
@@ -805,8 +814,7 @@ async fn projection_filter_is_attached_to_schema_at_registration() {
         include: vec![],
         exclude: vec!["score".into()],
     };
-    let store =
-        make_store_with_filters(path.to_str().unwrap(), Default::default(), excl).await;
+    let store = make_store_with_filters(path.to_str().unwrap(), Default::default(), excl).await;
 
     let schema = store.schema("people").expect("schema");
     assert!(schema.projection_filter.is_active());
@@ -855,5 +863,8 @@ async fn unknown_filter_column_fails_registration() {
         Ok(_) => panic!("load should fail on unknown filter column"),
         Err(e) => e,
     };
-    assert!(matches!(err, datapress_core::errors::AppError::InvalidValue(_)));
+    assert!(matches!(
+        err,
+        datapress_core::errors::AppError::InvalidValue(_)
+    ));
 }

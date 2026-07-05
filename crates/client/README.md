@@ -64,7 +64,7 @@ for batch in &batches {
 
 | Method                 | Endpoint                                |
 | ---------------------- | --------------------------------------- |
-| `healthz` / `readyz`   | `GET /healthz`, `GET /readyz` (root)    |
+| `healthz` / `readyz`   | `GET {base_url}/healthz`, `GET {base_url}/readyz` |
 | `datasets`             | `GET {api}/datasets`                    |
 | `schema`               | `GET {api}/datasets/{name}/schema`      |
 | `count`                | `POST {api}/datasets/{name}/count`      |

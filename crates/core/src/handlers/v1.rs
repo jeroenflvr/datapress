@@ -100,8 +100,14 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         // `.parquet`-suffixed alias so a DuckDB client can use the bare
         // `FROM 'http://host/.../all.parquet'` form — DuckDB sniffs the
         // file type from the URL extension, so it must end in `.parquet`.
-        .route("/datasets/{name}/all.parquet", web::get().to(parquet_dataset))
-        .route("/datasets/{name}/all.parquet", web::head().to(parquet_dataset))
+        .route(
+            "/datasets/{name}/all.parquet",
+            web::get().to(parquet_dataset),
+        )
+        .route(
+            "/datasets/{name}/all.parquet",
+            web::head().to(parquet_dataset),
+        )
         .route("/datasets/{name}/reload", web::post().to(reload_dataset))
         .route("/config/reload", web::post().to(reload_config));
 }
@@ -303,10 +309,7 @@ pub async fn sql_query(
     settings: Option<web::Data<SqlSettings>>,
     body: web::Json<SqlRequest>,
 ) -> HttpResponse {
-    let settings = settings
-        .as_ref()
-        .map(|s| *s.get_ref())
-        .unwrap_or_default();
+    let settings = settings.as_ref().map(|s| *s.get_ref()).unwrap_or_default();
     // When the endpoint is disabled, behave as if the route does not
     // exist — don't leak its presence or run the auth challenge.
     if !settings.enabled {
@@ -318,8 +321,11 @@ pub async fn sql_query(
 
     // Build the case-insensitive allowlist of registered datasets. Phase 1
     // permits at most one distinct dataset per statement.
-    let allowed: std::collections::HashSet<String> =
-        backend.names().into_iter().map(|n| n.to_lowercase()).collect();
+    let allowed: std::collections::HashSet<String> = backend
+        .names()
+        .into_iter()
+        .map(|n| n.to_lowercase())
+        .collect();
 
     let validated = match crate::sql::validate(&body.sql, &allowed, 1) {
         Ok(v) => v,
@@ -349,7 +355,10 @@ pub async fn sql_query(
     // the historical JSON envelope. The Arrow body is itself streamed
     // (schema message + batches + EOS), capped at `max_rows`.
     if wants_arrow(&http) {
-        return match backend.query_sql_arrow_stream(&validated.sql, max_rows).await {
+        return match backend
+            .query_sql_arrow_stream(&validated.sql, max_rows)
+            .await
+        {
             Ok(stream) => HttpResponse::Ok()
                 .content_type(ARROW_IPC_MIME)
                 .insert_header((actix_web::http::header::CONTENT_ENCODING, "identity"))
@@ -510,9 +519,7 @@ pub async fn reload_config(req: HttpRequest, backend: BackendData) -> HttpRespon
         let name = ds.name.clone();
         match backend.register(ds).await {
             Ok(_) => registered.push(name),
-            Err(e) => {
-                errors.push(serde_json::json!({ "dataset": name, "error": e.to_string() }))
-            }
+            Err(e) => errors.push(serde_json::json!({ "dataset": name, "error": e.to_string() })),
         }
     }
 

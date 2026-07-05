@@ -225,12 +225,8 @@ async fn projection_filter_is_attached_to_schema_at_registration() {
         include: vec![],
         exclude: vec!["score".into()],
     };
-    let reg = make_registry_with_filters(
-        &parquet.display().to_string(),
-        Default::default(),
-        excl,
-    )
-    .expect("load_registry");
+    let reg = make_registry_with_filters(&parquet.display().to_string(), Default::default(), excl)
+        .expect("load_registry");
 
     let schema = reg.schema("people").expect("schema");
     assert!(schema.projection_filter.is_active());
@@ -248,15 +244,15 @@ async fn unknown_filter_column_fails_registration() {
         include: vec![],
         exclude: vec!["ghost".into()],
     };
-    let err = match make_registry_with_filters(
-        &parquet.display().to_string(),
-        Default::default(),
-        bad,
-    ) {
-        Ok(_) => panic!("registration should fail on unknown filter column"),
-        Err(e) => e,
-    };
-    assert!(matches!(err, datapress_core::errors::AppError::InvalidValue(_)));
+    let err =
+        match make_registry_with_filters(&parquet.display().to_string(), Default::default(), bad) {
+            Ok(_) => panic!("registration should fail on unknown filter column"),
+            Err(e) => e,
+        };
+    assert!(matches!(
+        err,
+        datapress_core::errors::AppError::InvalidValue(_)
+    ));
 }
 
 #[actix_web::test]

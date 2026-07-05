@@ -23,12 +23,11 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
 use datapress_core::config::{
-    AddressingStyle, AppConfig, AuthConfig as CoreAuthConfig, Backend, BucketInHost,
-    ColumnFilter, DataFusionConfig as CoreDataFusionConfig, DatasetConfig as CoreDatasetConfig,
+    AddressingStyle, AppConfig, AuthConfig as CoreAuthConfig, Backend, BucketInHost, ColumnFilter,
+    DataFusionConfig as CoreDataFusionConfig, DatasetConfig as CoreDatasetConfig,
     ExplorerConfig as CoreExplorerConfig, IndexConfig, IndexMode,
     MetricsConfig as CoreMetricsConfig, Partitioning, PgwireConfig as CorePgwireConfig,
-    S3Config as CoreS3Config,
-    ServerConfig, SourceConfig, SourceKind, SqlConfig as CoreSqlConfig,
+    S3Config as CoreS3Config, ServerConfig, SourceConfig, SourceKind, SqlConfig as CoreSqlConfig,
     SwaggerConfig as CoreSwaggerConfig, SwaggerOAuth2Config as CoreSwaggerOAuth2Config,
 };
 
@@ -72,7 +71,10 @@ impl PyHMACKeyPair {
 
     /// Redacted repr — never prints the secret key.
     fn __repr__(&self) -> String {
-        format!("HMACKeyPair(access_key={:?}, secret_key='***')", self.access_key)
+        format!(
+            "HMACKeyPair(access_key={:?}, secret_key='***')",
+            self.access_key
+        )
     }
 }
 
@@ -220,9 +222,7 @@ impl PyS3Config {
     /// The configured ``credentials_provider`` callable, or ``None``.
     #[getter]
     fn get_credentials_provider(&self, py: Python<'_>) -> Option<Py<PyAny>> {
-        self.credentials_provider
-            .as_ref()
-            .map(|p| p.clone_ref(py))
+        self.credentials_provider.as_ref().map(|p| p.clone_ref(py))
     }
 
     /// Set or clear the ``credentials_provider`` callable.
@@ -293,18 +293,17 @@ impl PyS3Config {
         // A credentials provider takes precedence over (and ignores) the
         // static HMAC credentials. The session token is dropped too, since
         // the provider yields a long-lived access/secret keypair.
-        let (access_key_id, secret_access_key, session_token) =
-            match &self.credentials_provider {
-                Some(provider) => {
-                    let pair = self.resolve_provider_creds(py, provider.as_ref())?;
-                    (Some(pair.access_key), Some(pair.secret_key), None)
-                }
-                None => (
-                    self.access_key_id.clone(),
-                    self.secret_access_key.clone(),
-                    self.session_token.clone(),
-                ),
-            };
+        let (access_key_id, secret_access_key, session_token) = match &self.credentials_provider {
+            Some(provider) => {
+                let pair = self.resolve_provider_creds(py, provider.as_ref())?;
+                (Some(pair.access_key), Some(pair.secret_key), None)
+            }
+            None => (
+                self.access_key_id.clone(),
+                self.secret_access_key.clone(),
+                self.session_token.clone(),
+            ),
+        };
 
         Ok(CoreS3Config {
             region: self.region.clone(),

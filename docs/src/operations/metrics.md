@@ -37,7 +37,7 @@ path    = "/metrics"
 | Key       | Default      | Notes                                                          |
 |-----------|--------------|----------------------------------------------------------------|
 | `enabled` | `false`      | Master switch. When false the endpoint is not served.          |
-| `path`    | `"/metrics"` | Endpoint path. Must start with `/` and not end with `/`. Served at the bare host root, independent of the configured URL `prefix`. |
+| `path`    | `"/metrics"` | Endpoint path. Must start with `/` and not end with `/`. Served at `{prefix}{path}` — include the configured `server.prefix` in your scrape config. |
 
 The `path` must not collide with reserved mounts (`/`, `/api`, `/health`,
 `/healthz`, `/readyz`, `/version`) or with the `docs` / `swagger` paths;

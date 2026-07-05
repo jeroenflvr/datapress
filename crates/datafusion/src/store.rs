@@ -504,7 +504,8 @@ impl Store {
     ) -> Result<ArrowIpcStream, AppError> {
         let batches = self.query_batches(name, req).await?;
         Ok(stream_arrow_batches(batches))
-    }    pub async fn query_arrow_stream_all(
+    }
+    pub async fn query_arrow_stream_all(
         &self,
         name: &str,
         req: &QueryRequest,
@@ -549,9 +550,8 @@ impl Store {
             let props = parquet::file::properties::WriterProperties::builder()
                 .set_compression(parquet::basic::Compression::SNAPPY)
                 .build();
-            let mut writer =
-                parquet::arrow::ArrowWriter::try_new(&mut buf, schema, Some(props))
-                    .map_err(|e| AppError::Internal(format!("parquet writer init: {e}")))?;
+            let mut writer = parquet::arrow::ArrowWriter::try_new(&mut buf, schema, Some(props))
+                .map_err(|e| AppError::Internal(format!("parquet writer init: {e}")))?;
             for batch in &batches {
                 if batch.num_rows() > 0 {
                     writer
@@ -1805,9 +1805,10 @@ async fn open_delta_provider(
     opts: HashMap<String, String>,
 ) -> Result<Arc<dyn TableProvider>, AppError> {
     let table = open_delta_table(d, opts).await?;
-    table.table_provider().await.map_err(|e| {
-        AppError::Internal(format!("dataset '{}': delta table_provider: {e}", d.name))
-    })
+    table
+        .table_provider()
+        .await
+        .map_err(|e| AppError::Internal(format!("dataset '{}': delta table_provider: {e}", d.name)))
 }
 
 /// Resolve the deltalake storage-options for a dataset: empty for local
@@ -2035,7 +2036,6 @@ fn is_s3_access_denied(msg: &str) -> bool {
         || low.contains("403")
 }
 
-
 ///
 /// Local sources are sized with a cheap filesystem stat (`estimate_local_bytes`);
 /// S3 sources are sized by listing the object store under their prefix. S3
@@ -2096,8 +2096,7 @@ async fn estimate_s3_bytes(d: &DatasetConfig) -> Result<u64, AppError> {
         .and_then(|rest| rest.split_once('/').map(|(_bucket, key)| key))
         .unwrap_or("")
         .trim_end_matches('/');
-    let prefix =
-        (!prefix_key.is_empty()).then(|| object_store::path::Path::from(prefix_key));
+    let prefix = (!prefix_key.is_empty()).then(|| object_store::path::Path::from(prefix_key));
 
     let mut total: u64 = 0;
     let mut stream = store.list(prefix.as_ref());
@@ -2343,8 +2342,9 @@ fn build_query_sql_with_suffix(
         Some(s) => format!(" ORDER BY {s}"),
         None => String::new(),
     };
-    let sql =
-        format!("SELECT {cols} FROM {table}{where_clause}{group_clause}{having_clause}{order_clause}{suffix}");
+    let sql = format!(
+        "SELECT {cols} FROM {table}{where_clause}{group_clause}{having_clause}{order_clause}{suffix}"
+    );
     Ok((sql, params.into_values()))
 }
 
@@ -3607,4 +3607,3 @@ mod tests {
         }
     }
 }
-

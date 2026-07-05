@@ -122,18 +122,6 @@ impl Client {
         format!("{}{}{}", self.base_url, self.api_base, path)
     }
 
-    fn root_url(&self, path: &str) -> String {
-        // /healthz and /readyz live at the host root, outside any prefix.
-        // Strip everything after the authority from base_url.
-        let without_scheme = self
-            .base_url
-            .split_once("://")
-            .unwrap_or(("http", self.base_url.as_str()));
-        let (scheme, rest) = without_scheme;
-        let authority = rest.split('/').next().unwrap_or(rest);
-        format!("{scheme}://{authority}{path}")
-    }
-
     fn apply_headers(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         let mut req = req;
         if let Some(t) = &self.admin_token {
@@ -173,15 +161,18 @@ impl Client {
 
     // --------------------------------------------------------- probes --
 
-    /// Liveness probe — `GET /healthz` (always at the host root).
+    /// Liveness probe — `GET {base_url}/healthz`.
+    /// The `base_url` you supply must already include any configured
+    /// `server.prefix` (e.g. `http://host:8000/dp`).
     pub async fn healthz(&self) -> Result<JsonValue> {
-        self.get_json(self.root_url("/healthz")).await
+        self.get_json(format!("{}/healthz", self.base_url)).await
     }
 
-    /// Readiness probe — `GET /readyz`. Returns a `503` error while the
-    /// server is still loading datasets.
+    /// Readiness probe — `GET {base_url}/readyz`. Returns a `503` error
+    /// while the server is still loading datasets.
+    /// The `base_url` must include any configured `server.prefix`.
     pub async fn readyz(&self) -> Result<JsonValue> {
-        self.get_json(self.root_url("/readyz")).await
+        self.get_json(format!("{}/readyz", self.base_url)).await
     }
 
     // ------------------------------------------------------- metadata --
@@ -200,10 +191,9 @@ impl Client {
                 .into_iter()
                 .filter_map(|it| match it {
                     JsonValue::String(s) => Some(s),
-                    JsonValue::Object(o) => o
-                        .get("name")
-                        .and_then(|n| n.as_str())
-                        .map(str::to_owned),
+                    JsonValue::Object(o) => {
+                        o.get("name").and_then(|n| n.as_str()).map(str::to_owned)
+                    }
                     _ => None,
                 })
                 .collect(),

@@ -1,15 +1,16 @@
 # Probes
 
-Four endpoints answer "is the server alive and ready?". The
-unprefixed three sit at the bare host root, independent of the
-configured URL prefix.
+Four endpoints answer "is the server alive and ready?". All four are
+mounted under the configured `server.prefix` (empty by default, so paths
+are identical for unconfigured servers). Include the prefix in
+orchestrator probe configs when a non-empty prefix is set.
 
 | Method | Path                  | Code      | Body                                                       | Use                                     |
 |--------|-----------------------|-----------|------------------------------------------------------------|-----------------------------------------|
-| GET    | `/healthz`            | `200`     | `{"status":"ok"}`                                          | Kubernetes liveness probe.              |
-| GET    | `/readyz`             | `200`/`503` | `{"status":"ready","datasets":N}` / `{"status":"not_ready","datasets":0}` | Kubernetes readiness probe.             |
-| GET    | `/version`            | `200`     | Build metadata (see below)                                 | Manual / dashboard build identification.|
-| GET    | `{prefix}/health`     | `200`     | `{"status":"ok"}`                                          | Legacy alias, honours `prefix`.         |
+| GET    | `{prefix}/healthz`    | `200`     | `{"status":"ok"}`                                          | Kubernetes liveness probe.              |
+| GET    | `{prefix}/readyz`     | `200`/`503` | `{"status":"ready","datasets":N}` / `{"status":"not_ready","datasets":0}` | Kubernetes readiness probe.             |
+| GET    | `{prefix}/version`    | `200`     | Build metadata (see below)                                 | Manual / dashboard build identification.|
+| GET    | `{prefix}/health`     | `200`     | `{"status":"ok"}`                                          | Legacy alias, same path structure.      |
 
 ## `/healthz` — liveness
 

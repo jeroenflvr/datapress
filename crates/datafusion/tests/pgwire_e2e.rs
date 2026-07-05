@@ -130,7 +130,8 @@ async fn pgwire_password_auth_queries() {
     });
 
     // Connect with the correct password, retrying until the listener is up.
-    let good = format!("host=127.0.0.1 port={port} user={USER} password={PASSWORD} dbname=datapress");
+    let good =
+        format!("host=127.0.0.1 port={port} user={USER} password={PASSWORD} dbname=datapress");
     let client = {
         let mut attempt = None;
         for _ in 0..50 {
@@ -196,7 +197,10 @@ async fn pgwire_password_auth_queries() {
         .query("SELECT table_name FROM information_schema.tables", &[])
         .await
         .expect("information_schema.tables query");
-    let table_names: Vec<String> = rows.iter().map(|r| r.get::<_, String>("table_name")).collect();
+    let table_names: Vec<String> = rows
+        .iter()
+        .map(|r| r.get::<_, String>("table_name"))
+        .collect();
     assert!(
         table_names.iter().any(|t| t == "people"),
         "information_schema.tables should include 'people', got {table_names:?}"
@@ -232,7 +236,10 @@ async fn pgwire_password_auth_queries() {
             .await
             .unwrap_or_else(|e| panic!("information_schema.{view} must be queryable: {e}"));
         let n: i64 = row.get("n");
-        assert_eq!(n, 0, "information_schema.{view} must be empty, got {n} rows");
+        assert_eq!(
+            n, 0,
+            "information_schema.{view} must be empty, got {n} rows"
+        );
     }
 
     // (d2) Npgsql type-load query — the verbatim SQL Npgsql 4.x sends on
@@ -387,17 +394,19 @@ async fn pgwire_password_auth_over_tls() {
     });
 
     // Client TLS config that trusts the throwaway cert.
-    let tls_config =
-        rustls::ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-            .with_safe_default_protocol_versions()
-            .unwrap()
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(NoCertVerify))
-            .with_no_client_auth();
+    let tls_config = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .dangerous()
+    .with_custom_certificate_verifier(Arc::new(NoCertVerify))
+    .with_no_client_auth();
     let tls = tokio_postgres_rustls::MakeRustlsConnect::new(tls_config);
 
-    let conn_str =
-        format!("host=127.0.0.1 port={port} user={USER} password={PASSWORD} dbname=datapress sslmode=require");
+    let conn_str = format!(
+        "host=127.0.0.1 port={port} user={USER} password={PASSWORD} dbname=datapress sslmode=require"
+    );
     let client = {
         let mut attempt = None;
         for _ in 0..50 {

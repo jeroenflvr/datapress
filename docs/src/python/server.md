@@ -51,9 +51,9 @@ DataPressConfig(backend="datafusion", port=8000, prefix="/datapress")
 # → GET /datapress/api/v1/datasets, GET /datapress/health, ...
 ```
 
-`prefix` must start with `/` and not end with `/`. The unprefixed
-probes — `/healthz`, `/readyz`, `/version` — stay at the bare host
-root.
+`prefix` must start with `/` and not end with `/`. Every route—probes,
+API, docs, metrics—is mounted under it. Liveness / readiness probe
+paths for orchestrators must include the prefix.
 
 ## In a Jupyter notebook
 

@@ -252,9 +252,7 @@ mod tests {
             include: vec!["Id".into()],
             exclude: vec!["When".into()],
         };
-        let err = s()
-            .with_filters(ColumnFilter::default(), both)
-            .unwrap_err();
+        let err = s().with_filters(ColumnFilter::default(), both).unwrap_err();
         assert!(matches!(err, AppError::InvalidValue(_)));
     }
 
@@ -311,4 +309,3 @@ mod tests {
         ));
     }
 }
-

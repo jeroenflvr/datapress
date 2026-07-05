@@ -174,23 +174,27 @@ async fn run_server(
 
     #[cfg(feature = "docs")]
     if docs_cfg.enabled {
-        log::info!("  {} (mkdocs site):", docs_cfg.path);
-        log::info!("    GET    {}/", docs_cfg.path);
-        log::info!("    GET    {}/{{path}}", docs_cfg.path);
+        log::info!("  {}{} (mkdocs site):", prefix, docs_cfg.path);
+        log::info!("    GET    {}{}/", prefix, docs_cfg.path);
+        log::info!("    GET    {}{}/{{path}}", prefix, docs_cfg.path);
     }
 
     #[cfg(feature = "swagger")]
     if swagger_cfg.enabled {
-        log::info!("  {} (swagger UI):", swagger_cfg.path);
-        log::info!("    GET    {}/", swagger_cfg.path);
-        log::info!("    GET    {}/openapi.json", swagger_cfg.path);
+        log::info!("  {}{} (swagger UI):", prefix, swagger_cfg.path);
+        log::info!("    GET    {}{}/", prefix, swagger_cfg.path);
+        log::info!("    GET    {}{}/openapi.json", prefix, swagger_cfg.path);
     }
 
     #[cfg(feature = "explorer")]
     if explorer_cfg.enabled {
-        log::info!("  {} (explorer UI):", explorer_cfg.path);
-        log::info!("    GET    {}/", explorer_cfg.path);
-        log::info!("    GET    {}/datasets/{{name}}", explorer_cfg.path);
+        log::info!("  {}{} (explorer UI):", prefix, explorer_cfg.path);
+        log::info!("    GET    {}{}/", prefix, explorer_cfg.path);
+        log::info!(
+            "    GET    {}{}/datasets/{{name}}",
+            prefix,
+            explorer_cfg.path
+        );
     }
 
     // Resolve the Swagger UI's OIDC login endpoints once, before binding.
@@ -223,11 +227,16 @@ async fn run_server(
     // every worker shares a single registry (counts aggregate correctly).
     // Constructed whenever the feature is compiled; the runtime `enabled`
     // flag gates whether it is actually wrapped (and the endpoint served).
+    //
+    // The endpoint path is `{prefix}{metrics.path}` so it lands under the
+    // configured prefix like every other route.
+    #[cfg(feature = "metrics")]
+    let metrics_mount = format!("{prefix}{}", metrics_cfg.path);
     #[cfg(feature = "metrics")]
     let prometheus = {
         use actix_web_prom::PrometheusMetricsBuilder;
         PrometheusMetricsBuilder::new("datapress")
-            .endpoint(metrics_cfg.path.as_str())
+            .endpoint(metrics_mount.as_str())
             .build()
             .map_err(|e| std::io::Error::other(format!("metrics init failed: {e}")))?
     };
@@ -236,9 +245,19 @@ async fn run_server(
 
     #[cfg(feature = "metrics")]
     if metrics_cfg.enabled {
-        log::info!("  {} (prometheus metrics):", metrics_cfg.path);
-        log::info!("    GET    {}", metrics_cfg.path);
+        log::info!("  {}{} (prometheus metrics):", prefix, metrics_cfg.path);
+        log::info!("    GET    {}{}", prefix, metrics_cfg.path);
     }
+
+    // Compute the prefixed mount strings for docs / swagger / explorer once,
+    // before the HttpServer closure, so workers can clone strings rather than
+    // reformat them on every request.
+    #[cfg(feature = "docs")]
+    let docs_mount = format!("{prefix}{}", docs_cfg.path);
+    #[cfg(feature = "swagger")]
+    let swagger_mount = format!("{prefix}{}", swagger_cfg.path);
+    #[cfg(feature = "explorer")]
+    let explorer_mount = format!("{prefix}{}", explorer_cfg.path);
 
     let build_info = web::Data::new(handlers::BuildInfo::new(
         // `&'static str` so it fits BuildInfo's compile-time fields.
@@ -265,7 +284,7 @@ async fn run_server(
             #[cfg(feature = "docs")]
             {
                 if docs_cfg.enabled {
-                    docs_cfg.path.clone()
+                    docs_mount.clone()
                 } else {
                     "https://docs.datap-rs.org".to_string()
                 }
@@ -281,7 +300,7 @@ async fn run_server(
             #[cfg(feature = "swagger")]
             {
                 if swagger_cfg.enabled {
-                    Some(format!("{}/", swagger_cfg.path))
+                    Some(format!("{swagger_mount}/"))
                 } else {
                     None
                 }
@@ -312,7 +331,7 @@ async fn run_server(
         Some(web::Data::new(crate::explorer::ExplorerState {
             backend: backend.clone(),
             datasets: std::sync::RwLock::new(cfg.datasets.clone()),
-            explorer_base: explorer_cfg.path.clone(),
+            explorer_base: explorer_mount.clone(),
             api_base: format!("{prefix}/api/v1"),
             backend_label: label.to_string(),
             sql_enabled: cfg.sql.enabled,
@@ -332,9 +351,13 @@ async fn run_server(
         let query_limits = handlers::QueryLimits { max_page_size };
         let timeout = Timeout::new(Duration::from_millis(timeout_ms.max(1)));
         #[cfg(feature = "docs")]
+        let docs_mount = docs_mount.clone();
+        #[cfg(feature = "docs")]
         let docs_cfg = docs_cfg.clone();
         #[cfg(feature = "explorer")]
         let explorer_state = explorer_state.clone();
+        #[cfg(feature = "swagger")]
+        let swagger_mount = swagger_mount.clone();
         #[cfg(feature = "swagger")]
         let swagger_cfg = swagger_cfg.clone();
         #[cfg(feature = "swagger")]
@@ -357,11 +380,11 @@ async fn run_server(
                 middleware::Compress::default(),
             ))
             .wrap(middleware::Logger::new("%a \"%r\" %s %b bytes %Dms"));
-        // Auth middleware wraps everything below — including the docs +
-        // swagger services and the prefix scope. Health/version probes
-        // are registered above and remain unauthenticated by design so
-        // load balancers can keep checking liveness. When auth is
-        // disabled the middleware is a pass-through.
+        // Auth middleware wraps everything below, including the prefix
+        // scope. Probes live under the prefix scope but remain
+        // unauthenticated because their handlers require no scope — not
+        // because of any path exemption in the auth middleware. When auth
+        // is disabled the middleware is a pass-through.
         #[cfg(feature = "auth")]
         let app = match auth_state.clone() {
             Some(state) => app
@@ -376,26 +399,23 @@ async fn run_server(
         // when `[metrics].enabled = false`.
         #[cfg(feature = "metrics")]
         let app = app.wrap(middleware::Condition::new(metrics_enabled, prometheus));
-        let app = app
-            .service(handlers::healthz)
-            .service(handlers::readyz)
-            .service(handlers::version);
-        // Docs + swagger are registered BEFORE the `web::scope(prefix)`
-        // catch-all below. An empty `prefix` (the default) becomes
-        // `web::scope("")` which matches every path and 404s any miss
-        // *inside* the scope — so services registered after it become
-        // unreachable. Keeping these at the top of the dispatch chain
-        // sidesteps that.
+        // Docs + swagger + explorer are registered BEFORE the
+        // `web::scope(prefix)` catch-all below. An empty `prefix` (the
+        // default) becomes `web::scope("")` which matches every path and
+        // 404s any miss *inside* the scope — so services registered after
+        // it become unreachable. Keeping these at the top of the dispatch
+        // chain sidesteps that. They are served at their prefixed mount
+        // strings (computed once before this closure from `{prefix}{path}`).
         #[cfg(feature = "docs")]
         let app = if docs_cfg.enabled {
-            app.configure(|c| crate::docs::configure(&docs_cfg.path, c))
+            app.configure(|c| crate::docs::configure(&docs_mount, c))
         } else {
             app
         };
         #[cfg(feature = "swagger")]
         let app = if swagger_cfg.enabled {
             app.configure(|c| {
-                crate::swagger::configure(&swagger_cfg.path, swagger_oauth2.as_ref(), c)
+                crate::swagger::configure(&swagger_mount, swagger_oauth2.as_ref(), &prefix, c)
             })
         } else {
             app
@@ -409,6 +429,9 @@ async fn run_server(
         };
         app.service(
             web::scope(prefix.as_str())
+                .service(handlers::healthz)
+                .service(handlers::readyz)
+                .service(handlers::version)
                 .service(handlers::health)
                 // Canonical, versioned API.
                 .service(web::scope("/api/v1").configure(handlers::v1::configure))
@@ -483,7 +506,8 @@ async fn wait_for_signal() -> &'static str {
 }
 
 /// Pretty-print the route table at startup. Two sections:
-///   - general routes (health, probes)
+///   - general routes (probes, health) — all mounted under the configured
+///     `server.prefix` (empty string when no prefix is set).
 ///   - per-dataset routes for every mounted API version (canonical
 ///     `/api/v1/...` + the legacy un-versioned `/api/...` alias).
 fn log_routes(prefix: &str, backend: &dyn Backend) {
@@ -496,9 +520,9 @@ fn log_routes(prefix: &str, backend: &dyn Backend) {
     log::info!("Routes:");
     log::info!("  general:");
     for (method, path) in [
-        ("GET", "/healthz".to_string()),
-        ("GET", "/readyz".to_string()),
-        ("GET", "/version".to_string()),
+        ("GET", format!("{p}/healthz")),
+        ("GET", format!("{p}/readyz")),
+        ("GET", format!("{p}/version")),
         ("GET", format!("{p}/health")),
     ] {
         log::info!("    {:<width$} {}", method, path, width = METHOD_W);

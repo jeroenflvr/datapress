@@ -86,10 +86,11 @@ pub struct ServerConfig {
     /// Number of actix worker threads. `None` (= unset) → one per CPU.
     pub workers: Option<usize>,
     /// Optional URL path prefix — useful when sitting behind a reverse
-    /// proxy that rewrites e.g. `/datapress/...` → `/...`. When set, every
-    /// route is mounted under this prefix (so the proxy can pass the URL
-    /// through unchanged). Must start with `/` and not end with `/`; the
-    /// empty string (default) means no prefix.
+    /// proxy that strips or preserves a path component. When set, EVERY
+    /// route is mounted under this prefix: probes (`/healthz`, `/readyz`,
+    /// `/version`), the API (`/api/v1/...`), docs, Swagger UI, explorer,
+    /// and metrics. Must start with `/` and not end with `/`; the empty
+    /// string (default) means no prefix.
     pub prefix: String,
     /// Negotiate response compression (gzip / brotli / zstd) via the
     /// `Accept-Encoding` request header. Enabled by default. Disable when
@@ -427,15 +428,14 @@ pub struct SwaggerOAuth2Config {
 /// with the `metrics` cargo feature), the server installs a middleware
 /// that records per-request HTTP counters and latency histograms, and
 /// exposes them in the Prometheus text exposition format at
-/// [`MetricsConfig::path`] (default `/metrics`).
+/// `{prefix}{path}` (default `/metrics` with an empty prefix).
 ///
-/// The endpoint is mounted at a fixed, *unprefixed* path — like the
-/// health probes — so a scrape config doesn't need to know about any
-/// reverse-proxy `server.prefix`. It is **not** behind the `[auth]`
-/// layer: Prometheus scrapers rarely carry bearer tokens, and the
-/// endpoint exposes only aggregate request metrics (no row data). Keep
-/// it on a network the scraper can reach but the public cannot, e.g. by
-/// binding `server.listen` to a private interface.
+/// Scrape configs must include the configured `server.prefix`. The
+/// endpoint is **not** behind the `[auth]` layer: Prometheus scrapers
+/// rarely carry bearer tokens, and the endpoint exposes only aggregate
+/// request metrics (no row data). Keep it on a network the scraper can
+/// reach but the public cannot, e.g. by binding `server.listen` to a
+/// private interface.
 ///
 /// When the binary was built without the `metrics` feature,
 /// `enabled = true` is harmless: the server logs a warning at startup
@@ -1400,7 +1400,8 @@ impl DatasetConfig {
                 self.name
             )));
         }
-        self.predicate_filter.validate(&self.name, "predicate_filter")?;
+        self.predicate_filter
+            .validate(&self.name, "predicate_filter")?;
         self.projection_filter
             .validate(&self.name, "projection_filter")?;
         if self.source.is_s3() {
@@ -2046,10 +2047,7 @@ mod tests {
             "s3://bucket/logs/*.parquet"
         );
         // Non-S3 -> unchanged.
-        assert_eq!(
-            mk("/local/logs").s3_recursive_parquet_glob(),
-            "/local/logs"
-        );
+        assert_eq!(mk("/local/logs").s3_recursive_parquet_glob(), "/local/logs");
     }
 
     #[test]
@@ -2229,4 +2227,3 @@ mod tests {
         assert!(cfg.validate_enabled().is_ok());
     }
 }
-
