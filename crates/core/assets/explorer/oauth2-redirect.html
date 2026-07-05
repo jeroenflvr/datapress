@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signing in…</title>
+</head>
+<body>
+  <p style="font-family: system-ui, sans-serif; padding: 1rem;">Completing sign-in… this window should close automatically.</p>
+  <script>
+    // OAuth2 Authorization Code + PKCE redirect handler for the DataPress
+    // explorer. The IdP redirects the popup here with either a `code`
+    // (success) or an `error` in the query string. We relay the result back
+    // to the opener window via postMessage — scoped to this exact origin —
+    // and close. The opener validates `state` and performs the token
+    // exchange (it holds the PKCE code_verifier).
+    (function () {
+      function paramsFrom(str) {
+        var out = {};
+        (str || "").replace(/^[?#]/, "").split("&").forEach(function (pair) {
+          if (!pair) return;
+          var i = pair.indexOf("=");
+          var k = i < 0 ? pair : pair.slice(0, i);
+          var v = i < 0 ? "" : pair.slice(i + 1);
+          out[decodeURIComponent(k)] = decodeURIComponent(v.replace(/\+/g, " "));
+        });
+        return out;
+      }
+      // Auth-code responses use the query string; some IdPs mirror errors in
+      // the fragment, so merge both (query wins).
+      var p = Object.assign({}, paramsFrom(location.hash), paramsFrom(location.search));
+      var msg = {
+        type: "datapress-oauth2",
+        code: p.code || null,
+        state: p.state || null,
+        error: p.error || null,
+        errorDescription: p.error_description || null
+      };
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage(msg, window.location.origin);
+        }
+      } catch (e) {
+        /* opener gone / cross-origin — nothing we can do */
+      }
+      window.close();
+    })();
+  </script>
+</body>
+</html>

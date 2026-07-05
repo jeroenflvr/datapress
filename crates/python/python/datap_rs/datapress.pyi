@@ -188,6 +188,10 @@ class DataPressConfig:
     swagger_oauth2_pkce: bool
     explorer_enabled: bool
     explorer_path: str
+    explorer_oauth2_issuer: str
+    explorer_oauth2_client_id: str
+    explorer_oauth2_scopes: list[str]
+    explorer_oauth2_pkce: bool
     admin_token: Optional[str]
     sql_enabled: bool
     sql_max_rows: int
@@ -232,6 +236,10 @@ class DataPressConfig:
         swagger_oauth2_pkce: bool = True,
         explorer_enabled: bool = True,
         explorer_path: str = "/explore",
+        explorer_oauth2_issuer: str = "",
+        explorer_oauth2_client_id: str = "",
+        explorer_oauth2_scopes: Optional[list[str]] = None,
+        explorer_oauth2_pkce: bool = True,
         admin_token: Optional[str] = None,
         sql_enabled: bool = False,
         sql_max_rows: int = 100_000,
@@ -313,6 +321,15 @@ class DataPressConfig:
                 wheel built with the ``explorer`` feature. Default ``True``.
             explorer_path: Path the explorer UI is served on. Must start with
                 ``/`` and not end with ``/``. Default ``"/explore"``.
+            explorer_oauth2_issuer: OIDC issuer used by the explorer's API
+                Query login button. Empty disables the explorer's OAuth2
+                login.
+            explorer_oauth2_client_id: Public OAuth2 client id registered for
+                the explorer's login flow.
+            explorer_oauth2_scopes: Scopes requested by default in the
+                explorer's login flow.
+            explorer_oauth2_pkce: Use PKCE for the authorization-code flow.
+                Default ``True``.
             admin_token: Admin token accepted by ``POST …/reload`` via the
                 ``X-Admin-Token`` header. Equivalent to setting the
                 ``ADMIN_TOKEN`` environment variable — use whichever is more

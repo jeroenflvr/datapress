@@ -143,8 +143,48 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "redirectUris": [
-        "http://localhost:8000/swagger-ui/*",
-        "http://localhost:8000/*"
+        "http://localhost:8000/*",
+        "http://127.0.0.1:8000/*",
+        "http://localhost:8001/*",
+        "http://127.0.0.1:8001/*",
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*"
+      ],
+      "webOrigins": ["*"],
+      "defaultClientScopes": [
+        "web-origins",
+        "profile",
+        "roles",
+        "email",
+        "datasets:read"
+      ],
+      "optionalClientScopes": [
+        "datasets:reload",
+        "datasets:accidents:read",
+        "datasets:accidents:reload",
+        "datasets:events:read",
+        "datasets:events:reload",
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+      ]
+    },
+    {
+      "clientId": "datapress-explorer",
+      "name": "DataPress Explorer UI",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:8000/*",
+        "http://127.0.0.1:8000/*",
+        "http://localhost:8001/*",
+        "http://127.0.0.1:8001/*",
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*"
       ],
       "webOrigins": ["*"],
       "defaultClientScopes": [

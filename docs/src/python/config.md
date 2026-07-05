@@ -184,6 +184,41 @@ login. It discovers the provider from `swagger_oauth2_issuer`, requests
 the configured scopes, and sends the access token on API calls; it does
 not store or exchange client secrets.
 
+### Explorer OAuth2 / OIDC
+
+The explorer UI's **API Query** tab can offer the same interactive login.
+The `explorer_oauth2_*` fields mirror the Swagger ones and only drive the
+UI — attaching a bearer token to the requests the API Query tab makes.
+`AuthConfig` is still what enforces tokens on the API.
+
+```python
+from datap_rs.datapress import DataPressConfig
+
+cfg = DataPressConfig(
+    backend="duckdb",
+    port=8000,
+    explorer_enabled=True,
+    explorer_path="/explore",
+    explorer_oauth2_issuer="https://issuer.example.com",
+    explorer_oauth2_client_id="datapress-explorer",
+    explorer_oauth2_scopes=["openid", "profile", "datasets:read"],
+    explorer_oauth2_pkce=True,
+)
+```
+
+Register this redirect URI with your IdP (matching `explorer_path`):
+
+```text
+http://localhost:8000/explore/oauth2-redirect.html
+```
+
+For production, use your public HTTPS origin instead. The endpoints are
+discovered from `explorer_oauth2_issuer` at startup; if discovery fails the
+explorer is served without the Authorize button rather than a broken dialog.
+As with Swagger UI, keep `explorer_oauth2_pkce=True` for public browser
+clients and never put a client secret in browser code.
+
+
 ## `DatasetConfig`
 
 ```python

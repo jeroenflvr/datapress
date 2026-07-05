@@ -146,6 +146,11 @@ as a redirect URI on the IdP side. The "Authorize" button in `/docs`
 will then run the full PKCE flow and inject the resulting access token
 into every "Try it out" request.
 
+The [explorer UI](../configuration/explorer.md#oidc-single-sign-on-optional)
+offers the same login on its **API Query** tab via an equivalent
+`[explorer.oauth2]` block — register
+`https://<host>/explore/oauth2-redirect.html` as its redirect URI.
+
 ## Migrating from `X-Admin-Token`
 
 `admin_token_fallback = true` (the default) keeps the existing
@@ -197,9 +202,11 @@ RS256/ES256 will work.
 
     The repo ships a ready-to-go compose file at
     [`examples/keycloak/`](https://github.com/jeroenflvr/datapress/tree/main/examples/keycloak)
-    with a pre-provisioned realm, service-account client, scopes, and a
-    test user — `docker compose up -d` and you're done. The manual
-    instructions below mirror what that file automates.
+    with a pre-provisioned realm, service-account client, public UI
+    clients (`datapress-swagger` + `datapress-explorer`, with their
+    redirect URIs already registered), scopes, and a test user —
+    `docker compose up -d` and you're done. The manual instructions below
+    mirror what that file automates.
 
 ```bash
 docker run --rm -p 8080:8080 \

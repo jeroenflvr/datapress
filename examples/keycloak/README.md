@@ -20,6 +20,7 @@ docker compose up -d
 | Realm | `datapress` |
 | Service-account client | `datapress-api` (secret `datapress-secret`) |
 | Swagger UI client (public) | `datapress-swagger` |
+| Explorer UI client (public) | `datapress-explorer` |
 | Scopes | `datasets:read`, `datasets:reload`, `datasets:accidents:read`, `datasets:accidents:reload`, `datasets:events:read`, `datasets:events:reload` |
 | Test user | `alice` / `alice` |
 
@@ -110,6 +111,37 @@ DataPressConfig(
     swagger_oauth2_client_id="datapress-swagger",
     swagger_oauth2_scopes=["datasets:read", "datasets:reload"],
     swagger_oauth2_pkce=True,
+)
+```
+
+## Explorer UI SSO
+
+The explorer's **API Query** tab has the same Authorize button. Point it at
+the pre-provisioned `datapress-explorer` public client:
+
+```toml
+[explorer.oauth2]
+client_id = "datapress-explorer"
+issuer    = "http://localhost:8080/realms/datapress"
+scopes    = ["datasets:read", "datasets:reload"]
+pkce      = true
+```
+
+The client's redirect URI (`http://localhost:8000/explore/oauth2-redirect.html`)
+is already registered, so signing in from `/explore` works out of the box
+when DataPress runs on port `8000`. If you serve DataPress on a different
+port or `[explorer].path`, add the matching
+`<origin>/<path>/oauth2-redirect.html` redirect URI to the client.
+
+From Python:
+
+```python
+DataPressConfig(
+    backend="duckdb",
+    explorer_oauth2_issuer="http://localhost:8080/realms/datapress",
+    explorer_oauth2_client_id="datapress-explorer",
+    explorer_oauth2_scopes=["datasets:read", "datasets:reload"],
+    explorer_oauth2_pkce=True,
 )
 ```
 

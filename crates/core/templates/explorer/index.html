@@ -110,6 +110,16 @@
                title="Skip server-side HTTP compression (gzip/brotli) for JSON responses. Browsers can't set Accept-Encoding from a page, so this sends ?compress=false instead. Arrow already bypasses compression.">
           <i class="bi bi-file-zip"></i> No compression
         </label>
+        <div id="api-auth" class="btn-group btn-group-sm d-none" role="group" aria-label="OAuth2 login">
+          <button id="api-auth-login" class="btn btn-outline-warning" type="button"
+                  title="Sign in with OIDC (Authorization Code + PKCE) and attach the token to API requests">
+            <i class="bi bi-shield-lock"></i> <span id="api-auth-label">Authorize</span>
+          </button>
+          <button id="api-auth-logout" class="btn btn-outline-warning d-none" type="button"
+                  title="Sign out and stop sending the bearer token">
+            <i class="bi bi-box-arrow-right"></i>
+          </button>
+        </div>
         <span id="api-status" class="badge text-bg-secondary ms-auto">idle</span>
       </div>
       <div class="card-body">
@@ -373,6 +383,26 @@
                 </div>
               </div>
 
+              <hr class="my-3">
+              <div class="row g-2">
+                <div class="col-12">
+                  <label class="form-label small mb-1">
+                    <i class="bi bi-shield-lock"></i> Admin token
+                    <span class="text-secondary">(required when the server enforces auth)</span>
+                  </label>
+                  <input id="reg-admin-token" type="password"
+                         class="form-control form-control-sm mono" autocomplete="off"
+                         placeholder="X-Admin-Token value">
+                  <div class="form-text">
+                    Registering a dataset mutates the running server, so it requires the same
+                    permission as the API. Sent as the <code>X-Admin-Token</code> header — it is
+                    <strong>not</strong> stored or included in the form body. If you signed in with
+                    the <strong>Authorize</strong> button (API Query tab), your bearer token is sent
+                    automatically and you can leave this blank.
+                  </div>
+                </div>
+              </div>
+
               <div class="mt-3">
                 <button type="submit" class="btn btn-sm btn-primary">
                   <i class="bi bi-plus-circle"></i> Register dataset
@@ -393,7 +423,7 @@
   </div>
 </div>
 
-<script id="explorer-config" type="application/json">{ "explorerBase": "{{ explorer_base }}", "apiBase": "{{ api_base }}", "sqlEnabled": {% if sql_enabled %}true{% else %}false{% endif %} }</script>
+<script id="explorer-config" type="application/json">{ "explorerBase": "{{ explorer_base }}", "apiBase": "{{ api_base }}", "sqlEnabled": {% if sql_enabled %}true{% else %}false{% endif %}, "oauth2": {{ oauth2_json|safe }} }</script>
 <script id="datasets-data" type="application/json">{{ datasets_json|safe }}</script>
 <script>
   // Lazily load the embedded DuckDB-WASM shell the first time its tab is shown.
@@ -505,6 +535,31 @@
         input.value = "";
         apply();
       }
+    });
+  })();
+</script>
+<script>
+  // Attach admin credentials to explorer mutations (Register / Persist) sent
+  // via htmx. The server gates these routes behind the same reload/admin
+  // permission the HTTP API requires, so we forward either the admin token
+  // (from the Register form's field, as X-Admin-Token) or the OAuth2 bearer
+  // token (if the user signed in via the Authorize button). Neither is placed
+  // in the request body.
+  (function () {
+    document.body.addEventListener("htmx:configRequest", function (evt) {
+      var tokenInput = document.getElementById("reg-admin-token");
+      if (tokenInput && tokenInput.value.trim()) {
+        evt.detail.headers["X-Admin-Token"] = tokenInput.value.trim();
+      }
+      try {
+        var raw = sessionStorage.getItem("datapress.explorer.oauth2.token");
+        if (raw) {
+          var rec = JSON.parse(raw);
+          if (rec && rec.accessToken) {
+            evt.detail.headers["Authorization"] = "Bearer " + rec.accessToken;
+          }
+        }
+      } catch (e) { /* ignore */ }
     });
   })();
 </script>

@@ -733,6 +733,21 @@ pub struct PyDataPressConfig {
     /// with ``/``. Default ``"/explore"``.
     #[pyo3(get, set)]
     pub explorer_path: String,
+    /// OIDC issuer used by the explorer's API Query login button. Empty
+    /// disables the explorer's OAuth2 login. This does not enable
+    /// server-side auth; pass ``AuthConfig`` to ``DataPress`` for API
+    /// enforcement.
+    #[pyo3(get, set)]
+    pub explorer_oauth2_issuer: String,
+    /// Public OAuth2 client id registered for the explorer's login flow.
+    #[pyo3(get, set)]
+    pub explorer_oauth2_client_id: String,
+    /// Scopes requested by default in the explorer's login flow.
+    #[pyo3(get, set)]
+    pub explorer_oauth2_scopes: Vec<String>,
+    /// Use PKCE for the explorer's authorization-code flow.
+    #[pyo3(get, set)]
+    pub explorer_oauth2_pkce: bool,
     /// Admin token for ``POST …/reload``. Equivalent to ``ADMIN_TOKEN`` env var.
     #[pyo3(get, set)]
     pub admin_token: Option<String>,
@@ -838,6 +853,13 @@ impl PyDataPressConfig {
     ///     explorer_path (str): Path the explorer UI is served on. Must
     ///         start with ``/`` and not end with ``/``. Default
     ///         ``"/explore"``.
+    ///     explorer_oauth2_issuer (str): OIDC issuer used by the explorer's
+    ///         API Query login button. Empty disables it.
+    ///     explorer_oauth2_client_id (str): Public OAuth2 client id for the
+    ///         explorer's login flow.
+    ///     explorer_oauth2_scopes (list[str]): Scopes requested by default.
+    ///     explorer_oauth2_pkce (bool): Use PKCE for the authorization-code
+    ///         flow. Default ``True``.
     ///     sql_enabled (bool): Enable the raw-SQL endpoint
     ///         ``POST /api/v1/sql``. Default ``False``.
     ///     sql_max_rows (int): Hard cap on rows returned by one raw-SQL
@@ -897,6 +919,10 @@ impl PyDataPressConfig {
         swagger_oauth2_pkce      = true,
         explorer_enabled   = true,
         explorer_path      = "/explore".to_string(),
+        explorer_oauth2_issuer    = String::new(),
+        explorer_oauth2_client_id = String::new(),
+        explorer_oauth2_scopes    = Vec::new(),
+        explorer_oauth2_pkce      = true,
         admin_token        = None,
         sql_enabled        = false,
         sql_max_rows       = 100_000,
@@ -941,6 +967,10 @@ impl PyDataPressConfig {
         swagger_oauth2_pkce: bool,
         explorer_enabled: bool,
         explorer_path: String,
+        explorer_oauth2_issuer: String,
+        explorer_oauth2_client_id: String,
+        explorer_oauth2_scopes: Vec<String>,
+        explorer_oauth2_pkce: bool,
         admin_token: Option<String>,
         sql_enabled: bool,
         sql_max_rows: u64,
@@ -984,6 +1014,10 @@ impl PyDataPressConfig {
             swagger_oauth2_pkce,
             explorer_enabled,
             explorer_path,
+            explorer_oauth2_issuer,
+            explorer_oauth2_client_id,
+            explorer_oauth2_scopes,
+            explorer_oauth2_pkce,
             admin_token,
             sql_enabled,
             sql_max_rows,
@@ -1162,9 +1196,40 @@ impl PyDataPressConfig {
                 self.explorer_path
             )));
         }
+        let oauth2 = if self.explorer_oauth2_issuer.trim().is_empty()
+            && self.explorer_oauth2_client_id.trim().is_empty()
+        {
+            None
+        } else {
+            if self.explorer_oauth2_issuer.trim().is_empty() {
+                return Err(PyValueError::new_err(
+                    "DataPressConfig.explorer_oauth2_issuer is required when explorer_oauth2_client_id is set",
+                ));
+            }
+            if self.explorer_oauth2_client_id.trim().is_empty() {
+                return Err(PyValueError::new_err(
+                    "DataPressConfig.explorer_oauth2_client_id is required when explorer_oauth2_issuer is set",
+                ));
+            }
+            if !(self.explorer_oauth2_issuer.starts_with("https://")
+                || self.explorer_oauth2_issuer.starts_with("http://"))
+            {
+                return Err(PyValueError::new_err(format!(
+                    "DataPressConfig.explorer_oauth2_issuer must be an absolute http(s) URL (got '{}')",
+                    self.explorer_oauth2_issuer
+                )));
+            }
+            Some(CoreSwaggerOAuth2Config {
+                issuer: self.explorer_oauth2_issuer.clone(),
+                client_id: self.explorer_oauth2_client_id.clone(),
+                scopes: self.explorer_oauth2_scopes.clone(),
+                pkce: self.explorer_oauth2_pkce,
+            })
+        };
         Ok(CoreExplorerConfig {
             enabled: self.explorer_enabled,
             path: self.explorer_path.clone(),
+            oauth2,
         })
     }
 

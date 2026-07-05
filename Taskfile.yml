@@ -37,6 +37,16 @@ tasks:
     desc: Build the Arrow + DataFusion-backed binary (release)
     cmds:
       - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion
+  
+  build:datafusion:all:
+    desc: Build the Arrow + DataFusion-backed binary (release)
+    cmds:
+      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion --features pgwire,docs,swagger,auth,metrics,explorer
+
+  build:dev:datafusion:all:
+    desc: Build the Arrow + DataFusion-backed binary (dev)
+    cmds:
+      - cargo build -p datapress-datafusion --bin datapress-datafusion --features pgwire,docs,swagger,auth,metrics,explorer
 
   build:datafusion:pgwire:
     desc: Build the DataFusion binary with the PostgreSQL wire protocol server

@@ -54,7 +54,7 @@ fn require_read(_: &HttpRequest) -> Result<(), crate::errors::AppError> {
 /// token matches OR (when `auth` is enabled) the caller holds the
 /// configured reload scopes. The two paths are independent so operators
 /// can migrate to OIDC without breaking existing automation.
-fn require_reload(req: &HttpRequest) -> Result<(), crate::errors::AppError> {
+pub(crate) fn require_reload(req: &HttpRequest) -> Result<(), crate::errors::AppError> {
     #[cfg(feature = "auth")]
     let admin_ok = admin::require_admin(req).is_ok();
     #[cfg(feature = "auth")]

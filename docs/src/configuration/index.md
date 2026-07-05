@@ -34,7 +34,8 @@ name = "..."
   styles, per-dataset env overrides.
 - [Indexing](indexing.md) — DataFusion equality-index policy.
 - [Explorer UI](explorer.md) — the built-in dataset browser, API query
-  tab, and DuckDB-WASM terminal (`[explorer]`).
+  tab, and DuckDB-WASM terminal, with an optional OIDC "Authorize" button
+  (`[explorer]` / `[explorer.oauth2]`).
 - [Swagger UI](swagger.md) — embedded interactive API docs and optional
   OIDC "Authorize" button (`[swagger]` / `[swagger.oauth2]`).
 - [Prometheus metrics](metrics.md) — the `/metrics` scrape endpoint

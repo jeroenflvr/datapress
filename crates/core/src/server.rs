@@ -291,6 +291,24 @@ async fn run_server(
                 None::<String>
             }
         };
+        // Resolve the explorer's OIDC login endpoints once, before binding —
+        // same discovery path the Swagger UI uses. Drives the API Query tab's
+        // Authorization Code + PKCE login. On failure we log and serve the
+        // explorer without a Login button rather than a broken dialog.
+        let explorer_oauth2 = match explorer_cfg.oauth2.as_ref() {
+            Some(o) => match crate::oauth2::resolve_oauth2(o).await {
+                Ok(resolved) => Some(resolved),
+                Err(e) => {
+                    log::warn!(
+                        "[explorer.oauth2] OIDC discovery for issuer {} failed ({e}); \
+                         serving the explorer without the Login button",
+                        o.issuer
+                    );
+                    None
+                }
+            },
+            None => None,
+        };
         Some(web::Data::new(crate::explorer::ExplorerState {
             backend: backend.clone(),
             datasets: std::sync::RwLock::new(cfg.datasets.clone()),
@@ -300,6 +318,7 @@ async fn run_server(
             sql_enabled: cfg.sql.enabled,
             docs_url,
             swagger_url,
+            oauth2: explorer_oauth2,
         }))
     } else {
         None

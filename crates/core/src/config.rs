@@ -468,11 +468,20 @@ impl Default for MetricsConfig {
 /// cargo feature, `enabled = true` is harmless: the server logs a warning
 /// at startup and skips the mount. Set `enabled = false` to suppress it at
 /// runtime even when the feature is compiled in.
+///
+/// To let users sign in from the explorer's **API Query** tab
+/// (Authorization Code + PKCE against any OIDC provider), populate the
+/// optional `[explorer.oauth2]` sub-block. Acquired tokens are attached as
+/// `Authorization: Bearer …` to every API request the tab makes — useful
+/// for exercising auth-protected endpoints. This drives the UI only; it
+/// does not turn on server-side token validation (configure `[auth]` for
+/// that).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ExplorerConfig {
     pub enabled: bool,
     pub path: String,
+    pub oauth2: Option<SwaggerOAuth2Config>,
 }
 
 impl Default for ExplorerConfig {
@@ -480,6 +489,7 @@ impl Default for ExplorerConfig {
         Self {
             enabled: true,
             path: "/explore".into(),
+            oauth2: None,
         }
     }
 }

@@ -27,6 +27,7 @@ use crate::config::{
     AddressingStyle, DatasetConfig, IndexConfig, IndexMode, Partitioning, S3Config, SourceConfig,
     SourceKind,
 };
+use crate::oauth2::ResolvedOAuth2;
 use crate::schema::LogicalType;
 
 /// Self-hosted Apache Arrow (UMD) bundle, embedded at compile time. Used by
@@ -58,6 +59,10 @@ pub struct ExplorerState {
     /// Target of the navbar "API" (Swagger UI) link when the Swagger UI is
     /// enabled on this server; `None` hides the link.
     pub swagger_url: Option<String>,
+    /// Resolved OIDC login endpoints for the API Query tab's Authorization
+    /// Code + PKCE flow. `None` hides the Login button (no `[explorer.oauth2]`
+    /// configured, or OIDC discovery failed at startup).
+    pub oauth2: Option<ResolvedOAuth2>,
 }
 
 #[derive(Template)]
@@ -72,6 +77,10 @@ struct IndexTemplate {
     swagger_url: Option<String>,
     datasets: Vec<DatasetListItem>,
     datasets_json: String,
+    /// OAuth2 login config for the API Query tab, serialized as a JSON
+    /// object (or the literal `null` when login is not configured), spliced
+    /// into the `explorer-config` script.
+    oauth2_json: String,
     /// Whether the server can append newly-registered datasets back to its
     /// on-disk config file (only when it was loaded from one).
     can_persist: bool,
@@ -162,6 +171,7 @@ pub fn configure(state: web::Data<ExplorerState>, cfg: &mut web::ServiceConfig) 
             web::scope(&mount)
                 .route("/", web::get().to(index))
                 .route("/terminal", web::get().to(terminal))
+                .route("/oauth2-redirect.html", web::get().to(oauth2_redirect))
                 .route("/assets/explorer.css", web::get().to(asset_explorer_css))
                 .route("/assets/explorer.js", web::get().to(asset_explorer_js))
                 .route("/assets/query-api.js", web::get().to(asset_query_api_js))
@@ -234,6 +244,21 @@ async fn index(state: web::Data<ExplorerState>) -> HttpResponse {
     let config_path = crate::config::source_config_path()
         .map(|p| p.display().to_string())
         .unwrap_or_default();
+    // Serialize the resolved OAuth2 login config for the API Query tab. The
+    // redirect URI is derived client-side from the current origin + explorer
+    // base, so only the discovered endpoints, client id, scopes and PKCE flag
+    // travel here. `null` when login is not configured / discovery failed.
+    let oauth2_json = match state.oauth2.as_ref() {
+        Some(o) => serde_json::json!({
+            "clientId": o.client_id,
+            "authorizationUrl": o.authorization_url,
+            "tokenUrl": o.token_url,
+            "scopes": o.scopes,
+            "pkce": o.pkce,
+        })
+        .to_string(),
+        None => "null".to_string(),
+    };
     let tpl = IndexTemplate {
         backend_label: state.backend_label.clone(),
         explorer_base: state.explorer_base.clone(),
@@ -244,6 +269,7 @@ async fn index(state: web::Data<ExplorerState>) -> HttpResponse {
         swagger_url: state.swagger_url.clone(),
         datasets: items,
         datasets_json,
+        oauth2_json,
         can_persist: !config_path.is_empty(),
         config_path,
     };
@@ -259,6 +285,18 @@ async fn terminal(state: web::Data<ExplorerState>) -> HttpResponse {
     render(&tpl)
 }
 
+/// OAuth2 Authorization Code + PKCE redirect landing page. The IdP sends the
+/// browser here (in a popup) with `?code=…&state=…`; the embedded script
+/// hands those back to the opener window via `postMessage`, which then
+/// exchanges the code for a token. Served as a static HTML page so the
+/// redirect URI is a stable, registerable URL.
+async fn oauth2_redirect() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .body(OAUTH2_REDIRECT_HTML)
+}
+
 // Static assets are embedded into the binary at compile time and served with
 // long-lived cache headers; they carry no per-request state.
 const EXPLORER_CSS: &str = include_str!("../assets/explorer/explorer.css");
@@ -266,6 +304,7 @@ const EXPLORER_JS: &str = include_str!("../assets/explorer/explorer.js");
 const QUERY_API_JS: &str = include_str!("../assets/explorer/query-api.js");
 const TERMINAL_CSS: &str = include_str!("../assets/explorer/terminal.css");
 const TERMINAL_JS: &str = include_str!("../assets/explorer/terminal.js");
+const OAUTH2_REDIRECT_HTML: &str = include_str!("../assets/explorer/oauth2-redirect.html");
 // Navbar link icons (PyPI / Docs), embedded from the docs asset tree.
 const PYPI_ICON_SVG: &str =
     include_str!("../../../docs/src/assets/images/python-logo-only.svg");
@@ -644,9 +683,21 @@ fn register_result_error(msg: &str) -> HttpResponse {
 /// register it live in the backend, and add it to the explorer's dataset
 /// list. Returns an HTML fragment (success card or error alert) for htmx.
 async fn register_dataset(
+    req: HttpRequest,
     state: web::Data<ExplorerState>,
     form: web::Form<RegisterForm>,
 ) -> HttpResponse {
+    // Registering a dataset mutates server state — gate it behind the same
+    // reload/admin permission the API's `POST /api/v1/datasets` requires
+    // (admin token via `X-Admin-Token`, or the configured reload scopes when
+    // OIDC is enabled). Without this the explorer would be an unauthenticated
+    // back door around the API's guard.
+    if let Err(e) = crate::handlers::v1::require_reload(&req) {
+        return register_result_error(&format!(
+            "Not authorized to register datasets: {e}. Provide the admin token \
+             (or sign in with the required reload scope)."
+        ));
+    }
     let cfg = match build_register_config(&form) {
         Ok(c) => c,
         Err(e) => return register_result_error(&e.to_string()),
@@ -688,9 +739,18 @@ fn html_alert(kind: &str, inner_html: &str) -> HttpResponse {
 /// dataset's `[[dataset]]` block to the server's on-disk config file so it
 /// survives a restart. Only works when the server was loaded from a file.
 async fn persist_dataset(
+    req: HttpRequest,
     state: web::Data<ExplorerState>,
     path: web::Path<String>,
 ) -> HttpResponse {
+    // Writing to the on-disk config is an admin mutation — same guard as
+    // registration and the API's `POST /api/v1/datasets/persist`.
+    if let Err(e) = crate::handlers::v1::require_reload(&req) {
+        return html_alert(
+            "danger",
+            &format!("Not authorized to persist datasets: {e}."),
+        );
+    }
     let name = path.into_inner();
     if crate::config::source_config_path().is_none() {
         return html_alert(

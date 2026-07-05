@@ -300,6 +300,9 @@ The compose file pre-provisions:
 - confidential client `datapress-api` (secret `datapress-secret`, service
   accounts enabled)
 - public client `datapress-swagger` (for Swagger UI SSO)
+- public client `datapress-explorer` (for the explorer's API Query login;
+  redirect URI `http://localhost:8000/explore/oauth2-redirect.html` is
+  pre-registered)
 - scopes `datasets:read` and `datasets:reload`
 - dataset-scoped optional scopes such as `datasets:accidents:read`,
   `datasets:accidents:reload`, `datasets:events:read`, and
@@ -397,6 +400,35 @@ TOKEN = requests.post(
     timeout=5,
 ).json()["access_token"]
 ```
+
+## Browser sign-in (Swagger UI + explorer)
+
+The same realm powers the interactive **Authorize** buttons in the Swagger
+UI (`/docs`) and the explorer's **API Query** tab (`/explore`). Both run an
+Authorization Code + PKCE flow — no client secret in the browser. Point each
+UI at its pre-provisioned public client:
+
+```python
+cfg = DataPressConfig(
+    backend="duckdb", port=8000,
+    # Swagger UI "Authorize" button
+    swagger_oauth2_issuer="http://localhost:8080/realms/datapress",
+    swagger_oauth2_client_id="datapress-swagger",
+    swagger_oauth2_scopes=["datasets:read", "datasets:reload"],
+    # Explorer API Query "Authorize" button
+    explorer_oauth2_issuer="http://localhost:8080/realms/datapress",
+    explorer_oauth2_client_id="datapress-explorer",
+    explorer_oauth2_scopes=["datasets:read", "datasets:reload"],
+)
+```
+
+The `datapress-explorer` client already has
+`http://localhost:8000/explore/oauth2-redirect.html` registered as a redirect
+URI, so signing in from `/explore` works out of the box when DataPress runs on
+port `8000`. Serving on another port or `[explorer].path`? Add the matching
+`<origin>/<path>/oauth2-redirect.html` to the client in the Keycloak admin
+console. These fields drive the UIs only; server-side enforcement still comes
+from `AuthConfig` above.
 
 ## OIDC scopes per dataset
 

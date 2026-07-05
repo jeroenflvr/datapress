@@ -14,6 +14,7 @@ const datasets = JSON.parse(document.getElementById("datasets-data").textContent
 const explorerBase = config.explorerBase || "";
 const apiBase = config.apiBase || "";
 const sqlEnabled = config.sqlEnabled === true;
+const oauth2Config = config.oauth2 || null;
 
 const el = (id) => document.getElementById(id);
 const statusEl = el("api-status");
@@ -123,6 +124,10 @@ function buildHeaders(wantArrow) {
   const h = new Headers();
   h.set("Content-Type", "application/json");
   h.set("Accept", wantArrow ? ARROW_ACCEPT : "application/json");
+  // Attach the OAuth2 bearer token (if the user signed in) before custom
+  // headers, so an explicit `Authorization:` line still wins.
+  const token = getAccessToken();
+  if (token) h.set("Authorization", `Bearer ${token}`);
   for (const [k, v] of parseHeaderLines()) {
     // Browsers reject forbidden header names (Host, Content-Length, …) — skip
     // those rather than aborting the whole request.
@@ -889,6 +894,187 @@ async function exportParquet() {
   }
 }
 
+//  OAuth2 Authorization Code + PKCE login 
+// Mirrors the Swagger UI's Authorize flow: sign in against an OIDC issuer in
+// a popup, exchange the auth code for a token client-side (holding the PKCE
+// verifier), and attach it as `Authorization: Bearer …` to API Query requests
+// (see buildHeaders). The token lives in sessionStorage so it survives a page
+// reload but not a browser restart. Configured via `[explorer.oauth2]`.
+const AUTH_TOKEN_KEY = "datapress.explorer.oauth2.token";
+const AUTH_PKCE_KEY = "datapress.explorer.oauth2.pkce";
+const authEl = el("api-auth");
+const authLoginEl = el("api-auth-login");
+const authLogoutEl = el("api-auth-logout");
+const authLabelEl = el("api-auth-label");
+
+let accessToken = null;
+
+function getAccessToken() {
+  return accessToken;
+}
+
+function loadStoredToken() {
+  try {
+    const raw = sessionStorage.getItem(AUTH_TOKEN_KEY);
+    if (!raw) return null;
+    const rec = JSON.parse(raw);
+    if (rec && rec.accessToken && (!rec.expiresAt || rec.expiresAt > Date.now())) return rec;
+    sessionStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch { /* ignore */ }
+  return null;
+}
+
+function storeToken(rec) {
+  accessToken = rec ? rec.accessToken : null;
+  try {
+    if (rec) sessionStorage.setItem(AUTH_TOKEN_KEY, JSON.stringify(rec));
+    else sessionStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch { /* ignore */ }
+  renderAuthState();
+}
+
+// Best-effort display name from a JWT payload for the button label.
+function decodeJwtName(token) {
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    return json.preferred_username || json.email || json.name || json.sub || null;
+  } catch { return null; }
+}
+
+function renderAuthState() {
+  if (!oauth2Config || !authEl) return;
+  authEl.classList.remove("d-none");
+  if (accessToken) {
+    const who = decodeJwtName(accessToken);
+    authLabelEl.textContent = who ? `Signed in: ${who}` : "Signed in";
+    authLoginEl.classList.remove("btn-outline-warning");
+    authLoginEl.classList.add("btn-outline-success");
+    authLogoutEl.classList.remove("d-none", "btn-outline-warning");
+    authLogoutEl.classList.add("btn-outline-success");
+  } else {
+    authLabelEl.textContent = "Authorize";
+    authLoginEl.classList.add("btn-outline-warning");
+    authLoginEl.classList.remove("btn-outline-success");
+    authLogoutEl.classList.add("d-none");
+  }
+}
+
+//  PKCE helpers 
+function base64UrlEncode(bytes) {
+  const arr = new Uint8Array(bytes);
+  let s = "";
+  for (let i = 0; i < arr.length; i++) s += String.fromCharCode(arr[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function randomString(byteLen) {
+  const bytes = new Uint8Array(byteLen);
+  crypto.getRandomValues(bytes);
+  return base64UrlEncode(bytes);
+}
+
+async function pkceChallenge(verifier) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  return base64UrlEncode(digest);
+}
+
+function redirectUri() {
+  return `${window.location.origin}${explorerBase}/oauth2-redirect.html`;
+}
+
+async function login() {
+  if (!oauth2Config) return;
+  const verifier = randomString(48);
+  const state = randomString(16);
+  sessionStorage.setItem(AUTH_PKCE_KEY, JSON.stringify({ verifier, state }));
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: oauth2Config.clientId,
+    redirect_uri: redirectUri(),
+    scope: (oauth2Config.scopes && oauth2Config.scopes.length ? oauth2Config.scopes : ["openid"]).join(" "),
+    state,
+  });
+  if (oauth2Config.pkce !== false) {
+    params.set("code_challenge", await pkceChallenge(verifier));
+    params.set("code_challenge_method", "S256");
+  }
+  const url = `${oauth2Config.authorizationUrl}?${params.toString()}`;
+  const w = 520, h = 640;
+  const left = window.screenX + (window.outerWidth - w) / 2;
+  const top = window.screenY + (window.outerHeight - h) / 2;
+  const popup = window.open(url, "datapress-oauth2", `width=${w},height=${h},left=${left},top=${top}`);
+  if (!popup) {
+    showError("Login popup was blocked. Allow popups for this site and try again.");
+  }
+}
+
+async function exchangeCode(code) {
+  let saved = {};
+  try { saved = JSON.parse(sessionStorage.getItem(AUTH_PKCE_KEY) || "{}"); } catch { /* ignore */ }
+  const body = new URLSearchParams({
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: redirectUri(),
+    client_id: oauth2Config.clientId,
+  });
+  if (oauth2Config.pkce !== false && saved.verifier) body.set("code_verifier", saved.verifier);
+  const resp = await fetch(oauth2Config.tokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+    body: body.toString(),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`token endpoint HTTP ${resp.status}: ${text}`);
+  }
+  const tok = await resp.json();
+  if (!tok.access_token) throw new Error("token response missing access_token");
+  const expiresAt = tok.expires_in ? Date.now() + (tok.expires_in - 30) * 1000 : null;
+  storeToken({ accessToken: tok.access_token, expiresAt });
+  sessionStorage.removeItem(AUTH_PKCE_KEY);
+  setStatus("signed in", "success");
+}
+
+function logout() {
+  storeToken(null);
+  sessionStorage.removeItem(AUTH_PKCE_KEY);
+}
+
+function initAuth() {
+  if (!oauth2Config || !authEl) return;
+  const stored = loadStoredToken();
+  if (stored) accessToken = stored.accessToken;
+  renderAuthState();
+
+  authLoginEl.addEventListener("click", () => {
+    clearMessages();
+    login().catch((e) => showError(`Login failed: ${e.message || e}`));
+  });
+  authLogoutEl.addEventListener("click", logout);
+
+  // Receive the auth code relayed by oauth2-redirect.html and exchange it.
+  window.addEventListener("message", (ev) => {
+    if (ev.origin !== window.location.origin) return;
+    const d = ev.data;
+    if (!d || d.type !== "datapress-oauth2") return;
+    let saved = {};
+    try { saved = JSON.parse(sessionStorage.getItem(AUTH_PKCE_KEY) || "{}"); } catch { /* ignore */ }
+    if (d.error) {
+      showError(`Login error: ${d.error}${d.errorDescription ? " — " + d.errorDescription : ""}`);
+      return;
+    }
+    if (!d.code) return;
+    if (saved.state && d.state && saved.state !== d.state) {
+      showError("Login failed: state mismatch (possible CSRF).");
+      return;
+    }
+    exchangeCode(d.code).catch((e) => showError(`Token exchange failed: ${e.message || e}`));
+  });
+}
+
 //  wiring 
 datasetEl.addEventListener("change", updateJsonUrl);
 el("api-json-prettify").addEventListener("click", prettifyJson);
@@ -907,3 +1093,5 @@ jsonBodyEl.addEventListener("keydown", (e) => {
 sqlBodyEl.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") runSql();
 });
+
+initAuth();

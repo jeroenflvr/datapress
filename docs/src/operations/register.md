@@ -206,6 +206,14 @@ the tab shows the live row and column counts plus the exported
 `[[dataset]]` TOML, and — when the server was loaded from a config file —
 a button to persist the block to it.
 
+The Register (and Persist) actions are gated by the **same** admin/reload
+permission as the HTTP API — the explorer is not a back door around it. Enter
+your `ADMIN_TOKEN` in the form's **Admin token** field (sent as the
+`X-Admin-Token` header, never in the request body), or sign in with the
+**Authorize** button on the API Query tab and your bearer token is forwarded
+automatically. Without either, the server has no `ADMIN_TOKEN` and no OIDC
+reload scope, the action is rejected just like the API.
+
 ## Security
 
 These endpoints mutate server state and read from arbitrary local paths or

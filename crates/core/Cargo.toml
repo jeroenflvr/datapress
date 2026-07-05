@@ -44,8 +44,10 @@ auth       = ["dep:jsonwebtoken", "jsonwebtoken/aws_lc_rs", "dep:reqwest", "dep:
 # default at compile time; can be toggled at runtime via
 # `[explorer].enabled`. Also embeds the self-hosted DuckDB-WASM terminal
 # assets (wasm + workers + bundled ESM) via `include_dir`, so the shell
-# runs with no CDN dependency.
-explorer   = ["dep:askama", "dep:include_dir", "dep:mime_guess"]
+# runs with no CDN dependency. Pulls in `reqwest` to run OIDC discovery at
+# startup when `[explorer.oauth2]` is configured (the API Query tab's
+# Authorization Code + PKCE login).
+explorer   = ["dep:askama", "dep:include_dir", "dep:mime_guess", "dep:reqwest"]
 
 [dependencies]
 actix-web.workspace   = true
