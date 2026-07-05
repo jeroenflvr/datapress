@@ -19,7 +19,7 @@
 
 
 
-**A fast multi-backend dataset HTTP server, built in Rust and driven from Python.**
+**A fast opinionated multi-backend dataset HTTP server, built in Rust and driven from Python.**
 
 `datap-rs` (datapress) exposes one or more **Parquet** or **Delta** datasets over a small
 JSON HTTP API. It ships with two pluggable engines bundled into a single

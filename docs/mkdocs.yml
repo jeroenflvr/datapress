@@ -1,6 +1,6 @@
 site_name: DataPress|datap-rs
 site_description: >-
-  Configuration-driven, columnar HTTP query server over Parquet and Delta —
+  An opinionated configuration-driven, columnar HTTP query server over Parquet and Delta —
   one config, two backends (DuckDB and Apache Arrow + DataFusion). Serve
   object-storage datasets as typed JSON and Arrow IPC APIs.
 site_author: DataPress contributors

@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name            = "datap-rs"
-description     = "Fast multi-backend (DuckDB / DataFusion) dataset HTTP server."
+description     = "Fast opinionated multi-backend (DuckDB / DataFusion) dataset HTTP server."
 readme          = "crates/python/README.md"
 requires-python = ">=3.9"
 dynamic         = ["version"]
