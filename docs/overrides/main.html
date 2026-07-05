@@ -14,7 +14,7 @@
   {% elif page and page.title and not page.is_homepage %}
     {% set seo_title = page.title ~ " - " ~ config.site_name %}
   {% else %}
-    {% set seo_title = config.site_name ~ " - columnar HTTP query server for Parquet and Delta" %}
+    {% set seo_title = config.site_name ~ " - an opinionated columnar HTTP query server for Parquet and Delta" %}
   {% endif %}
 
   {% if page and page.meta and page.meta.description %}
