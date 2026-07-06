@@ -13,11 +13,11 @@ Turn Parquet and Delta datasets into fast, typed HTTP APIs without
 standing up a warehouse, writing a service layer, or moving data out of
 object storage.
 
-DataPress is a small Rust data server for teams that already have
+DataPress is an opinionated small and fast data server for teams that already have
 columnar files and need a dependable way to publish them: JSON for
 applications, Arrow IPC for analytics clients, health probes for
 orchestrators, and a Python package for notebooks, jobs, and embedded
-services.
+services.  There's even a JDBC client driver and it's compatible with PostgreSQL drivers using the [PostgreSQL wire protocol](https://beta.pgcon.org/2014/schedule/attachments/330_postgres-for-the-wire.pdf).
 
 ```bash
 pip install datap-rs

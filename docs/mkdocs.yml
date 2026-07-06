@@ -123,6 +123,7 @@ extra:
 
 nav:
   - Home: index.md
+  - Architecture: architecture/brief.md
   - Presentation: https://datap-rs.org
   - Getting started:
       - getting-started/index.md

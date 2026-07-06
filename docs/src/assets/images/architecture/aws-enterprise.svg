@@ -1,0 +1,79 @@
+<svg width="680" viewBox="0 0 680 560" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>Enterprise DataPress deployment on AWS</title>
+<style>
+.cg rect{fill:#f4f4f6;stroke:#c9ccd3;stroke-width:1}
+.cp rect{fill:#f6f2fd;stroke:#c9b6f2;stroke-width:1}
+.ct rect{fill:#e7f6f3;stroke:#7fd0c3;stroke-width:1}
+.th{font:600 13px -apple-system,'Segoe UI',system-ui,sans-serif;fill:#1f2937}
+.ts{font:11.5px -apple-system,'Segoe UI',system-ui,sans-serif;fill:#64748b}
+.arr{stroke:#94a3b8;stroke-width:1.2;fill:none}
+.leader{stroke:#94a3b8;stroke-width:1;fill:none;stroke-dasharray:4 4}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g class="cg">
+  <rect x="265" y="30" width="200" height="56" rx="8"/>
+  <text class="th" x="365" y="48" text-anchor="middle" dominant-baseline="central">Clients · BI</text>
+  <text class="ts" x="365" y="68" text-anchor="middle" dominant-baseline="central">Bearer JWT</text>
+</g>
+
+<line x1="365" y1="86" x2="365" y2="158" class="arr" marker-end="url(#a)"/>
+
+<g class="cg">
+  <rect x="30" y="110" width="460" height="410" rx="20"/>
+  <text class="th" x="55" y="134" dominant-baseline="central">AWS</text>
+</g>
+
+<g class="ct">
+  <rect x="55" y="160" width="180" height="56" rx="8"/>
+  <text class="th" x="145" y="178" text-anchor="middle" dominant-baseline="central">MSK Serverless</text>
+  <text class="ts" x="145" y="198" text-anchor="middle" dominant-baseline="central">dataset-status topic</text>
+</g>
+<g class="ct">
+  <rect x="275" y="160" width="180" height="56" rx="8"/>
+  <text class="th" x="365" y="178" text-anchor="middle" dominant-baseline="central">ALB</text>
+  <text class="ts" x="365" y="198" text-anchor="middle" dominant-baseline="central">TLS · health checks</text>
+</g>
+
+<line x1="150" y1="216" x2="150" y2="258" class="arr" marker-end="url(#a)"/>
+<line x1="365" y1="216" x2="365" y2="258" class="arr" marker-end="url(#a)"/>
+
+<g class="cp">
+  <rect x="55" y="260" width="400" height="130" rx="14"/>
+  <text class="th" x="255" y="282" text-anchor="middle" dominant-baseline="central">ECS Fargate service</text>
+</g>
+<g class="ct">
+  <rect x="75" y="306" width="360" height="56" rx="8"/>
+  <text class="th" x="255" y="324" text-anchor="middle" dominant-baseline="central">Python app · datap-rs</text>
+  <text class="ts" x="255" y="344" text-anchor="middle" dominant-baseline="central">DataPress embedded · OIDC auth · Kafka → reload</text>
+</g>
+
+<path d="M53 468 L42 468 L42 188 L53 188" class="arr" marker-end="url(#a)"/>
+<line x1="227" y1="468" x2="263" y2="468" class="arr" marker-end="url(#a)"/>
+<line x1="350" y1="438" x2="350" y2="392" class="arr" marker-end="url(#a)"/>
+
+<g class="cg">
+  <rect x="55" y="440" width="170" height="56" rx="8"/>
+  <text class="th" x="140" y="458" text-anchor="middle" dominant-baseline="central">Pipeline</text>
+  <text class="ts" x="140" y="478" text-anchor="middle" dominant-baseline="central">Glue · Airflow · dbt</text>
+</g>
+<g class="cg">
+  <rect x="265" y="440" width="170" height="56" rx="8"/>
+  <text class="th" x="350" y="458" text-anchor="middle" dominant-baseline="central">S3</text>
+  <text class="ts" x="350" y="478" text-anchor="middle" dominant-baseline="central">Parquet · Delta</text>
+</g>
+
+<line x1="457" y1="308" x2="511" y2="308" class="leader" marker-end="url(#a)"/>
+<line x1="457" y1="378" x2="511" y2="378" class="leader" marker-end="url(#a)"/>
+
+<g class="cg">
+  <rect x="515" y="280" width="125" height="56" rx="8"/>
+  <text class="th" x="577" y="298" text-anchor="middle" dominant-baseline="central">OIDC IdP</text>
+  <text class="ts" x="577" y="318" text-anchor="middle" dominant-baseline="central">JWKS · tokens</text>
+</g>
+<g class="cg">
+  <rect x="515" y="350" width="125" height="56" rx="8"/>
+  <text class="th" x="577" y="368" text-anchor="middle" dominant-baseline="central">Vault</text>
+  <text class="ts" x="577" y="388" text-anchor="middle" dominant-baseline="central">S3 HMAC keys</text>
+</g>
+</svg>
