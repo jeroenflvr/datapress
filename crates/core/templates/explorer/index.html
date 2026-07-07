@@ -55,9 +55,9 @@
              hx-swap="innerHTML"
              {% if loop.first %}hx-trigger="load, click"{% else %}hx-trigger="click"{% endif %}
              onclick="document.querySelectorAll('.dataset-list .list-group-item').forEach(e=>e.classList.remove('active'));this.classList.add('active');">
-            <div class="d-flex justify-content-between align-items-center">
-              <strong>{{ d.name }}</strong>
-              <span class="badge text-bg-secondary">{{ d.rows }} rows</span>
+            <div class="d-flex justify-content-between align-items-center gap-2">
+              <strong class="text-truncate" style="min-width:0" title="{{ d.name }}" data-bs-toggle="tooltip" data-bs-placement="top">{{ d.name }}</strong>
+              <span class="badge text-bg-secondary flex-shrink-0">{{ d.rows }} rows</span>
             </div>
             <small class="text-secondary">{{ d.kind }} · {{ d.columns }} cols</small>
           </a>
@@ -545,6 +545,11 @@
   // (from the Register form's field, as X-Admin-Token) or the OAuth2 bearer
   // token (if the user signed in via the Authorize button). Neither is placed
   // in the request body.
+  // Init Bootstrap tooltips on dataset name labels
+  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
+    new bootstrap.Tooltip(el);
+  });
+
   (function () {
     document.body.addEventListener("htmx:configRequest", function (evt) {
       var tokenInput = document.getElementById("reg-admin-token");

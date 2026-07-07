@@ -161,7 +161,8 @@ function updateJsonUrl() {
 }
 
 //  populate dataset select + defaults 
-for (const d of datasets) {
+const sortedDatasets = [...datasets].sort((a, b) => a.name.localeCompare(b.name));
+for (const d of sortedDatasets) {
   const opt = document.createElement("option");
   opt.value = d.name;
   opt.textContent = `${d.name} (${d.rows} rows)`;
