@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.6.1] - 2026-07-07
+
+### Bug Fixes
+
+- *(style)* Explorer: truncate long dataset names, sort datasets in api query dropdown ([81fa7a3](https://github.com/jeroenflvr/datapress/commit/81fa7a3d9e26ee5f3f55da790154c0d3999cff12))
+
+### Documentation
+
+- Update with architecture brief ([a45351d](https://github.com/jeroenflvr/datapress/commit/a45351dfce7e1cd47893dc27ffbcaee5ed2011c6))
+- Opinionated ([dfa97a0](https://github.com/jeroenflvr/datapress/commit/dfa97a00a9ad8f25e693a545a21f880a9f8b2b81))
+- Update for opinionated ([6fc9cd1](https://github.com/jeroenflvr/datapress/commit/6fc9cd11a16bb5687aabc9a497b3161a2b2ef21d))
+
 ## [0.6.0] - 2026-07-05
 
 ### Bug Fixes
