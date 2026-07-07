@@ -207,6 +207,7 @@ class DataPressConfig:
     pgwire_password: Optional[str]
     pgwire_tls_cert: Optional[str]
     pgwire_tls_key: Optional[str]
+    server_environment: Optional[str]
 
     def __init__(
         self,
@@ -255,6 +256,8 @@ class DataPressConfig:
         pgwire_password: Optional[str] = None,
         pgwire_tls_cert: Optional[str] = None,
         pgwire_tls_key: Optional[str] = None,
+        server_environment: Optional[str] = None,
+        server_environment_color: Optional[str] = None,
     ) -> None:
         """Build a :class:`DataPressConfig`.
 
@@ -373,6 +376,13 @@ class DataPressConfig:
                 together with ``pgwire_tls_key``. Default ``None``.
             pgwire_tls_key: PKCS#8 private-key path enabling TLS. Must be set
                 together with ``pgwire_tls_cert``. Default ``None``.
+            server_environment: Optional label shown as a coloured badge in the
+                Explorer navbar, e.g. ``"production"``, ``"staging"``, or
+                ``"development"``. ``None`` (default) hides the badge.
+            server_environment_color: Bootstrap colour name for the badge, e.g.
+                ``"danger"``, ``"warning"``, ``"success"``, ``"info"``,
+                ``"primary"``, ``"secondary"``. Overrides the automatic colour
+                derived from the environment name. Default ``None``.
         """
         ...
 

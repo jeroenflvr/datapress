@@ -640,6 +640,10 @@ impl PyDatasetConfig {
 ///         Must be set together with ``pgwire_tls_key``. Default ``None``.
 ///     pgwire_tls_key (str | None): PKCS#8 private-key path enabling TLS.
 ///         Must be set together with ``pgwire_tls_cert``. Default ``None``.
+///     server_environment (str | None): Optional environment label shown as a
+///         badge in the Explorer navbar, e.g. ``"production"``,
+///         ``"staging"``, or ``"development"``. When ``None`` (default) the
+///         badge is hidden.
 #[pyclass(
     name = "DataPressConfig",
     module = "datap_rs.datapress",
@@ -806,6 +810,17 @@ pub struct PyDataPressConfig {
     /// ``pgwire_tls_cert``.
     #[pyo3(get, set)]
     pub pgwire_tls_key: Option<String>,
+    /// Optional environment label shown as a badge in the Explorer navbar,
+    /// e.g. ``"production"``, ``"staging"``, or ``"development"``.
+    /// ``None`` (default) hides the badge.
+    #[pyo3(get, set)]
+    pub server_environment: Option<String>,
+    /// Bootstrap colour name for the environment badge, e.g. ``"danger"``,
+    /// ``"warning"``, ``"success"``, ``"info"``, ``"primary"``,
+    /// ``"secondary"``. Overrides the automatic colour. Only meaningful
+    /// when ``server_environment`` is also set.
+    #[pyo3(get, set)]
+    pub server_environment_color: Option<String>,
 }
 
 #[pymethods]
@@ -937,6 +952,8 @@ impl PyDataPressConfig {
         pgwire_password    = None,
         pgwire_tls_cert    = None,
         pgwire_tls_key     = None,
+        server_environment = None,
+        server_environment_color = None,
     ))]
     #[allow(clippy::too_many_arguments)] // user-facing kwargs surface
     fn new(
@@ -985,6 +1002,8 @@ impl PyDataPressConfig {
         pgwire_password: Option<String>,
         pgwire_tls_cert: Option<String>,
         pgwire_tls_key: Option<String>,
+        server_environment: Option<String>,
+        server_environment_color: Option<String>,
     ) -> Self {
         Self {
             backend,
@@ -1032,6 +1051,8 @@ impl PyDataPressConfig {
             pgwire_password,
             pgwire_tls_cert,
             pgwire_tls_key,
+            server_environment,
+            server_environment_color,
         }
     }
 }
@@ -1104,6 +1125,8 @@ impl PyDataPressConfig {
                 read_only: self.quack_read_only,
             },
             pgwire,
+            environment: self.server_environment,
+            environment_color: self.server_environment_color,
         })
     }
 
@@ -1602,6 +1625,8 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
             shutdown_timeout_secs: cfg.server.shutdown_timeout_secs,
             quack: cfg.server.quack.clone(),
             pgwire: cfg.server.pgwire.clone(),
+            environment: cfg.server.environment.clone(),
+            environment_color: cfg.server.environment_color.clone(),
         },
         docs: cfg.docs.clone(),
         swagger: cfg.swagger.clone(),

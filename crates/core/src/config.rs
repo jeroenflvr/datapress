@@ -132,6 +132,16 @@ pub struct ServerConfig {
     /// backend (and only when compiled with the `pgwire` feature); ignored by
     /// DuckDB.
     pub pgwire: PgwireConfig,
+    /// Optional environment label shown as a badge in the Explorer navbar,
+    /// e.g. `"development"`, `"staging"`, or `"production"`. When unset the
+    /// badge is hidden. Known values get a distinctive colour; anything else
+    /// renders in grey.
+    pub environment: Option<String>,
+    /// Bootstrap colour name for the environment badge, e.g. `"danger"`,
+    /// `"warning"`, `"success"`, `"info"`, `"primary"`, `"secondary"`.
+    /// Overrides the automatic colour derived from `environment`. Only
+    /// meaningful when `environment` is also set.
+    pub environment_color: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -150,6 +160,8 @@ impl Default for ServerConfig {
             shutdown_timeout_secs: 30,
             quack: QuackConfig::default(),
             pgwire: PgwireConfig::default(),
+            environment: None,
+            environment_color: None,
         }
     }
 }

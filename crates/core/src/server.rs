@@ -338,6 +338,8 @@ async fn run_server(
             docs_url,
             swagger_url,
             oauth2: explorer_oauth2,
+            environment: cfg.server.environment.clone(),
+            environment_color: cfg.server.environment_color.clone(),
         }))
     } else {
         None

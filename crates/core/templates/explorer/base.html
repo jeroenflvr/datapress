@@ -15,6 +15,7 @@
 <body>
   <nav class="navbar navbar-expand bg-body-tertiary border-bottom px-3">
     <span class="navbar-brand mb-0 h1"><i class="bi bi-compass-fill"></i> DataPress|datap-rs Explorer</span>
+    {% block env_badge %}{% endblock %}
     <a class="navbar-link link-secondary ms-auto me-3 text-decoration-none d-inline-flex align-items-center" href="https://pypi.org/project/datap-rs/"
        target="_blank" rel="noopener noreferrer" title="datap-rs on PyPI"><img src="{{ explorer_base }}/assets/pypi.svg?v={{ asset_version }}" alt="" width="16" height="16" class="me-1"> PyPI</a>
     <a class="navbar-link link-secondary me-3 text-decoration-none d-inline-flex align-items-center" href="{{ docs_url }}"

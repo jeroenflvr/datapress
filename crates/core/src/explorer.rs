@@ -63,6 +63,12 @@ pub struct ExplorerState {
     /// Code + PKCE flow. `None` hides the Login button (no `[explorer.oauth2]`
     /// configured, or OIDC discovery failed at startup).
     pub oauth2: Option<ResolvedOAuth2>,
+    /// Optional environment label (e.g. `"production"`, `"development"`) shown
+    /// as a coloured badge in the Explorer navbar. `None` hides the badge.
+    pub environment: Option<String>,
+    /// Optional explicit Bootstrap colour name (e.g. `"danger"`, `"success"`).
+    /// When `None` the colour is derived automatically from `environment`.
+    pub environment_color: Option<String>,
 }
 
 #[derive(Template)]
@@ -86,6 +92,11 @@ struct IndexTemplate {
     can_persist: bool,
     /// Display path of that config file (empty when `can_persist` is false).
     config_path: String,
+    /// Environment label for the navbar badge (e.g. `"production"`). `None`
+    /// hides the badge.
+    environment: Option<String>,
+    /// Bootstrap badge class computed from `environment` / `environment_color`.
+    environment_badge_class: String,
 }
 
 struct DatasetListItem {
@@ -207,6 +218,19 @@ fn render<T: Template>(tpl: &T) -> HttpResponse {
     }
 }
 
+/// Map an environment label to a Bootstrap badge background class.
+fn env_badge_class(env: &str, color_override: Option<&str>) -> String {
+    if let Some(color) = color_override {
+        return format!("text-bg-{color}");
+    }
+    match env.to_lowercase().as_str() {
+        "production" | "prod" => "text-bg-danger".into(),
+        "staging" | "stage" | "uat" => "text-bg-warning".into(),
+        "development" | "dev" | "local" => "text-bg-success".into(),
+        _ => "text-bg-secondary".into(),
+    }
+}
+
 /// Build the `[{name, rows, parquet}]` payload consumed by the DuckDB-WASM
 /// console and shell terminal, alongside the discovery list items.
 fn collect_datasets(state: &ExplorerState) -> (Vec<DatasetListItem>, String) {
@@ -239,10 +263,6 @@ async fn index(state: web::Data<ExplorerState>) -> HttpResponse {
     let config_path = crate::config::source_config_path()
         .map(|p| p.display().to_string())
         .unwrap_or_default();
-    // Serialize the resolved OAuth2 login config for the API Query tab. The
-    // redirect URI is derived client-side from the current origin + explorer
-    // base, so only the discovered endpoints, client id, scopes and PKCE flag
-    // travel here. `null` when login is not configured / discovery failed.
     let oauth2_json = match state.oauth2.as_ref() {
         Some(o) => serde_json::json!({
             "clientId": o.client_id,
@@ -254,6 +274,11 @@ async fn index(state: web::Data<ExplorerState>) -> HttpResponse {
         .to_string(),
         None => "null".to_string(),
     };
+    let environment_badge_class = state
+        .environment
+        .as_deref()
+        .map(|env| env_badge_class(env, state.environment_color.as_deref()))
+        .unwrap_or_default();
     let tpl = IndexTemplate {
         backend_label: state.backend_label.clone(),
         explorer_base: state.explorer_base.clone(),
@@ -267,6 +292,8 @@ async fn index(state: web::Data<ExplorerState>) -> HttpResponse {
         oauth2_json,
         can_persist: !config_path.is_empty(),
         config_path,
+        environment: state.environment.clone(),
+        environment_badge_class,
     };
     render(&tpl)
 }

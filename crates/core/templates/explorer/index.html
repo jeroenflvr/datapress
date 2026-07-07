@@ -1,5 +1,11 @@
 {% extends "explorer/base.html" %}
 
+{% block env_badge %}
+{% if let Some(env) = environment %}
+<span class="badge ms-2 {{ environment_badge_class }}" title="Environment">{{ env }}</span>
+{% endif %}
+{% endblock %}
+
 {% block content %}
 <ul class="nav nav-tabs mb-3" id="explorer-tabs" role="tablist">
   <li class="nav-item" role="presentation">
