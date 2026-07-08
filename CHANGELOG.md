@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.6.2] - 2026-07-08
+
+### Bug Fixes
+
+- Represent decimals correctly when parsing arrow data tojson to table view in explorer ([381a232](https://github.com/jeroenflvr/datapress/commit/381a232c7c15d4b33fa8c8c11d8de2596622e4ef))
+
+### Styling
+
+- Add an optional badge for the environment ([76382ed](https://github.com/jeroenflvr/datapress/commit/76382ed7fcbe3ec108848def23cda5430e3bfc7f))
+
 ## [0.6.1] - 2026-07-07
 
 ### Bug Fixes
