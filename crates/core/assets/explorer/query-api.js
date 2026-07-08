@@ -668,6 +668,25 @@ function cellText(v) {
   return String(v);
 }
 
+// Format an Arrow Decimal value (a little-endian Uint32Array holding the raw
+// two's-complement unscaled integer) into a fixed-point string, applying the
+// column's scale. `bitWidth` is 128 or 256. Falls back to String(v) if the
+// value isn't the expected array shape.
+function decimalToString(v, scale, bitWidth) {
+  if (!v || typeof v.length !== "number" || typeof v[0] !== "number") return String(v);
+  let n = 0n;
+  for (let i = v.length - 1; i >= 0; i--) n = (n << 32n) | BigInt(v[i] >>> 0);
+  const bits = BigInt(bitWidth || v.length * 32);
+  if (n & (1n << (bits - 1n))) n -= 1n << bits; // two's-complement sign
+  const neg = n < 0n;
+  let d = (neg ? -n : n).toString();
+  if (scale > 0) {
+    if (d.length <= scale) d = "0".repeat(scale - d.length + 1) + d;
+    d = d.slice(0, d.length - scale) + "." + d.slice(d.length - scale);
+  }
+  return (neg ? "-" : "") + d;
+}
+
 function renderTable(rows) {
   lastRows = Array.isArray(rows) ? rows : [];
   lastCols = columnsOf(lastRows);
@@ -766,7 +785,24 @@ async function runRequest(url, body) {
       bytes = Number.isFinite(clen) ? clen : buf.byteLength;
       const Arrow = await ensureArrow();
       const table = Arrow.tableFromIPC(new Uint8Array(buf));
-      rows = table.toArray().map((r) => r.toJSON());
+      // Arrow.js returns Decimal values as a raw little-endian Uint32Array
+      // (the unscaled integer); its toJSON drops the scale, so 0.0000000
+      // would render as "0". Detect Decimal columns and format them from
+      // the schema's scale/bitWidth so they match the JSON-mode output.
+      const decCols = [];
+      for (const f of table.schema.fields) {
+        if (f.type && f.type.typeId === Arrow.Type.Decimal) {
+          decCols.push({ name: f.name, scale: f.type.scale, bitWidth: f.type.bitWidth });
+        }
+      }
+      rows = table.toArray().map((r) => {
+        const o = r.toJSON();
+        for (const c of decCols) {
+          const v = o[c.name];
+          if (v != null) o[c.name] = decimalToString(v, c.scale, c.bitWidth);
+        }
+        return o;
+      });
     } else {
       const text = await resp.text();
       total = performance.now() - t0;
