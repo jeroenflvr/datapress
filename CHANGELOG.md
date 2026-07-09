@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.6.3] - 2026-07-09
+
+### Bug Fixes
+
+- Display effective lazy instead of configured, eg. when force_lazy_above_mb is configured ([3a97580](https://github.com/jeroenflvr/datapress/commit/3a97580493d4cfdcf4bd2df73f627ed5c99c57c7))
+
+### Documentation
+
+- Update with server config for env badge ([98dbbe6](https://github.com/jeroenflvr/datapress/commit/98dbbe695619f10ecf7c41148c2802a3d1a922e7))
+
 ## [0.6.2] - 2026-07-08
 
 ### Bug Fixes
