@@ -16,6 +16,8 @@ port    = 8080
 # force_lazy_above_mb   = 0          # >0: force lazy for datasets larger than this
 # request_timeout_ms    = 30000      # 504 above this; 0 disables
 # shutdown_timeout_secs = 30         # SIGTERM grace period
+# environment           = "production"  # Explorer navbar badge label; unset = no badge
+# environment_color     = "danger"      # Bootstrap colour for the badge (see table below)
 
 [server.quack]                      # DuckDB backend only; experimental
 enabled = false
@@ -88,6 +90,28 @@ start_degraded       = true                 # warn-and-continue if IdP unreachab
 | `force_lazy_above_mb`   | `0`         | `>0`: datasets whose backing files exceed this many MiB are forced into `lazy` mode at startup. `0` disables. Local sources are stat'd; S3 sources are sized on the `datafusion` backend by listing the object store (the `duckdb` backend sizes local sources only). Delta is measured by its parquet data files. |
 | `request_timeout_ms`    | `30000`     | Per-request handler timeout (ms). Long handlers are cancelled and the client gets `504`. `0` disables. |
 | `shutdown_timeout_secs` | `30`        | Grace period for in-flight requests after `SIGTERM` / `SIGINT`.                           |
+| `environment`           | *(unset)*   | Label shown as a badge in the Explorer navbar, e.g. `"development"`, `"staging"`, `"production"`. Unset = no badge. |
+| `environment_color`     | *(auto)*    | Bootstrap colour name for the badge (see table below). Overrides the colour otherwise inferred from the environment name. Only meaningful when `environment` is set. |
+
+## Environment badge
+
+When `environment` is set, the Explorer navbar shows a coloured badge next to
+the logo — handy to tell dev / staging / production apart at a glance. If
+`environment_color` is omitted the colour is inferred from the name
+(`production`/`prod` → red, `staging`/`stage`/`uat` → yellow,
+`development`/`dev`/`local` → green, anything else → grey). Set
+`environment_color` to any Bootstrap colour to override it:
+
+| name      | hex       | color |
+|-----------|-----------|-------|
+| primary   | `#0d6efd` | 🟦    |
+| secondary | `#6c757d` | ⬜    |
+| success   | `#198754` | 🟩    |
+| info      | `#0dcaf0` | 🟦    |
+| warning   | `#ffc107` | 🟨    |
+| danger    | `#dc3545` | 🟥    |
+| light     | `#f8f9fa` | ⬜    |
+| dark      | `#212529` | ⬛    |
 
 ## DuckDB Quack server
 

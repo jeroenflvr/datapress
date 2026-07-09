@@ -17,6 +17,8 @@ cfg = DataPressConfig(
     force_lazy_above_mb=0,        # >0: force lazy for datasets larger than this (MiB)
     request_timeout_ms=30_000,    # 504 above this; 0 disables
     shutdown_timeout_secs=30,     # SIGTERM/SIGINT grace period
+    server_environment="production",  # Explorer navbar badge label; None = no badge
+    server_environment_color="danger",  # Bootstrap colour for the badge (see table below)
     swagger_enabled=True,
     swagger_path="/docs",
 )
@@ -24,6 +26,27 @@ cfg = DataPressConfig(
 
 Every kwarg mirrors the TOML `[server]` block. See
 [Configuration › Server](../configuration/server.md) for full semantics.
+
+### Environment badge
+
+`server_environment` and `server_environment_color` mirror the TOML
+`environment` / `environment_color` keys. When `server_environment` is set,
+the Explorer navbar shows a coloured badge next to the logo. If
+`server_environment_color` is omitted the colour is inferred from the name
+(`production`/`prod` → red, `staging`/`stage`/`uat` → yellow,
+`development`/`dev`/`local` → green, anything else → grey). Set
+`server_environment_color` to any Bootstrap colour to override it:
+
+| name      | hex       | color |
+|-----------|-----------|-------|
+| primary   | `#0d6efd` | 🟦    |
+| secondary | `#6c757d` | ⬜    |
+| success   | `#198754` | 🟩    |
+| info      | `#0dcaf0` | 🟦    |
+| warning   | `#ffc107` | 🟨    |
+| danger    | `#dc3545` | 🟥    |
+| light     | `#f8f9fa` | ⬜    |
+| dark      | `#212529` | ⬛    |
 
 ### Raw SQL endpoint
 
