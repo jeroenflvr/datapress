@@ -385,6 +385,7 @@ impl Store {
             name: cfg.name,
             columns,
             rows,
+            lazy: cfg.lazy,
         })
     }
 
@@ -3699,6 +3700,7 @@ impl Backend for Store {
             name: st.schema.name.clone(),
             columns: st.schema.columns.len(),
             rows: st.num_rows(),
+            lazy: st.lazy,
         })
     }
 

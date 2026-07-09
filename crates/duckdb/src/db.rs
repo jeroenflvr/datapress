@@ -243,6 +243,7 @@ impl Registry {
             name: cfg.name,
             columns,
             rows: rows.max(0) as usize,
+            lazy: cfg.lazy,
         })
     }
 }
@@ -698,10 +699,18 @@ impl Backend for Registry {
             .get(name)
             .copied()
             .unwrap_or(0);
+        let lazy = self
+            .configs
+            .read()
+            .unwrap()
+            .get(name)
+            .map(|c| c.lazy)
+            .unwrap_or(false);
         Ok(DatasetSummary {
             name: schema.name.clone(),
             columns: schema.columns.len(),
             rows: rows.max(0) as usize,
+            lazy,
         })
     }
 

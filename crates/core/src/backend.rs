@@ -106,6 +106,9 @@ pub struct DatasetSummary {
     pub name: String,
     pub columns: usize,
     pub rows: usize,
+    /// Effective lazy state — reflects `force_lazy_above_mb` having promoted
+    /// a dataset to lazy at startup, not just the declared `lazy` flag.
+    pub lazy: bool,
 }
 
 /// Read / reload interface every backend exposes to the HTTP layer.

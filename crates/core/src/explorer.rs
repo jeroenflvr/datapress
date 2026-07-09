@@ -508,7 +508,7 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
         index_columns: ds.index.columns.join(", "),
         projection,
         dict_encode: ds.dict_encode,
-        lazy: ds.lazy,
+        lazy: summary.as_ref().map(|s| s.lazy).unwrap_or(ds.lazy),
         parquet_url: format!("{}/datasets/{}/all.parquet", state.api_base, ds.name),
         schema_url: format!("{}/datasets/{}/schema", state.api_base, ds.name),
         datasets_url: format!("{}/datasets", state.api_base),

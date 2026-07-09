@@ -86,6 +86,7 @@ impl Backend for MockBackend {
                 name: name.into(),
                 columns: 2,
                 rows: 5,
+                lazy: false,
             })
         } else {
             Err(AppError::NotFound(format!("dataset '{name}' not found")))
