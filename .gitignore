@@ -17,5 +17,4 @@ __pycache__/
 .venv/
 
 docs/external/
-INSTRUCTIONS.md
-PREFIX_FIX.md
+instr/
