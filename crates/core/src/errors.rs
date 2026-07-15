@@ -9,6 +9,12 @@ pub enum AppError {
     Unauthorized(String),
     Forbidden(String),
     Unavailable(String),
+    /// Dataset is registered but not yet ready to serve queries (pending or
+    /// building). The HTTP response carries `Retry-After: 2` to guide clients.
+    NotReady {
+        dataset: String,
+        state: String,
+    },
     /// A dataset's source resolved to no data (no matching files / no rows).
     /// Used at startup to log-and-skip the dataset rather than aborting.
     EmptyDataset(String),
@@ -25,6 +31,9 @@ impl std::fmt::Display for AppError {
             AppError::Unauthorized(m) => write!(f, "unauthorized: {m}"),
             AppError::Forbidden(m) => write!(f, "forbidden: {m}"),
             AppError::Unavailable(m) => write!(f, "service unavailable: {m}"),
+            AppError::NotReady { dataset, state } => {
+                write!(f, "dataset '{dataset}' is not ready (state: {state})")
+            }
             AppError::EmptyDataset(m) => write!(f, "empty dataset: {m}"),
             AppError::Internal(s) => write!(f, "internal error: {s}"),
         }
@@ -73,7 +82,7 @@ impl ResponseError for AppError {
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
-            AppError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+            AppError::Unavailable(_) | AppError::NotReady { .. } => StatusCode::SERVICE_UNAVAILABLE,
             _ => StatusCode::BAD_REQUEST,
         }
     }
@@ -82,7 +91,14 @@ impl ResponseError for AppError {
         if matches!(self, AppError::Internal(_)) {
             log::error!("{self}");
         }
-        HttpResponse::build(self.status_code())
-            .json(serde_json::json!({ "error": self.to_string() }))
+        let mut resp = HttpResponse::build(self.status_code())
+            .json(serde_json::json!({ "error": self.to_string() }));
+        if let AppError::NotReady { .. } = self {
+            resp.headers_mut().insert(
+                actix_web::http::header::HeaderName::from_static("retry-after"),
+                actix_web::http::header::HeaderValue::from_static("2"),
+            );
+        }
+        resp
     }
 }

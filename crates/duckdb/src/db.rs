@@ -5,10 +5,11 @@ use async_trait::async_trait;
 use duckdb::Connection;
 
 use datapress_core::backend::{
-    ArrowIpcStream, Backend, DatasetSummary, ReloadStats, arrow_ipc_stream_channel,
+    ArrowIpcStream, Backend, DatasetStatus, DatasetStatusEntry, DatasetSummary, ReloadStats,
+    arrow_ipc_stream_channel,
 };
 use datapress_core::config::{
-    AddressingStyle, AppConfig, DatasetConfig, Partitioning, QuackConfig, SourceKind,
+    AddressingStyle, AppConfig, DatasetConfig, OnStart, Partitioning, QuackConfig, SourceKind,
 };
 use datapress_core::errors::AppError;
 use datapress_core::models::{CountRequest, QueryRequest};
@@ -89,6 +90,9 @@ pub struct Registry {
     /// Per-name reload mutex. Serialises concurrent reloads of the same
     /// dataset; reloads of different datasets proceed in parallel.
     reload_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// Per-dataset lifecycle state (Pending / Building / Published / Failed)
+    /// and startup policy. All configured datasets are present.
+    statuses: RwLock<HashMap<String, (DatasetStatus, OnStart)>>,
 }
 
 impl Registry {
@@ -107,6 +111,31 @@ impl Registry {
         let mut v: Vec<String> = snap.keys().cloned().collect();
         v.sort();
         v
+    }
+
+    fn set_status(&self, name: &str, new_status: DatasetStatus) {
+        if let Some(entry) = self.statuses.write().unwrap().get_mut(name) {
+            entry.0 = new_status;
+        }
+    }
+
+    fn get_status_entry(&self, name: &str) -> Option<(DatasetStatus, OnStart)> {
+        self.statuses.read().unwrap().get(name).cloned()
+    }
+
+    /// Ensure `name` is ready. Returns `NotReady` for non-published datasets
+    /// (DuckDB doesn't support lazy first-touch in Phase 2A; all datasets are
+    /// built at startup — if one is still Pending/Building it means the server
+    /// hasn't finished its background startup yet).
+    pub fn ensure_ready_sync(&self, name: &str) -> Result<(), AppError> {
+        match self.get_status_entry(name) {
+            Some((DatasetStatus::Published, _)) => Ok(()),
+            Some((status, _)) => Err(AppError::NotReady {
+                dataset: name.to_string(),
+                state: format!("{status:?}").to_lowercase(),
+            }),
+            None => Err(AppError::NotFound(format!("dataset: {name}"))),
+        }
     }
 
     /// Rebuild `name` from disk and atomically swap it in. DuckDB's
@@ -131,19 +160,70 @@ impl Registry {
         };
         let _guard = lock.lock().await;
 
-        let started = std::time::Instant::now();
-        let pool = self.pool.clone();
+        self.reload_inner(name, &cfg).await
+    }
 
-        let (schema, rows) =
-            actix_web::web::block(move || -> Result<(DatasetSchema, i64), AppError> {
-                let conn = DbPool::get(&pool);
-                replace_table(&conn, &cfg)?;
-                let schema = introspect_schema(&conn, &cfg)?;
-                let rows = count_rows(&conn, &cfg.name)?;
-                Ok((schema, rows))
-            })
-            .await
-            .map_err(|e| AppError::Internal(format!("join error: {e}")))??;
+    /// Like [`reload`] but skips if the per-dataset mutex is already held
+    /// (returns `Ok(None)` — R3.2 coalescing). The caller holds the global
+    /// refresh semaphore permit.
+    pub async fn try_reload(&self, name: &str) -> Result<Option<ReloadStats>, AppError> {
+        let cfg = self
+            .configs
+            .read()
+            .unwrap()
+            .get(name)
+            .ok_or_else(|| AppError::NotFound(format!("dataset: {name}")))?
+            .clone();
+
+        let lock = {
+            let mut locks = self.reload_locks.lock().unwrap();
+            locks
+                .entry(name.to_string())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                .clone()
+        };
+        match lock.try_lock() {
+            Err(_) => Ok(None), // already locked — coalesce
+            Ok(_guard) => self.reload_inner(name, &cfg).await.map(Some),
+        }
+    }
+
+    /// Core reload logic. The caller must hold the per-dataset reload lock.
+    ///
+    /// DuckDB cancellation note (R3.3): `actix_web::web::block` runs on a
+    /// dedicated blocking thread pool; there is no safe mid-operation cancel
+    /// for DuckDB connections. When the scheduler's timeout fires, the
+    /// scheduler records the failure and releases the semaphore permit, but
+    /// the underlying blocking task continues until DuckDB returns. This is
+    /// documented rather than leaking the permit (G-rule).
+    async fn reload_inner(&self, name: &str, cfg: &DatasetConfig) -> Result<ReloadStats, AppError> {
+        let started = std::time::Instant::now();
+        self.set_status(name, DatasetStatus::Building);
+        let pool = self.pool.clone();
+        let cfg_clone = cfg.clone();
+
+        let result = actix_web::web::block(move || -> Result<(DatasetSchema, i64), AppError> {
+            let conn = DbPool::get(&pool);
+            replace_table(&conn, &cfg_clone)?;
+            let schema = introspect_schema(&conn, &cfg_clone)?;
+            let rows = count_rows(&conn, &cfg_clone.name)?;
+            Ok((schema, rows))
+        })
+        .await
+        .map_err(|e| AppError::Internal(format!("join error: {e}")))?;
+
+        let (schema, rows) = match result {
+            Ok(v) => v,
+            Err(e) => {
+                // Keep-last-good: revert status if we had a live generation.
+                if self.datasets.read().unwrap().contains_key(name) {
+                    self.set_status(name, DatasetStatus::Published);
+                } else {
+                    self.set_status(name, DatasetStatus::Failed);
+                }
+                return Err(e);
+            }
+        };
 
         self.datasets
             .write()
@@ -153,6 +233,7 @@ impl Registry {
             .write()
             .unwrap()
             .insert(name.to_string(), rows);
+        self.set_status(name, DatasetStatus::Published);
 
         let elapsed_ms = started.elapsed().as_millis();
         log::info!("reloaded dataset '{name}': {rows} rows in {elapsed_ms} ms");
@@ -285,17 +366,29 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
     let mut configs = HashMap::new();
     let mut row_counts = HashMap::new();
 
-    for d in &cfg.datasets {
-        log::info!(
-            "Loading dataset '{}' ({} @ {})",
-            d.name,
-            d.source.kind.as_str(),
-            d.source.location
-        );
+    // Build datasets in topological dependency order (R2.4): query datasets
+    // that depend on others must be registered after their dependencies.
+    let build_order = cfg
+        .topological_dataset_order()
+        .map_err(|e| AppError::Internal(format!("startup order error: {e}")))?;
+
+    for idx in build_order {
+        let d = &cfg.datasets[idx];
+        if d.source.kind == SourceKind::Query {
+            log::info!("Loading dataset '{}' (query)", d.name);
+        } else {
+            log::info!(
+                "Loading dataset '{}' ({} @ {})",
+                d.name,
+                d.source.kind.as_str(),
+                d.source.location
+            );
+        }
         // Force lazy when the source exceeds the server size threshold.
         // Local sources only on the DuckDB backend — S3 sizing requires an
         // object-store client that lives in the DataFusion backend, so S3
         // datasets here are only forced lazy when explicitly configured.
+        // query-kind datasets are never force-lazy (no file backing).
         let d: std::borrow::Cow<'_, DatasetConfig> = match d.force_lazy_bytes(&cfg.server) {
             Some(bytes) => {
                 log::info!(
@@ -320,7 +413,13 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
             Err(e) => return Err(e),
         };
         let rows = count_rows(&conn, &d.name)?;
-        if d.lazy {
+        if d.source.kind == SourceKind::Query {
+            log::info!(
+                "  → {} columns ({} rows, query-materialised)",
+                schema.columns.len(),
+                rows
+            );
+        } else if d.lazy {
             log::info!(
                 "  → {} columns ({} rows, lazy — streamed from source, not held in RAM)",
                 schema.columns.len(),
@@ -330,13 +429,24 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
             log::info!(
                 "  → {} columns ({} rows in-memory)",
                 schema.columns.len(),
-                rows,
+                rows
             );
         }
         datasets.insert(d.name.clone(), Arc::new(schema));
         configs.insert(d.name.clone(), d.clone());
         row_counts.insert(d.name.clone(), rows);
     }
+
+    // Build statuses map: all successfully loaded datasets = Published.
+    let statuses: HashMap<String, (DatasetStatus, OnStart)> = configs
+        .iter()
+        .map(|(name, cfg)| {
+            (
+                name.clone(),
+                (DatasetStatus::Published, cfg.on_start.clone()),
+            )
+        })
+        .collect();
 
     if cfg.server.quack.enabled {
         start_quack_server(&conn, &cfg.server.quack)?;
@@ -350,6 +460,7 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
         datasets: RwLock::new(datasets),
         row_counts: RwLock::new(row_counts),
         reload_locks: Mutex::new(HashMap::new()),
+        statuses: RwLock::new(statuses),
     })
 }
 
@@ -436,6 +547,12 @@ fn build_scan_clause(cfg: &DatasetConfig) -> Result<String, AppError> {
             let loc = cfg.source.location.replace('\'', "''");
             Ok(format!("delta_scan('{loc}')"))
         }
+        // Query sources never go through build_scan_clause; they are handled
+        // directly in register_dataset / replace_table.
+        (SourceKind::Query, _) => Err(AppError::Internal(format!(
+            "dataset '{}': build_scan_clause called on query-kind source",
+            cfg.name
+        ))),
     }
 }
 
@@ -540,8 +657,19 @@ fn duckdb_s3_url_style(style: AddressingStyle) -> &'static str {
 /// `CREATE OR REPLACE TABLE ... AS SELECT ...` is a single DuckDB transaction:
 /// if the source read fails, the existing table is preserved.
 fn replace_table(conn: &Connection, cfg: &DatasetConfig) -> Result<(), AppError> {
-    let scan = build_scan_clause(cfg)?;
     let table = DatasetSchema::quote_ident(&cfg.name);
+    if cfg.source.kind == SourceKind::Query {
+        // Query-kind: materialise the SQL directly into a table.
+        let sql = cfg.source.sql.as_deref().ok_or_else(|| {
+            AppError::Internal(format!(
+                "dataset '{}': source.sql missing for kind = query",
+                cfg.name
+            ))
+        })?;
+        conn.execute_batch(&format!("CREATE OR REPLACE TABLE {table} AS {sql};"))?;
+        return Ok(());
+    }
+    let scan = build_scan_clause(cfg)?;
     // Lazy datasets are views over the source scan, so a reload just
     // re-points the view; eager datasets re-materialise into a table.
     let relation = if cfg.lazy { "VIEW" } else { "TABLE" };
@@ -561,8 +689,22 @@ fn replace_table(conn: &Connection, cfg: &DatasetConfig) -> Result<(), AppError>
 /// projection pushdown into the parquet reader — instead of holding the
 /// whole dataset in RAM.
 fn register_dataset(conn: &Connection, cfg: &DatasetConfig) -> Result<DatasetSchema, AppError> {
-    let scan = build_scan_clause(cfg)?;
     let table = DatasetSchema::quote_ident(&cfg.name);
+    if cfg.source.kind == SourceKind::Query {
+        // Query-kind: materialise the SQL directly into an in-memory table.
+        let sql = cfg.source.sql.as_deref().ok_or_else(|| {
+            AppError::Internal(format!(
+                "dataset '{}': source.sql missing for kind = query",
+                cfg.name
+            ))
+        })?;
+        conn.execute_batch(&format!("CREATE TABLE {table} AS {sql};"))
+            .map_err(|e| {
+                AppError::Internal(format!("dataset '{}': query execute: {e}", cfg.name))
+            })?;
+        return introspect_schema(conn, cfg);
+    }
+    let scan = build_scan_clause(cfg)?;
     let relation = if cfg.lazy { "VIEW" } else { "TABLE" };
     conn.execute_batch(&format!(
         "CREATE {relation} {table} AS SELECT * FROM {scan};"
@@ -690,7 +832,45 @@ impl Backend for Registry {
         Registry::names(self)
     }
 
+    fn dataset_statuses(&self) -> Vec<DatasetStatusEntry> {
+        let row_counts = self.row_counts.read().unwrap();
+        let cfgs = self.configs.read().unwrap();
+        let mut entries: Vec<_> = self
+            .statuses
+            .read()
+            .unwrap()
+            .iter()
+            .map(|(name, (status, on_start))| {
+                let (rows, lazy, columns) = if *status == DatasetStatus::Published {
+                    let rows = row_counts.get(name).copied().unwrap_or(0).max(0) as usize;
+                    let lazy = cfgs.get(name).map(|c| c.lazy).unwrap_or(false);
+                    let columns = self
+                        .datasets
+                        .read()
+                        .unwrap()
+                        .get(name)
+                        .map(|s| s.columns.len())
+                        .unwrap_or(0);
+                    (rows, lazy, columns)
+                } else {
+                    (0, false, 0)
+                };
+                DatasetStatusEntry {
+                    name: name.clone(),
+                    status: status.clone(),
+                    on_start: on_start.clone(),
+                    columns,
+                    rows,
+                    lazy,
+                }
+            })
+            .collect();
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        entries
+    }
+
     fn summary(&self, name: &str) -> Result<DatasetSummary, AppError> {
+        self.ensure_ready_sync(name)?;
         let schema = self.get(name)?;
         let rows = self
             .row_counts
@@ -715,10 +895,12 @@ impl Backend for Registry {
     }
 
     fn schema(&self, name: &str) -> Result<Arc<DatasetSchema>, AppError> {
+        self.ensure_ready_sync(name)?;
         self.get(name)
     }
 
     async fn sample(&self, name: &str) -> Result<String, AppError> {
+        self.ensure_ready_sync(name)?;
         let schema = self.get(name)?;
         let pool = self.pool.clone();
         let max_page_size = self.max_page_size;
@@ -731,6 +913,7 @@ impl Backend for Registry {
     }
 
     async fn query(&self, name: &str, req: &QueryRequest) -> Result<String, AppError> {
+        self.ensure_ready_sync(name)?;
         let schema = self.get(name)?;
         let pool = self.pool.clone();
         let req = req.clone();
@@ -821,7 +1004,14 @@ impl Backend for Registry {
         .map_err(|e| AppError::Internal(format!("join error: {e}")))?
     }
 
-    async fn query_sql(&self, sql: &str, max_rows: u64) -> Result<String, AppError> {
+    // DuckDB relies on engine MVCC for snapshot consistency (R4.5); the
+    // `datasets` parameter is accepted for trait compliance but not used.
+    async fn query_sql(
+        &self,
+        sql: &str,
+        _datasets: &[String],
+        max_rows: u64,
+    ) -> Result<String, AppError> {
         let pool = self.pool.clone();
         let sql = sql.to_string();
         actix_web::web::block(move || -> Result<String, AppError> {
@@ -835,6 +1025,7 @@ impl Backend for Registry {
     async fn query_sql_arrow_stream(
         &self,
         sql: &str,
+        _datasets: &[String],
         max_rows: u64,
     ) -> Result<ArrowIpcStream, AppError> {
         let pool = self.pool.clone();
@@ -872,6 +1063,10 @@ impl Backend for Registry {
         Registry::reload(self, name).await
     }
 
+    async fn try_reload(&self, name: &str) -> Result<Option<ReloadStats>, AppError> {
+        Registry::try_reload(self, name).await
+    }
+
     async fn register(&self, cfg: DatasetConfig) -> Result<DatasetSummary, AppError> {
         Registry::register(self, cfg).await
     }
@@ -891,6 +1086,8 @@ mod tests {
             source: SourceConfig {
                 kind: SourceKind::Parquet,
                 location: location.into(),
+                sql: None,
+                depends_on: vec![],
             },
             s3: None,
             index: IndexConfig::default(),
@@ -899,6 +1096,8 @@ mod tests {
             lazy: false,
             predicate_filter: Default::default(),
             projection_filter: Default::default(),
+            on_start: datapress_core::config::OnStart::Eager,
+            refresh: None,
         }
     }
 

@@ -40,7 +40,7 @@ class DataPressClient:
         configured server prefix (e.g. ``/datapress``) here.
     api_base:
         Versioned API mount path. Defaults to ``/api/v1`` on the Rust
-        side; pass ``/api`` to target the legacy unversioned alias.
+        side.
     admin_token:
         Token sent as ``X-Admin-Token`` on mutating endpoints
         (:meth:`reload`).

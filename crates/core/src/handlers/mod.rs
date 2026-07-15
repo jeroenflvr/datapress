@@ -33,7 +33,8 @@ use std::sync::Arc;
 
 use actix_web::{HttpRequest, HttpResponse, get, web};
 
-use crate::backend::Backend;
+use crate::backend::{Backend, DatasetStatus};
+use crate::config::{OnStart, ReadinessMode};
 
 pub mod v1;
 
@@ -71,6 +72,21 @@ impl Default for SqlSettings {
     }
 }
 
+/// Startup readiness settings copied from `[server.startup]` into app data.
+/// Drives the `/readyz` gate.
+#[derive(Debug, Clone)]
+pub struct ReadinessSettings {
+    pub readiness_mode: ReadinessMode,
+}
+
+impl Default for ReadinessSettings {
+    fn default() -> Self {
+        Self {
+            readiness_mode: ReadinessMode::All,
+        }
+    }
+}
+
 /// MIME type used for Arrow IPC stream responses.
 pub const ARROW_IPC_MIME: &str = "application/vnd.apache.arrow.stream";
 #[get("/health")]
@@ -91,18 +107,64 @@ pub async fn healthz() -> HttpResponse {
         .body(r#"{"status":"ok"}"#)
 }
 
-/// Readiness probe. Returns `200` once at least one dataset is registered
-/// (i.e. the registry finished loading at startup), `503` otherwise.
+/// Readiness probe. Returns `200` once the startup readiness gate passes,
+/// `503` otherwise. The gate is controlled by `[server.startup].readiness`:
+/// - `all` (default): every `eager` dataset must be published.
+/// - `any`: at least one `eager` dataset must be published.
+/// `lazy` and `skip` datasets never gate readiness.
 #[get("/readyz")]
-pub async fn readyz(backend: BackendData) -> HttpResponse {
-    let names = backend.names();
-    if names.is_empty() {
-        HttpResponse::ServiceUnavailable()
-            .content_type("application/json")
-            .body(r#"{"status":"not ready","reason":"no datasets registered"}"#)
+pub async fn readyz(
+    backend: BackendData,
+    settings: Option<web::Data<ReadinessSettings>>,
+) -> HttpResponse {
+    let readiness_mode = settings
+        .as_ref()
+        .map(|s| s.readiness_mode.clone())
+        .unwrap_or_default();
+
+    let statuses = backend.dataset_statuses();
+    // Only eager datasets gate readiness (lazy/skip are excluded per R2.8).
+    let gating: Vec<_> = statuses
+        .iter()
+        .filter(|e| e.on_start == OnStart::Eager)
+        .collect();
+
+    let ready = if gating.is_empty() {
+        // No eager datasets configured — not ready until at least one dataset
+        // has published (mirrors the original "no datasets = 503" behaviour).
+        statuses
+            .iter()
+            .any(|e| e.status == DatasetStatus::Published)
     } else {
-        let body = format!(r#"{{"status":"ready","datasets":{}}}"#, names.len());
+        match readiness_mode {
+            ReadinessMode::All => gating.iter().all(|e| e.status == DatasetStatus::Published),
+            ReadinessMode::Any => gating.iter().any(|e| e.status == DatasetStatus::Published),
+        }
+    };
+
+    if ready {
+        let n = statuses
+            .iter()
+            .filter(|e| e.status == DatasetStatus::Published)
+            .count();
+        let body = format!(r#"{{"status":"ready","datasets":{n}}}"#);
         HttpResponse::Ok()
+            .content_type("application/json")
+            .body(body)
+    } else {
+        // Collect failed dataset names for diagnostics.
+        let failed: Vec<&str> = gating
+            .iter()
+            .filter(|e| e.status == DatasetStatus::Failed)
+            .map(|e| e.name.as_str())
+            .collect();
+        let reason = if failed.is_empty() {
+            "datasets are loading".to_string()
+        } else {
+            format!("failed datasets: {failed:?}")
+        };
+        let body = serde_json::json!({ "status": "not ready", "reason": reason }).to_string();
+        HttpResponse::ServiceUnavailable()
             .content_type("application/json")
             .body(body)
     }

@@ -2758,6 +2758,7 @@ dependencies = [
  "serde_json",
  "sqlparser",
  "tokio",
+ "tokio-util",
  "toml",
  "utoipa",
  "utoipa-swagger-ui",

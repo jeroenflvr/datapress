@@ -22,28 +22,6 @@ before every path shown here.
 | POST   | `/api/v1/config/reload`                           | —               | Re-read `datasets.toml`; register newly-added datasets. Requires `X-Admin-Token`. |
 | GET    | `{prefix}/health`                                 | —               | Liveness, prefix-aware.                                              |
 
-## Legacy aliases (`/api`)
-
-Same handlers, no `/v1`:
-
-| Method | Path                                       |
-|--------|--------------------------------------------|
-| GET    | `/api/datasets`                            |
-| POST   | `/api/datasets`                            |
-| POST   | `/api/datasets/persist`                    |
-| GET    | `/api/datasets/{name}/schema`              |
-| POST   | `/api/datasets/{name}/query`               |
-| POST   | `/api/sql`                                 |
-| POST   | `/api/datasets/{name}/query/stream`        |
-| POST   | `/api/datasets/{name}/count`               |
-| GET    | `/api/datasets/{name}/parquet`             |
-| GET    | `/api/datasets/{name}/all.parquet`         |
-| POST   | `/api/datasets/{name}/reload`              |
-| POST   | `/api/config/reload`                       |
-
-Prefer `/api/v1/...` in new code; the unversioned routes will
-eventually be deprecated.
-
 ## Probes
 
 | Method | Path                 | Code           | Purpose                                       |

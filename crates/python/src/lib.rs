@@ -542,6 +542,8 @@ impl PyDatasetConfig {
             source: SourceConfig {
                 kind,
                 location: self.source,
+                sql: None,
+                depends_on: vec![],
             },
             s3,
             index,
@@ -550,6 +552,7 @@ impl PyDatasetConfig {
             lazy: self.lazy,
             predicate_filter,
             projection_filter,
+            on_start: datapress_core::config::OnStart::Eager,
         })
     }
 }
@@ -1127,6 +1130,7 @@ impl PyDataPressConfig {
             pgwire,
             environment: self.server_environment,
             environment_color: self.server_environment_color,
+            startup: datapress_core::config::StartupConfig::default(),
         })
     }
 
@@ -1627,6 +1631,7 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
             pgwire: cfg.server.pgwire.clone(),
             environment: cfg.server.environment.clone(),
             environment_color: cfg.server.environment_color.clone(),
+            startup: cfg.server.startup.clone(),
         },
         docs: cfg.docs.clone(),
         swagger: cfg.swagger.clone(),

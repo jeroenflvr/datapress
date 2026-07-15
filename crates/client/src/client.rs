@@ -31,8 +31,7 @@ impl ClientBuilder {
         }
     }
 
-    /// Override the versioned API mount path. Defaults to `/api/v1`; pass
-    /// `/api` to target the legacy unversioned alias.
+    /// Override the versioned API mount path. Defaults to `/api/v1`.
     pub fn api_base(mut self, base: impl Into<String>) -> Self {
         self.api_base = base.into();
         self

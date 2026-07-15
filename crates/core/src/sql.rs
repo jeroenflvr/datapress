@@ -12,9 +12,8 @@
 //! - every referenced table is a registered dataset — no file-reading
 //!   table functions (`read_parquet`, `read_csv`, …), no unknown tables,
 //! - no file-reading scalar functions (`read_text`, `read_blob`, …),
-//! - at most `max_datasets` distinct datasets are referenced. Phase 1
-//!   passes `1`, enforcing the single-dataset rule; raising this bound is
-//!   all that's needed to allow cross-dataset joins later.
+//! - at most `max_datasets` distinct datasets are referenced (the `/sql`
+//!   handler passes the count of all registered datasets, allowing joins).
 //!
 //! CTE-defined names are tracked per query scope and excluded from the
 //! dataset allowlist check, so `WITH t AS (SELECT … FROM events) SELECT …`
@@ -572,6 +571,64 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, AppError::InvalidValue(_)));
+    }
+
+    #[test]
+    fn rejects_ddl() {
+        let err = validate("CREATE TABLE x AS SELECT 1", &allowed(&["events"]), 1).unwrap_err();
+        assert!(matches!(err, AppError::InvalidValue(_)));
+    }
+
+    #[test]
+    fn rejects_multi_statement() {
+        let err = validate("SELECT 1; SELECT 2", &allowed(&["events"]), 10).unwrap_err();
+        assert!(matches!(err, AppError::InvalidValue(_)));
+    }
+
+    #[test]
+    fn rejects_file_table_function_read_parquet() {
+        let err = validate(
+            "SELECT * FROM read_parquet('/tmp/foo.parquet')",
+            &allowed(&["events"]),
+            1,
+        )
+        .unwrap_err();
+        assert!(matches!(err, AppError::InvalidValue(_)));
+    }
+
+    #[test]
+    fn rejects_file_table_function_read_csv() {
+        let err = validate(
+            "SELECT * FROM read_csv('/tmp/foo.csv')",
+            &allowed(&["events"]),
+            1,
+        )
+        .unwrap_err();
+        assert!(matches!(err, AppError::InvalidValue(_)));
+    }
+
+    #[test]
+    fn join_two_datasets_returns_both_names() {
+        let v = validate(
+            "SELECT e.id, o.val FROM events e JOIN other o ON e.id = o.id",
+            &allowed(&["events", "other"]),
+            2,
+        )
+        .unwrap();
+        let mut ds = v.datasets.clone();
+        ds.sort();
+        assert_eq!(ds, vec!["events".to_string(), "other".to_string()]);
+    }
+
+    #[test]
+    fn three_way_join_returns_three_names() {
+        let v = validate(
+            "SELECT a.id, b.x, c.y FROM a JOIN b ON a.id = b.id JOIN c ON b.id = c.id",
+            &allowed(&["a", "b", "c"]),
+            3,
+        )
+        .unwrap();
+        assert_eq!(v.datasets.len(), 3);
     }
 
     #[test]

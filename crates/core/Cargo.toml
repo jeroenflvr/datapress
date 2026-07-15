@@ -60,6 +60,7 @@ log.workspace         = true
 toml.workspace        = true
 glob.workspace        = true
 tokio.workspace       = true
+tokio-util.workspace  = true
 sqlparser.workspace   = true
 
 # Optional, feature-gated (see [features] above).
@@ -85,3 +86,4 @@ flate2 = "1"
 [dev-dependencies]
 arrow = { workspace = true }
 actix-rt = "2"
+tokio = { workspace = true, features = ["test-util"] }

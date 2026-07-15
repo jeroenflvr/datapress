@@ -1,7 +1,7 @@
 //! Version 1 of the dataset HTTP API.
 //!
 //! Routes (relative to whichever scope the caller mounts this module
-//! under — typically `/api/v1`):
+//! under — always `/api/v1`):
 //!
 //! | Method | Path                              | Description                          |
 //! |--------|-----------------------------------|--------------------------------------|
@@ -16,9 +16,7 @@
 //! | POST   | `/config/reload`                  | Register newly-added datasets (admin) |
 //!
 //! Handlers are plain `async fn` (not route-macro structs) so the same
-//! version can be mounted under multiple scopes — see
-//! [`crate::server::serve`] for the canonical `/api/v1` mount and the
-//! legacy `/api` alias.
+//! version can be mounted under multiple scopes.
 
 use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 
@@ -135,22 +133,26 @@ pub async fn list_datasets(req: HttpRequest, backend: BackendData) -> HttpRespon
     if let Err(e) = require_read(&req) {
         return e.error_response();
     }
-    let summaries: Vec<_> = backend
-        .names()
+    // Use dataset_statuses() to include all datasets (pending/building/failed
+    // as well as published). For published datasets apply the projection-filter
+    // column-count adjustment; for others return the placeholder zeroes.
+    use crate::backend::DatasetStatus;
+    let entries: Vec<_> = backend
+        .dataset_statuses()
         .into_iter()
-        .filter_map(|n| {
-            let mut summary = backend.summary(&n).ok()?;
-            // Report only the visible column count when a projection filter
-            // hides some columns.
-            if let Ok(schema) = backend.schema(&n)
-                && schema.projection_filter.is_active()
-            {
-                summary.columns = schema.visible_columns().len();
+        .map(|mut entry| {
+            if entry.status == DatasetStatus::Published {
+                // Adjust columns for projection filter.
+                if let Ok(schema) = backend.schema(&entry.name)
+                    && schema.projection_filter.is_active()
+                {
+                    entry.columns = schema.visible_columns().len();
+                }
             }
-            Some(summary)
+            entry
         })
         .collect();
-    HttpResponse::Ok().json(serde_json::json!({ "datasets": summaries }))
+    HttpResponse::Ok().json(serde_json::json!({ "datasets": entries }))
 }
 
 pub async fn get_schema(
@@ -245,11 +247,19 @@ pub async fn query_dataset(
     // Apply the dataset's column-level access filters (hidden columns,
     // predicate restrictions) before the backend sees the request. This is
     // the single choke point for every backend and response format.
+    // For lazy/pending datasets the schema isn't available until the first
+    // build completes — skip access filtering in that case and let the
+    // backend's query() handle the lazy first-touch build.
+    use crate::errors::AppError;
     match backend.schema(&name) {
         Ok(schema) => {
             if let Err(e) = req.enforce_column_filters(&schema) {
                 return e.error_response();
             }
+        }
+        Err(AppError::NotReady { .. }) | Err(AppError::NotFound(_)) => {
+            // Dataset pending or not yet discovered — proceed; the backend
+            // will trigger a lazy build or return 503 as appropriate.
         }
         Err(e) => return e.error_response(),
     }
@@ -293,11 +303,11 @@ pub async fn query_dataset(
 /// Disabled unless `[sql].enabled = true`; when off, returns `404` so the
 /// endpoint is invisible.
 ///
-/// Phase 1 is scoped to a single dataset per query: the statement is
-/// parsed and validated by [`crate::sql::validate`], which rejects
-/// anything that is not a single read-only query or `DESCRIBE`, references
-/// an unknown table / file function, or touches more than one registered
-/// dataset. The result is hard-capped at `[sql].max_rows` rows.
+/// The statement is parsed and validated by [`crate::sql::validate`], which
+/// rejects anything that is not a single read-only query or `DESCRIBE`,
+/// references an unknown table or file function, or touches datasets not in
+/// the registered allowlist. The result is hard-capped at `[sql].max_rows`
+/// rows.
 ///
 /// Like the dataset query endpoint, the response is content-negotiated:
 /// clients that send `Accept: application/vnd.apache.arrow.stream` (or
@@ -327,7 +337,7 @@ pub async fn sql_query(
         .map(|n| n.to_lowercase())
         .collect();
 
-    let validated = match crate::sql::validate(&body.sql, &allowed, 1) {
+    let validated = match crate::sql::validate(&body.sql, &allowed, allowed.len().max(1)) {
         Ok(v) => v,
         Err(e) => return e.error_response(),
     };
@@ -356,7 +366,7 @@ pub async fn sql_query(
     // (schema message + batches + EOS), capped at `max_rows`.
     if wants_arrow(&http) {
         return match backend
-            .query_sql_arrow_stream(&validated.sql, max_rows)
+            .query_sql_arrow_stream(&validated.sql, &validated.datasets, max_rows)
             .await
         {
             Ok(stream) => HttpResponse::Ok()
@@ -368,7 +378,10 @@ pub async fn sql_query(
         };
     }
 
-    match backend.query_sql(&validated.sql, max_rows).await {
+    match backend
+        .query_sql(&validated.sql, &validated.datasets, max_rows)
+        .await
+    {
         Ok(arr) => {
             let body = format!(r#"{{"data":{arr},"max_rows":{max_rows}}}"#);
             let mut resp = HttpResponse::Ok();

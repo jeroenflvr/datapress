@@ -14,7 +14,7 @@ use futures_util::stream::{self, BoxStream, StreamExt};
 use serde::Serialize;
 use tokio::sync::mpsc;
 
-use crate::config::DatasetConfig;
+use crate::config::{DatasetConfig, OnStart};
 use crate::errors::AppError;
 use crate::models::{CountRequest, QueryRequest};
 use crate::schema::DatasetSchema;
@@ -100,6 +100,39 @@ pub struct ReloadStats {
     pub elapsed_ms: u128,
 }
 
+/// Per-dataset lifecycle state. Updated atomically as datasets move through
+/// the startup and reload pipeline.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DatasetStatus {
+    /// Registered but not yet built (startup or first-touch pending).
+    Pending,
+    /// Currently being built in a background task.
+    Building,
+    /// Built and serving queries.
+    Published,
+    /// Last build attempt failed; previous generation (if any) still serves.
+    Failed,
+}
+
+/// Full status entry returned by [`Backend::dataset_statuses`].
+/// Includes all configured datasets, not only published ones.
+#[derive(Debug, Clone, Serialize)]
+pub struct DatasetStatusEntry {
+    pub name: String,
+    #[serde(rename = "state")]
+    pub status: DatasetStatus,
+    /// How this dataset is built at startup.
+    #[serde(skip)]
+    pub on_start: OnStart,
+    /// Number of columns (`0` when not yet published).
+    pub columns: usize,
+    /// Number of rows (`0` when not yet published).
+    pub rows: usize,
+    /// Effective lazy flag (`false` when not yet published).
+    pub lazy: bool,
+}
+
 /// One entry in `GET /api/datasets`.
 #[derive(Debug, Clone, Serialize)]
 pub struct DatasetSummary {
@@ -117,8 +150,28 @@ pub struct DatasetSummary {
 /// blocking calls in `actix_web::web::block` inside the impl.
 #[async_trait]
 pub trait Backend: Send + Sync + 'static {
-    /// Sorted list of dataset names.
+    /// Sorted list of **published** dataset names (excludes pending/building/failed).
     fn names(&self) -> Vec<String>;
+
+    /// Status entries for **all configured** datasets, including those in
+    /// pending, building, or failed states. Default impl returns every
+    /// published dataset as `Published + Eager`.
+    fn dataset_statuses(&self) -> Vec<DatasetStatusEntry> {
+        self.names()
+            .into_iter()
+            .map(|n| {
+                let s = self.summary(&n).ok();
+                DatasetStatusEntry {
+                    name: n,
+                    status: DatasetStatus::Published,
+                    on_start: OnStart::Eager,
+                    columns: s.as_ref().map_or(0, |s| s.columns),
+                    rows: s.as_ref().map_or(0, |s| s.rows),
+                    lazy: s.is_some_and(|s| s.lazy),
+                }
+            })
+            .collect()
+    }
 
     /// Cheap summary for the dataset listing endpoint. `Err(NotFound)`
     /// on unknown name.
@@ -197,13 +250,22 @@ pub trait Backend: Send + Sync + 'static {
     /// the `{"data": …}` envelope).
     ///
     /// `sql` has already passed [`crate::sql::validate`]: it is a single
-    /// read-only query that references only registered datasets. The
-    /// backend wraps it in an outer `LIMIT max_rows` before executing so
-    /// the result size is bounded regardless of the user's own `LIMIT`.
+    /// read-only query that references only registered datasets. `datasets`
+    /// names the distinct datasets the statement touches (lowercased); the
+    /// DataFusion backend uses this to capture a consistent snapshot of
+    /// each before planning (R4.5 / T1.2). DuckDB backends rely on engine
+    /// MVCC and may ignore the parameter. The backend wraps `sql` in an
+    /// outer `LIMIT max_rows` before executing so the result size is
+    /// bounded regardless of the user's own `LIMIT`.
     ///
     /// Default impl errors with `InvalidValue`; backends that support raw
     /// SQL (DuckDB, DataFusion) override it.
-    async fn query_sql(&self, _sql: &str, _max_rows: u64) -> Result<String, AppError> {
+    async fn query_sql(
+        &self,
+        _sql: &str,
+        _datasets: &[String],
+        _max_rows: u64,
+    ) -> Result<String, AppError> {
         Err(AppError::InvalidValue(
             "raw SQL is not supported by this backend".into(),
         ))
@@ -213,16 +275,18 @@ pub trait Backend: Send + Sync + 'static {
     /// IPC bytes (one schema message + zero or more `RecordBatch` messages
     /// + EOS), the same wire format as [`Backend::query_arrow_stream`].
     ///
-    /// `sql` has already passed [`crate::sql::validate`]; the backend wraps
-    /// it in an outer `LIMIT max_rows` so the result is bounded regardless
-    /// of the caller's own clauses. Powers the Arrow content-negotiated
-    /// branch of `POST /api/v1/sql`.
+    /// `sql` has already passed [`crate::sql::validate`]; `datasets` names
+    /// the distinct datasets the statement touches — see [`Self::query_sql`]
+    /// for the snapshot-rule semantics. The backend wraps `sql` in an
+    /// outer `LIMIT max_rows`. Powers the Arrow content-negotiated branch
+    /// of `POST /api/v1/sql`.
     ///
     /// Default impl errors with `InvalidValue`; backends that support raw
     /// SQL (DuckDB, DataFusion) override it.
     async fn query_sql_arrow_stream(
         &self,
         _sql: &str,
+        _datasets: &[String],
         _max_rows: u64,
     ) -> Result<ArrowIpcStream, AppError> {
         Err(AppError::InvalidValue(
@@ -250,6 +314,20 @@ pub trait Backend: Send + Sync + 'static {
 
     /// Rebuild `name` from its configured source and atomically swap it in.
     async fn reload(&self, name: &str) -> Result<ReloadStats, AppError>;
+
+    /// Attempt to rebuild `name`, but skip if the per-dataset reload mutex is
+    /// already held (i.e. another reload is in progress). Returns `Ok(None)`
+    /// when skipped (coalesced), `Ok(Some(stats))` on success, and `Err` on
+    /// a build failure.
+    ///
+    /// Called by the refresh scheduler (R3.2): the scheduler has already
+    /// acquired the global concurrency semaphore permit before calling this;
+    /// the `try_lock` ensures the per-dataset mutex is not double-acquired.
+    /// Default impl falls through to a regular `reload` (i.e. no
+    /// try_lock — backends that expose per-dataset try_lock must override).
+    async fn try_reload(&self, name: &str) -> Result<Option<ReloadStats>, AppError> {
+        self.reload(name).await.map(Some)
+    }
 
     /// Register a brand-new dataset from `cfg` at runtime, without a server
     /// restart. The backend opens the source, builds/registers the dataset

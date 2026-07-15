@@ -466,15 +466,9 @@ plus an opt-in raw-SQL endpoint (see below):
 
 ### API versioning
 
-The canonical paths live under `/api/v1/...`. The un-versioned
-`/api/...` paths continue to work as a **legacy alias** for v1, so
-existing clients keep running. To upgrade, replace `/api/` with
-`/api/v1/` in your URLs — nothing else changes.
-
-```text
-POST /api/v1/datasets/accidents/query      # canonical (recommended)
-POST /api/datasets/accidents/query         # legacy alias, still v1
-```
+All routes live under `/api/v1/...`. The former un-versioned `/api/...`
+alias was removed in v0.10.0 — replace `/api/` with `/api/v1/` in any
+existing URLs.
 
 When a breaking schema change is introduced, it will ship as `/api/v2`
 in a sibling module ([crates/core/src/handlers/v1.rs](crates/core/src/handlers/v1.rs))

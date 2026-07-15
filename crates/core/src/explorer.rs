@@ -681,6 +681,8 @@ fn build_register_config(f: &RegisterForm) -> Result<DatasetConfig, crate::error
         source: SourceConfig {
             kind,
             location: location.to_string(),
+            sql: None,
+            depends_on: vec![],
         },
         s3,
         index,

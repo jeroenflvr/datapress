@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+
+## [Unreleased]
+
+### Breaking Changes
+
+- **BREAKING** Removed the un-versioned `/api/...` route alias. All API routes now live exclusively under `/api/v1/...`. Replace `/api/` with `/api/v1/` in any existing client URLs.
+
 ## [0.6.3] - 2026-07-09
 
 ### Bug Fixes

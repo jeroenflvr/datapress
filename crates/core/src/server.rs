@@ -11,6 +11,7 @@ use actix_web::{App, HttpServer, middleware, web};
 use crate::backend::Backend;
 use crate::config::AppConfig;
 use crate::handlers;
+use crate::refresh::{DatasetSchedule, RefreshScheduler};
 use crate::timeout::Timeout;
 
 /// How the running server is asked to begin a graceful shutdown.
@@ -74,6 +75,9 @@ async fn run_server(
     let sql_settings = handlers::SqlSettings {
         enabled: cfg.sql.enabled,
         max_rows: cfg.sql.max_rows.max(1),
+    };
+    let readiness_settings = handlers::ReadinessSettings {
+        readiness_mode: cfg.server.startup.readiness.clone(),
     };
     let docs_cfg = cfg.docs.clone();
     let swagger_cfg = cfg.swagger.clone();
@@ -345,6 +349,9 @@ async fn run_server(
         None
     };
 
+    // Clone backend for the scheduler BEFORE it is moved into HttpServer::new.
+    let scheduler_backend = backend.clone();
+
     let mut server = HttpServer::new(move || {
         let backend = backend.clone();
         let prefix = prefix.clone();
@@ -373,6 +380,7 @@ async fn run_server(
             .app_data(build_info.clone())
             .app_data(web::Data::new(query_limits))
             .app_data(web::Data::new(sql_settings))
+            .app_data(web::Data::new(readiness_settings.clone()))
             .app_data(parquet_cache.clone())
             .app_data(json_cfg)
             .app_data(pay_cfg)
@@ -435,18 +443,32 @@ async fn run_server(
                 .service(handlers::readyz)
                 .service(handlers::version)
                 .service(handlers::health)
-                // Canonical, versioned API.
-                .service(web::scope("/api/v1").configure(handlers::v1::configure))
-                // Legacy un-versioned alias. Kept around so older
-                // clients (and the historical `/api/datasets/...`
-                // URLs in docs / scripts) keep working. New code
-                // should prefer `/api/v1/...`.
-                .service(web::scope("/api").configure(handlers::v1::configure)),
+                // Canonical, versioned API — the only API mount.
+                .service(web::scope("/api/v1").configure(handlers::v1::configure)),
         )
     });
     if let Some(w) = workers {
         server = server.workers(w);
     }
+
+    // Build the refresh scheduler (R3.1) from datasets with interval schedules.
+    // Only `kind = "query"` datasets with a `refresh.interval` are scheduled
+    // (validated at config load time: non-query datasets can't have [refresh]).
+    let refresh_schedules: Vec<DatasetSchedule> = cfg
+        .datasets
+        .iter()
+        .filter_map(|d| {
+            let rc = d.refresh.as_ref()?;
+            let interval = rc.interval?;
+            Some(DatasetSchedule {
+                name: d.name.clone(),
+                interval,
+                timeout: rc.timeout,
+                jitter: rc.jitter,
+            })
+        })
+        .collect();
+    let refresh_max_concurrent = cfg.server.refresh.max_concurrent;
 
     // Disable actix's built-in signal handling so we can log which signal
     // triggered shutdown, then drive the same `ServerHandle::stop(true)`
@@ -457,17 +479,43 @@ async fn run_server(
         .disable_signals()
         .run();
     let handle = running.handle();
-    tokio::spawn(shutdown_listener(handle, shutdown_secs, shutdown));
+
+    // Shutdown token shared between the OS-signal listener and the scheduler.
+    let scheduler_token = tokio_util::sync::CancellationToken::new();
+
+    // Spawn the refresh scheduler (if any schedules exist).
+    let scheduler_handle = if !refresh_schedules.is_empty() {
+        log::info!(
+            "[refresh] starting scheduler: {} dataset(s), max_concurrent={}",
+            refresh_schedules.len(),
+            refresh_max_concurrent,
+        );
+        let sched = RefreshScheduler::new(refresh_schedules, refresh_max_concurrent);
+        Some(sched.spawn(scheduler_backend, scheduler_token.clone()))
+    } else {
+        None
+    };
+
+    tokio::spawn(shutdown_listener(
+        handle,
+        shutdown_secs,
+        shutdown,
+        scheduler_token,
+        scheduler_handle,
+    ));
 
     running.await
 }
 
 /// Wait for the configured shutdown trigger (OS signal or an external
-/// future), log it, then ask the actix server handle to stop gracefully.
+/// future), log it, then ask the actix server handle to stop gracefully
+/// and drain the refresh scheduler.
 async fn shutdown_listener(
     handle: actix_web::dev::ServerHandle,
     grace_secs: u64,
     shutdown: Shutdown,
+    scheduler_token: tokio_util::sync::CancellationToken,
+    scheduler_handle: Option<tokio::task::JoinHandle<()>>,
 ) {
     match shutdown {
         Shutdown::Signals => {
@@ -483,7 +531,28 @@ async fn shutdown_listener(
             );
         }
     }
+
+    // Signal the scheduler to stop (R3.6).
+    scheduler_token.cancel();
+
+    // Stop the HTTP server (graceful drain).
     handle.stop(true).await;
+
+    // Wait for the scheduler to exit within the grace period (R3.6).
+    if let Some(jh) = scheduler_handle {
+        let deadline = Duration::from_secs(grace_secs);
+        match tokio::time::timeout(deadline, jh).await {
+            Ok(_) => {}
+            Err(_) => {
+                log::warn!(
+                    "[refresh] scheduler did not finish within {}s shutdown deadline; \
+                     abandoning in-flight build",
+                    grace_secs
+                );
+            }
+        }
+    }
+
     log::info!("Shutdown complete.");
 }
 
@@ -530,12 +599,8 @@ fn log_routes(prefix: &str, backend: &dyn Backend) {
         log::info!("    {:<width$} {}", method, path, width = METHOD_W);
     }
 
-    // Each API version is mounted under its own scope; we currently
-    // also expose v1 under the un-versioned `/api` for back-compat.
-    let mounts: &[(&str, &[(&str, &str)])] = &[
-        ("/api/v1", handlers::v1::ROUTES),
-        ("/api", handlers::v1::ROUTES), // legacy alias
-    ];
+    // Only the canonical versioned API scope.
+    let mounts: &[(&str, &[(&str, &str)])] = &[("/api/v1", handlers::v1::ROUTES)];
 
     let names = backend.names();
     for (mount, routes) in mounts {

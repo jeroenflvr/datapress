@@ -168,6 +168,19 @@ tasks:
     cmds:
       - cargo check --workspace --all-targets
 
+  check:no-legacy-api:
+    desc: Fail if any source file outside docs/docs/site still references the removed /api unversioned alias
+    cmds:
+      - |
+        if grep -rn --include='*.rs' --include='*.md' --include='*.py' --include='*.toml' \
+            -E '"/api/[^v]|"/api"' \
+            --exclude-dir=target --exclude-dir='.git' \
+            --exclude-dir='docs/docs' \
+            . 2>/dev/null | grep -v 'RESERVED_MOUNTS\|/api/v1'; then
+          echo "ERROR: Found references to the removed /api legacy alias" >&2
+          exit 1
+        fi
+
   check:duckdb:
     cmds:
       - cargo check -p datapress-duckdb

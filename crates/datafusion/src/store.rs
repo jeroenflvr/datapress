@@ -40,10 +40,10 @@ use object_store::aws::AmazonS3Builder;
 use url::Url;
 
 use datapress_core::backend::{
-    ArrowIpcStream, Backend, DatasetSummary, ReloadStats, arrow_ipc_stream_channel,
+    ArrowIpcStream, Backend, DatasetStatus, DatasetSummary, ReloadStats, arrow_ipc_stream_channel,
 };
 use datapress_core::config::{
-    AddressingStyle, AppConfig, DataFusionConfig, DatasetConfig, IndexConfig, IndexMode,
+    AddressingStyle, AppConfig, DataFusionConfig, DatasetConfig, IndexConfig, IndexMode, OnStart,
     Partitioning, ResolvedCreds, S3Config, ServerConfig, SourceKind,
 };
 use datapress_core::errors::AppError;
@@ -109,6 +109,10 @@ pub struct Store {
     /// Per-name reload mutex. Serialises concurrent reloads of the same
     /// dataset; reloads of different datasets proceed in parallel.
     reload_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// Per-dataset lifecycle state (Pending / Building / Published / Failed)
+    /// and startup policy. All configured datasets are present, including
+    /// those not yet built. ArcSwap so status updates are lock-free reads.
+    statuses: ArcSwap<HashMap<String, (DatasetStatus, OnStart)>>,
 }
 
 impl Store {
@@ -119,7 +123,11 @@ impl Store {
         &self.ctx
     }
 
-    /// Load every dataset declared in `cfg`.
+    /// Load every dataset declared in `cfg` synchronously (blocking startup).
+    ///
+    /// Used by tests and by callers that want the old behaviour where the
+    /// server only starts after all datasets are ready. For production use
+    /// prefer [`Store::new_nonblocking`] + [`Store::spawn_startup_builds`].
     pub async fn load(cfg: &AppConfig) -> Result<Self, AppError> {
         // One-shot init for the deltalake S3 backend. Safe to call more
         // than once — the handlers are idempotent.
@@ -139,14 +147,27 @@ impl Store {
         let ctx = build_tuned_context(&cfg.datafusion);
         let mut datasets = HashMap::with_capacity(cfg.datasets.len());
         let mut configs = HashMap::with_capacity(cfg.datasets.len());
+        let mut statuses: HashMap<String, (DatasetStatus, OnStart)> =
+            HashMap::with_capacity(cfg.datasets.len());
 
-        for d in &cfg.datasets {
-            log::info!(
-                "Loading dataset '{}' ({} @ {})",
-                d.name,
-                d.source.kind.as_str(),
-                d.source.location
-            );
+        // Build in topological dependency order so query datasets that
+        // depend on others find their dependencies already registered.
+        let build_order = cfg
+            .topological_dataset_order()
+            .map_err(|e| AppError::Internal(format!("startup order error: {e}")))?;
+
+        for idx in build_order {
+            let d = &cfg.datasets[idx];
+            if d.source.kind == SourceKind::Query {
+                log::info!("Loading dataset '{}' (query)", d.name);
+            } else {
+                log::info!(
+                    "Loading dataset '{}' ({} @ {})",
+                    d.name,
+                    d.source.kind.as_str(),
+                    d.source.location
+                );
+            }
             // Force lazy when the source exceeds the server size threshold.
             // S3-aware: local sources are stat'd, S3 sources are sized by
             // listing the object store under their prefix.
@@ -191,6 +212,10 @@ impl Store {
             ctx.register_table(d.name.as_str(), provider)?;
             datasets.insert(d.name.clone(), Arc::new(state));
             configs.insert(d.name.clone(), d.clone());
+            statuses.insert(
+                d.name.clone(),
+                (DatasetStatus::Published, d.on_start.clone()),
+            );
         }
         Ok(Self {
             ctx,
@@ -198,7 +223,232 @@ impl Store {
             configs: RwLock::new(configs),
             datasets: ArcSwap::from_pointee(datasets),
             reload_locks: Mutex::new(HashMap::new()),
+            statuses: ArcSwap::from_pointee(statuses),
         })
+    }
+
+    /// Create the store with all configured datasets in `Pending` state.
+    /// No datasets are built yet. Call [`Store::spawn_startup_builds`] after
+    /// binding the HTTP listener to kick off background builds.
+    pub async fn new_nonblocking(cfg: &AppConfig) -> Result<Self, AppError> {
+        if cfg
+            .datasets
+            .iter()
+            .any(|d| d.source.kind == SourceKind::Delta && d.source.is_s3())
+        {
+            deltalake::aws::register_handlers(None);
+        }
+        let ctx = build_tuned_context(&cfg.datafusion);
+        let statuses: HashMap<String, (DatasetStatus, OnStart)> = cfg
+            .datasets
+            .iter()
+            .map(|d| (d.name.clone(), (DatasetStatus::Pending, d.on_start.clone())))
+            .collect();
+        let configs: HashMap<String, DatasetConfig> = cfg
+            .datasets
+            .iter()
+            .map(|d| (d.name.clone(), d.clone()))
+            .collect();
+        Ok(Self {
+            ctx,
+            max_page_size: cfg.server.max_page_size.max(1),
+            configs: RwLock::new(configs),
+            datasets: ArcSwap::from_pointee(HashMap::new()),
+            reload_locks: Mutex::new(HashMap::new()),
+            statuses: ArcSwap::from_pointee(statuses),
+        })
+    }
+
+    /// Spawn background tasks to build all `eager` datasets. `lazy` datasets
+    /// are left `Pending` until their first query; `skip` datasets are left
+    /// `Pending` until an explicit reload. At most `max_concurrent` builds
+    /// run simultaneously; the spawned tasks are fire-and-forget (they update
+    /// the store's status as they progress).
+    ///
+    /// Must be called on an `Arc<Self>` so the spawned tasks can hold a
+    /// reference to the store beyond this call.
+    pub fn spawn_startup_builds(
+        self: Arc<Self>,
+        max_concurrent: usize,
+        server_cfg: &datapress_core::config::ServerConfig,
+    ) {
+        use tokio::sync::Semaphore;
+        let sem = Arc::new(Semaphore::new(max_concurrent.max(1)));
+        // Compute topological levels so dependencies build before dependents.
+        let levels = self.startup_levels();
+        let server_cfg = server_cfg.clone();
+        let store = self;
+        tokio::spawn(async move {
+            for level in levels {
+                let mut handles = Vec::with_capacity(level.len());
+                for (name, dcfg) in level {
+                    let sem = Arc::clone(&sem);
+                    let store = Arc::clone(&store);
+                    let server_cfg = server_cfg.clone();
+                    let h = tokio::spawn(async move {
+                        let _permit = sem.acquire().await;
+                        store.build_one_startup(name, dcfg, server_cfg).await;
+                    });
+                    handles.push(h);
+                }
+                for h in handles {
+                    let _ = h.await;
+                }
+            }
+        });
+    }
+
+    /// Compute topological build levels for startup. Each level is a batch of
+    /// `(name, config)` pairs that can build concurrently; a dataset in level
+    /// `k` depends only on datasets in levels `0..k`. Datasets with
+    /// `on_start != Eager` are excluded.
+    ///
+    /// Uses Kahn's algorithm: nodes with in-degree 0 form the first level;
+    /// removing them exposes the next level, and so on.
+    fn startup_levels(&self) -> Vec<Vec<(String, DatasetConfig)>> {
+        use datapress_core::config::{OnStart, SourceKind};
+        use std::collections::HashMap;
+
+        let snap = self.statuses.load();
+        let configs = self.configs.read().unwrap();
+
+        // Only eager datasets participate in startup builds.
+        let eager: Vec<(&str, &DatasetConfig)> = configs
+            .iter()
+            .filter(|(name, _)| {
+                snap.get(*name)
+                    .map(|(_, on_start)| *on_start == OnStart::Eager)
+                    .unwrap_or(false)
+            })
+            .map(|(name, cfg)| (name.as_str(), cfg))
+            .collect();
+
+        if eager.is_empty() {
+            return vec![];
+        }
+
+        // Build index: name → position in `eager`.
+        let idx_map: HashMap<&str, usize> = eager
+            .iter()
+            .enumerate()
+            .map(|(i, (name, _))| (*name, i))
+            .collect();
+
+        let n = eager.len();
+        let mut in_degree = vec![0usize; n];
+        let mut adj: Vec<Vec<usize>> = vec![vec![]; n]; // adj[dep] = [dependents]
+
+        for (i, (_, cfg)) in eager.iter().enumerate() {
+            if cfg.source.kind == SourceKind::Query {
+                for dep_name in &cfg.source.depends_on {
+                    // dep_name may be a non-eager dataset (already built); skip.
+                    if let Some(&dep_idx) = idx_map.get(dep_name.as_str()) {
+                        adj[dep_idx].push(i);
+                        in_degree[i] += 1;
+                    }
+                }
+            }
+        }
+
+        // Kahn: group by generation level.
+        let mut current: Vec<usize> = (0..n).filter(|&i| in_degree[i] == 0).collect();
+        let mut levels = Vec::new();
+        while !current.is_empty() {
+            let batch: Vec<(String, DatasetConfig)> = current
+                .iter()
+                .map(|&i| (eager[i].0.to_string(), eager[i].1.clone()))
+                .collect();
+            levels.push(batch);
+            let mut next = Vec::new();
+            for node in &current {
+                for &dep in &adj[*node] {
+                    in_degree[dep] -= 1;
+                    if in_degree[dep] == 0 {
+                        next.push(dep);
+                    }
+                }
+            }
+            current = next;
+        }
+        levels
+    }
+
+    /// Build a single dataset during non-blocking startup (called from
+    /// `spawn_startup_builds` tasks). Updates the status ArcSwap.
+    async fn build_one_startup(
+        self: &Arc<Self>,
+        name: String,
+        dcfg: DatasetConfig,
+        server_cfg: datapress_core::config::ServerConfig,
+    ) {
+        self.set_status(&name, DatasetStatus::Building);
+        // Apply force_lazy check before building.
+        let effective_cfg: std::borrow::Cow<'_, DatasetConfig> =
+            match should_force_lazy(&dcfg, &server_cfg).await {
+                Some(bytes) => {
+                    log::info!(
+                        "dataset '{}': {:.1} MiB exceeds force_lazy_above_mb = {} → forcing lazy",
+                        dcfg.name,
+                        bytes as f64 / (1024.0 * 1024.0),
+                        server_cfg.force_lazy_above_mb
+                    );
+                    let mut forced = dcfg.clone();
+                    forced.lazy = true;
+                    std::borrow::Cow::Owned(forced)
+                }
+                None => std::borrow::Cow::Borrowed(&dcfg),
+            };
+        if effective_cfg.source.kind == datapress_core::config::SourceKind::Query {
+            log::info!("Startup: building dataset '{}' (query)", effective_cfg.name);
+        } else {
+            log::info!(
+                "Startup: building dataset '{}' ({} @ {})",
+                effective_cfg.name,
+                effective_cfg.source.kind.as_str(),
+                effective_cfg.source.location
+            );
+        }
+        // R4.5: capture dependency snapshots before planning so a concurrent
+        // reload cannot change the data under this build.
+        let _dep_snaps: Vec<_> = effective_cfg
+            .source
+            .depends_on
+            .iter()
+            .filter_map(|dep| self.dataset(dep).ok())
+            .collect();
+        let result = build_dataset(effective_cfg.as_ref(), &self.ctx).await;
+        match result {
+            Ok((state, provider)) => {
+                let rows = state.num_rows();
+                if let Err(e) = self.ctx.register_table(name.as_str(), provider) {
+                    log::error!("startup: failed to register dataset '{name}': {e}");
+                    self.set_status(&name, DatasetStatus::Failed);
+                    return;
+                }
+                // Update the effective config (lazy may have been forced).
+                self.configs
+                    .write()
+                    .unwrap()
+                    .insert(name.clone(), effective_cfg.into_owned());
+                let mut new_map = (**self.datasets.load()).clone();
+                new_map.insert(name.clone(), Arc::new(state));
+                self.datasets.store(Arc::new(new_map));
+                self.set_status(&name, DatasetStatus::Published);
+                log::info!("Startup: dataset '{name}' published ({rows} rows)");
+            }
+            Err(AppError::EmptyDataset(msg)) => {
+                log::warn!("startup: skipping empty dataset '{name}': {msg}");
+                self.set_status(&name, DatasetStatus::Failed);
+            }
+            Err(e) if dcfg.source.is_s3() && is_s3_access_denied(&e.to_string()) => {
+                log::warn!("startup: S3 access denied for '{name}': {e}");
+                self.set_status(&name, DatasetStatus::Failed);
+            }
+            Err(e) => {
+                log::error!("startup: failed to build dataset '{name}': {e}");
+                self.set_status(&name, DatasetStatus::Failed);
+            }
+        }
     }
 
     /// Sorted list of dataset names.
@@ -215,6 +465,90 @@ impl Store {
             .get(name)
             .cloned()
             .ok_or_else(|| AppError::NotFound(format!("dataset: {name}")))
+    }
+
+    /// Snapshot rule (R4.5 / T1.2): capture one strong `Arc` clone of each
+    /// named dataset's currently-published state, *before* any planning
+    /// begins. Holding these clones through the life of the query ensures
+    /// a concurrent reload (which atomically swaps the ArcSwap entry)
+    /// cannot change the data that this query reads mid-execution.
+    fn capture_snapshots(&self, datasets: &[String]) -> Result<Vec<Arc<DatasetState>>, AppError> {
+        datasets.iter().map(|n| self.dataset(n)).collect()
+    }
+
+    /// Read the current `(DatasetStatus, OnStart)` for `name`.
+    fn get_status_entry(&self, name: &str) -> Option<(DatasetStatus, OnStart)> {
+        self.statuses.load().get(name).cloned()
+    }
+
+    /// Atomically update the status for `name` to `new_status`, preserving
+    /// the existing `OnStart` policy.
+    fn set_status(&self, name: &str, new_status: DatasetStatus) {
+        let mut new_map = (**self.statuses.load()).clone();
+        if let Some(entry) = new_map.get_mut(name) {
+            entry.0 = new_status;
+        }
+        self.statuses.store(Arc::new(new_map));
+    }
+
+    /// Ensure `name` is ready to serve queries. If the dataset is:
+    /// - `Published`: no-op.
+    /// - `Pending` + `Lazy`: triggers a first-touch build (coalesced via the
+    ///   reload mutex) and waits for it.
+    /// - Any other non-published state: returns `AppError::NotReady`.
+    pub async fn ensure_ready(&self, name: &str) -> Result<(), AppError> {
+        match self.get_status_entry(name) {
+            Some((DatasetStatus::Published, _)) => Ok(()),
+            Some((DatasetStatus::Pending, OnStart::Lazy)) => self.first_touch_build(name).await,
+            Some((status, _)) => Err(AppError::NotReady {
+                dataset: name.to_string(),
+                state: format!("{status:?}").to_lowercase(),
+            }),
+            None => Err(AppError::NotFound(format!("dataset: {name}"))),
+        }
+    }
+
+    /// Build a lazy dataset on its first query. Uses the per-dataset reload
+    /// mutex to coalesce concurrent first-touches into a single build.
+    async fn first_touch_build(&self, name: &str) -> Result<(), AppError> {
+        let lock = {
+            let mut locks = self.reload_locks.lock().unwrap();
+            locks
+                .entry(name.to_string())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                .clone()
+        };
+        let _guard = lock.lock().await;
+        // Re-check after acquiring the lock: another task may have built it.
+        if let Some((DatasetStatus::Published, _)) = self.get_status_entry(name) {
+            return Ok(());
+        }
+        let cfg = self
+            .configs
+            .read()
+            .unwrap()
+            .get(name)
+            .ok_or_else(|| AppError::NotFound(format!("dataset: {name}")))?
+            .clone();
+        self.set_status(name, DatasetStatus::Building);
+        log::info!("Lazy first-touch: building dataset '{name}'");
+        match build_dataset(&cfg, &self.ctx).await {
+            Ok((state, provider)) => {
+                let rows = state.num_rows();
+                let _ = self.ctx.deregister_table(name);
+                self.ctx.register_table(name, provider)?;
+                let mut new_map = (**self.datasets.load()).clone();
+                new_map.insert(name.to_string(), Arc::new(state));
+                self.datasets.store(Arc::new(new_map));
+                self.set_status(name, DatasetStatus::Published);
+                log::info!("Lazy first-touch: dataset '{name}' published ({rows} rows)");
+                Ok(())
+            }
+            Err(e) => {
+                self.set_status(name, DatasetStatus::Failed);
+                Err(e)
+            }
+        }
     }
 
     /// JSON for the first row of the dataset, or `null` if empty. Used by
@@ -278,43 +612,76 @@ impl Store {
         };
         let _guard = lock.lock().await;
 
-        let started = std::time::Instant::now();
+        self.reload_inner(name, &cfg).await
+    }
 
-        // Invalidate the object-store LIST cache before rebuilding. For an
-        // S3 *prefix* source the files are often rewritten with new UUID
-        // names; without dropping the cached listing the rebuilt
-        // `ListingTable` would replay the stale keys and fail with
-        // "object at location … not found". A plain prefix is therefore
-        // re-listed fresh; an explicit filename/glob source is re-resolved
-        // against the same configured pattern. Clearing the whole cache is
-        // cheap — other datasets simply re-list on their next query.
-        //
-        // NOTE: this must clear the cache that actually lives on the
-        // `RuntimeEnv`, not just the one we opt into via
-        // `[datafusion] list_files_cache`. DataFusion ≥ 53 installs a
-        // *default* `DefaultListFilesCache` (1 MiB, infinite TTL) on every
-        // `SessionContext` even when no cache is configured, so the staleness
-        // bites regardless of our flag.
+    /// Like [`reload`] but skips if the per-dataset mutex is already held
+    /// (returns `Ok(None)` in that case — R3.2 coalescing).
+    pub async fn try_reload(&self, name: &str) -> Result<Option<ReloadStats>, AppError> {
+        let cfg = self
+            .configs
+            .read()
+            .unwrap()
+            .get(name)
+            .ok_or_else(|| AppError::NotFound(format!("dataset: {name}")))?
+            .clone();
+
+        let lock = {
+            let mut locks = self.reload_locks.lock().unwrap();
+            locks
+                .entry(name.to_string())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                .clone()
+        };
+        match lock.try_lock() {
+            Err(_) => Ok(None), // already locked — coalesce
+            Ok(_guard) => self.reload_inner(name, &cfg).await.map(Some),
+        }
+    }
+
+    /// Core reload logic shared by [`reload`] and [`try_reload`].
+    /// The caller must hold the per-dataset reload lock.
+    async fn reload_inner(&self, name: &str, cfg: &DatasetConfig) -> Result<ReloadStats, AppError> {
+        let started = std::time::Instant::now();
+        self.set_status(name, DatasetStatus::Building);
+
         if let Some(cache) = self.ctx.runtime_env().cache_manager.get_list_files_cache() {
             cache.clear();
         }
 
-        // 3. Heavy lifting (source read + index build). Parquet/delta
-        // readers are themselves async, so we don't wrap in `web::block`.
-        let (state, provider) = build_dataset(&cfg, &self.ctx).await?;
+        // 3. Heavy lifting (source read + index build).
+        // R4.5: capture dependency snapshots before planning so a concurrent
+        // reload of a dependency cannot change the data under this build.
+        let _dep_snaps: Vec<_> = cfg
+            .source
+            .depends_on
+            .iter()
+            .filter_map(|dep| self.dataset(dep).ok())
+            .collect();
+        let build_result = build_dataset(cfg, &self.ctx).await;
+        let (state, provider) = match build_result {
+            Ok(v) => v,
+            Err(e) => {
+                // Keep-last-good: revert to Published if we had a live
+                // generation, otherwise Failed.
+                if self.datasets.load().contains_key(name) {
+                    self.set_status(name, DatasetStatus::Published);
+                } else {
+                    self.set_status(name, DatasetStatus::Failed);
+                }
+                return Err(e);
+            }
+        };
         let rows = state.num_rows();
 
         // 4. Atomic swap.
-        //   a) Replace the MemTable inside the SessionContext.
-        //   b) ArcSwap a new snapshot map with the updated Arc<DatasetState>.
-        // In-flight queries already hold the old provider + old Arc; they
-        // run to completion. New queries see the new data.
         let _ = self.ctx.deregister_table(name)?;
         self.ctx.register_table(name, provider)?;
 
         let mut new_map = (**self.datasets.load()).clone();
         new_map.insert(name.to_string(), Arc::new(state));
         self.datasets.store(Arc::new(new_map));
+        self.set_status(name, DatasetStatus::Published);
 
         let elapsed_ms = started.elapsed().as_millis();
         log::info!("reloaded dataset '{name}': {rows} rows in {elapsed_ms} ms");
@@ -373,6 +740,10 @@ impl Store {
             .write()
             .unwrap()
             .insert(cfg.name.clone(), cfg.clone());
+        // Register status (on_start = Eager for runtime-registered datasets).
+        let mut new_statuses = (**self.statuses.load()).clone();
+        new_statuses.insert(cfg.name.clone(), (DatasetStatus::Published, OnStart::Eager));
+        self.statuses.store(Arc::new(new_statuses));
 
         let elapsed_ms = started.elapsed().as_millis();
         log::info!(
@@ -426,7 +797,23 @@ impl Store {
     /// `LIMIT max_rows` so the result is bounded regardless of the user's
     /// own clauses, executed through the shared `SessionContext`, and run
     /// through the same fast JSON encoder as [`Self::query`].
-    pub async fn query_sql(&self, sql: &str, max_rows: u64) -> Result<String, AppError> {
+    ///
+    /// `datasets` lists every dataset name the statement touches. An Arc
+    /// clone of each is captured before planning (snapshot rule R4.5/T1.2)
+    /// so that a concurrent reload cannot partially swap the data that this
+    /// query reads.
+    pub async fn query_sql(
+        &self,
+        sql: &str,
+        datasets: &[String],
+        max_rows: u64,
+    ) -> Result<String, AppError> {
+        // Snapshot rule (R4.5 / T1.2): capture a strong reference to each
+        // referenced dataset's published state BEFORE planning begins. Any
+        // reload that fires concurrently will atomically publish a new Arc
+        // into the ArcSwap, but our clones keep the previous generation
+        // alive through the entire query execution.
+        let _snapshots = self.capture_snapshots(datasets)?;
         let cap = max_rows.max(1);
         let sql = self.canonicalize_sql(sql);
         // DESCRIBE yields a schema listing and cannot be nested in a
@@ -464,8 +851,11 @@ impl Store {
     pub async fn query_sql_arrow_stream(
         &self,
         sql: &str,
+        datasets: &[String],
         max_rows: u64,
     ) -> Result<ArrowIpcStream, AppError> {
+        // Snapshot rule — same as query_sql.
+        let _snapshots = self.capture_snapshots(datasets)?;
         let cap = max_rows.max(1);
         let sql = self.canonicalize_sql(sql);
         // DESCRIBE cannot be nested in a subquery on DataFusion (see
@@ -1098,12 +1488,8 @@ fn arrow_to_pg_column_type(dt: &DataType) -> PgColumnType {
             numeric_scale: Some(*s as u64),
         },
         Date32 | Date64 => PgColumnType::simple("date", "date"),
-        Timestamp(_, None) => {
-            PgColumnType::simple("timestamp without time zone", "timestamp")
-        }
-        Timestamp(_, Some(_)) => {
-            PgColumnType::simple("timestamp with time zone", "timestamptz")
-        }
+        Timestamp(_, None) => PgColumnType::simple("timestamp without time zone", "timestamp"),
+        Timestamp(_, Some(_)) => PgColumnType::simple("timestamp with time zone", "timestamptz"),
         Time32(_) | Time64(_) => PgColumnType::simple("time without time zone", "time"),
         Binary | LargeBinary | BinaryView | FixedSizeBinary(_) => {
             PgColumnType::simple("bytea", "bytea")
@@ -1257,6 +1643,34 @@ async fn build_dataset(
     d: &DatasetConfig,
     ctx: &SessionContext,
 ) -> Result<(DatasetState, Arc<dyn TableProvider>), AppError> {
+    // Query-kind datasets: execute the SQL against the current session context
+    // (dependencies are already registered as tables). Collect all result
+    // batches, then fall through to the shared materialisation pipeline.
+    if d.source.kind == SourceKind::Query {
+        let sql = d.source.sql.as_deref().ok_or_else(|| {
+            AppError::Internal(format!(
+                "dataset '{}': source.sql missing for kind = query",
+                d.name
+            ))
+        })?;
+        let df = ctx
+            .sql(sql)
+            .await
+            .map_err(|e| AppError::Internal(format!("dataset '{}': SQL plan: {e}", d.name)))?;
+        let raw_batches = df
+            .collect()
+            .await
+            .map_err(|e| AppError::Internal(format!("dataset '{}': SQL execute: {e}", d.name)))?;
+        if raw_batches.is_empty() || raw_batches.iter().all(|b| b.num_rows() == 0) {
+            return Err(AppError::EmptyDataset(format!(
+                "dataset '{}': query source produced no rows",
+                d.name
+            )));
+        }
+        // Re-enter the materialisation pipeline with the query results.
+        return materialise_batches(d, raw_batches);
+    }
+
     // Lazy datasets: register a streaming provider straight against the
     // source and skip the materialise / index / partition pipeline below.
     // Parquet uses a `ListingTable`; delta uses deltalake's own DataFusion
@@ -1268,6 +1682,7 @@ async fn build_dataset(
             (SourceKind::Parquet, false) => return build_lazy_local_parquet(d, ctx).await,
             (SourceKind::Parquet, true) => return build_lazy_s3_parquet(d, ctx).await,
             (SourceKind::Delta, _) => return build_lazy_delta(d, ctx).await,
+            (SourceKind::Query, _) => unreachable!("query kind handled above"),
         }
     }
 
@@ -1280,6 +1695,7 @@ async fn build_dataset(
         (SourceKind::Parquet, true) => read_s3_parquet(d, ctx).await?,
         (SourceKind::Delta, false) => read_delta(d, HashMap::new()).await?,
         (SourceKind::Delta, true) => read_delta(d, delta_s3_options(d)?).await?,
+        (SourceKind::Query, _) => unreachable!("query kind handled above"),
     };
     if raw_batches.is_empty() {
         return Err(AppError::EmptyDataset(format!(
@@ -1298,7 +1714,15 @@ async fn build_dataset(
         )));
     }
 
-    let chunks = raw_batches;
+    materialise_batches(d, raw_batches)
+}
+
+/// Convert a `Vec<RecordBatch>` into a materialised [`DatasetState`] +
+/// [`MemTable`] provider. Shared by the file-backed and query-kind paths.
+fn materialise_batches(
+    d: &DatasetConfig,
+    chunks: Vec<RecordBatch>,
+) -> Result<(DatasetState, Arc<dyn TableProvider>), AppError> {
     let arrow_sch = chunks[0].schema();
 
     // Build DatasetSchema from the Arrow schema.
@@ -3694,6 +4118,35 @@ impl Backend for Store {
         Store::names(self)
     }
 
+    fn dataset_statuses(&self) -> Vec<datapress_core::backend::DatasetStatusEntry> {
+        let status_snap = self.statuses.load();
+        let ds_snap = self.datasets.load();
+        let mut entries: Vec<_> = status_snap
+            .iter()
+            .map(|(name, (status, on_start))| {
+                let (rows, lazy, columns) = if *status == DatasetStatus::Published {
+                    if let Some(ds) = ds_snap.get(name) {
+                        (ds.num_rows(), ds.lazy, ds.schema.columns.len())
+                    } else {
+                        (0, false, 0)
+                    }
+                } else {
+                    (0, false, 0)
+                };
+                datapress_core::backend::DatasetStatusEntry {
+                    name: name.clone(),
+                    status: status.clone(),
+                    on_start: on_start.clone(),
+                    columns,
+                    rows,
+                    lazy,
+                }
+            })
+            .collect();
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        entries
+    }
+
     fn summary(&self, name: &str) -> Result<DatasetSummary, AppError> {
         let st = self.dataset(name)?;
         Ok(DatasetSummary {
@@ -3734,14 +4187,17 @@ impl Backend for Store {
     }
 
     async fn sample(&self, name: &str) -> Result<String, AppError> {
+        self.ensure_ready(name).await?;
         Store::sample(self, name).await
     }
 
     async fn query(&self, name: &str, req: &QueryRequest) -> Result<String, AppError> {
+        self.ensure_ready(name).await?;
         Store::query(self, name, req).await
     }
 
     async fn query_arrow(&self, name: &str, req: &QueryRequest) -> Result<Vec<u8>, AppError> {
+        self.ensure_ready(name).await?;
         Store::query_arrow(self, name, req).await
     }
 
@@ -3750,6 +4206,7 @@ impl Backend for Store {
         name: &str,
         req: &QueryRequest,
     ) -> Result<ArrowIpcStream, AppError> {
+        self.ensure_ready(name).await?;
         Store::query_arrow_stream(self, name, req).await
     }
 
@@ -3758,31 +4215,44 @@ impl Backend for Store {
         name: &str,
         req: &QueryRequest,
     ) -> Result<ArrowIpcStream, AppError> {
+        self.ensure_ready(name).await?;
         Store::query_arrow_stream_all(self, name, req).await
     }
 
     async fn count(&self, name: &str, req: &CountRequest) -> Result<i64, AppError> {
+        self.ensure_ready(name).await?;
         Store::count(self, name, req).await
     }
 
-    async fn query_sql(&self, sql: &str, max_rows: u64) -> Result<String, AppError> {
-        Store::query_sql(self, sql, max_rows).await
+    async fn query_sql(
+        &self,
+        sql: &str,
+        datasets: &[String],
+        max_rows: u64,
+    ) -> Result<String, AppError> {
+        Store::query_sql(self, sql, datasets, max_rows).await
     }
 
     async fn query_sql_arrow_stream(
         &self,
         sql: &str,
+        datasets: &[String],
         max_rows: u64,
     ) -> Result<ArrowIpcStream, AppError> {
-        Store::query_sql_arrow_stream(self, sql, max_rows).await
+        Store::query_sql_arrow_stream(self, sql, datasets, max_rows).await
     }
 
     async fn parquet(&self, name: &str) -> Result<bytes::Bytes, AppError> {
+        self.ensure_ready(name).await?;
         Store::parquet(self, name).await
     }
 
     async fn reload(&self, name: &str) -> Result<ReloadStats, AppError> {
         Store::reload(self, name).await
+    }
+
+    async fn try_reload(&self, name: &str) -> Result<Option<ReloadStats>, AppError> {
+        Store::try_reload(self, name).await
     }
 
     async fn register(&self, cfg: DatasetConfig) -> Result<DatasetSummary, AppError> {

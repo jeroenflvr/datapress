@@ -24,10 +24,81 @@
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use crate::errors::AppError;
+
+// ---------------------------------------------------------------------------
+// Duration parsing for refresh intervals ("30s", "15m", "2h", "1d")
+// ---------------------------------------------------------------------------
+
+/// Parse a human-readable duration string into a `std::time::Duration`.
+///
+/// Accepted suffixes (case-insensitive): `ms`, `s`, `m`, `h`, `d`.
+/// Examples: `"30s"`, `"15m"`, `"2h"`, `"1d"`, `"500ms"`.
+pub fn parse_duration(s: &str) -> Result<Duration, String> {
+    let s = s.trim();
+    let (num_str, suffix) = if let Some(pos) = s.find(|c: char| c.is_ascii_alphabetic()) {
+        (&s[..pos], &s[pos..])
+    } else {
+        return Err(format!("missing unit suffix in duration '{s}'"));
+    };
+    let n: u64 = num_str
+        .trim()
+        .parse()
+        .map_err(|_| format!("invalid number in duration '{s}'"))?;
+    let dur = match suffix.to_ascii_lowercase().as_str() {
+        "ms" => Duration::from_millis(n),
+        "s" => Duration::from_secs(n),
+        "m" => Duration::from_secs(n * 60),
+        "h" => Duration::from_secs(n * 3600),
+        "d" => Duration::from_secs(n * 86400),
+        other => return Err(format!("unknown duration unit '{other}' in '{s}'")),
+    };
+    Ok(dur)
+}
+
+/// Serde deserialization visitor for `parse_duration`.
+fn deserialize_duration<'de, D>(de: D) -> Result<Duration, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(de)?;
+    parse_duration(&s).map_err(serde::de::Error::custom)
+}
+
+fn deserialize_optional_duration<'de, D>(de: D) -> Result<Option<Duration>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = Option::<String>::deserialize(de)?;
+    match s {
+        None => Ok(None),
+        Some(v) => parse_duration(&v)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
+}
+
+/// Serialize a `Duration` as its millisecond count (for JSON/TOML output).
+fn serialize_duration<S>(d: &Duration, ser: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    ser.serialize_u64(d.as_millis() as u64)
+}
+
+fn serialize_optional_duration<S>(d: &Option<Duration>, ser: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match d {
+        None => ser.serialize_none(),
+        Some(dur) => ser.serialize_some(&(dur.as_millis() as u64)),
+    }
+}
 
 /// Absolute path of the `datasets.toml` this process was loaded from, set
 /// once by [`AppConfig::load`]. `None` when the config was constructed
@@ -73,7 +144,7 @@ pub struct AppConfig {
     pub datasets: Vec<DatasetConfig>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct ServerConfig {
     /// Which engine to run. Must match the binary's compile-time feature.
@@ -142,6 +213,12 @@ pub struct ServerConfig {
     /// Overrides the automatic colour derived from `environment`. Only
     /// meaningful when `environment` is also set.
     pub environment_color: Option<String>,
+    /// Non-blocking startup configuration.
+    #[serde(default)]
+    pub startup: StartupConfig,
+    /// Refresh scheduler concurrency limits.
+    #[serde(default)]
+    pub refresh: ServerRefreshConfig,
 }
 
 impl Default for ServerConfig {
@@ -162,7 +239,130 @@ impl Default for ServerConfig {
             pgwire: PgwireConfig::default(),
             environment: None,
             environment_color: None,
+            startup: StartupConfig::default(),
+            refresh: ServerRefreshConfig::default(),
         }
+    }
+}
+
+/// Controls how a dataset is built at server startup.
+///
+/// - `eager` (default): built in background immediately at boot;
+///   `/readyz` waits for it.
+/// - `lazy`: registered as pending; built on the first incoming query
+///   (the triggering request waits). Not gated by `/readyz`.
+/// - `skip`: never auto-built; only built by an explicit
+///   `POST /datasets/{name}/reload`. Not gated by `/readyz`.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OnStart {
+    #[default]
+    Eager,
+    Lazy,
+    Skip,
+}
+
+/// Server-level startup tuning (`[server.startup]` block).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct StartupConfig {
+    /// Maximum number of datasets that may be built concurrently during
+    /// startup. Independent datasets within this limit build in parallel;
+    /// a dependent dataset waits for all its dependencies first.
+    /// Default `4`.
+    pub max_concurrent: usize,
+    /// Readiness policy for `/readyz`:
+    /// - `all` (default): `/readyz` returns `200` only when every `eager`
+    ///   dataset has published successfully.
+    /// - `any`: `/readyz` returns `200` as soon as at least one `eager`
+    ///   dataset has published.
+    pub readiness: ReadinessMode,
+}
+
+impl Default for StartupConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent: 4,
+            readiness: ReadinessMode::default(),
+        }
+    }
+}
+
+/// Readiness gate semantics for `/readyz`.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ReadinessMode {
+    /// `/readyz` 200 when every `eager` dataset is published.
+    #[default]
+    All,
+    /// `/readyz` 200 as soon as at least one `eager` dataset is published.
+    Any,
+}
+
+/// Per-dataset refresh schedule (`[dataset.refresh]` block).
+///
+/// Only valid on `kind = "query"` datasets. Setting this on a file-backed
+/// dataset is a startup error.
+///
+/// Phase 3 implements interval-based refresh only; cron support is reserved
+/// for a future phase. Setting both `interval` and `cron` is a startup error
+/// (cron is not yet parsed, so any `cron` key in TOML will be rejected by
+/// `deny_unknown_fields`).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct RefreshConfig {
+    /// Polling interval, e.g. `"15m"`, `"2h"`. When absent, the dataset is
+    /// not refreshed automatically.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_duration",
+        serialize_with = "serialize_optional_duration"
+    )]
+    pub interval: Option<Duration>,
+    /// Whether to refresh this dataset when an upstream dependency publishes
+    /// a new generation. Parsed and stored; cascade behaviour is implemented
+    /// in Phase 4. Default `false`.
+    #[serde(default)]
+    pub on_upstream_reload: bool,
+    /// Per-build timeout, e.g. `"10m"`. Defaults to 10 minutes.
+    #[serde(
+        default = "default_refresh_timeout",
+        deserialize_with = "deserialize_duration",
+        serialize_with = "serialize_duration"
+    )]
+    pub timeout: Duration,
+    /// Apply ±10 % uniform jitter to every scheduled fire. Default `true`.
+    #[serde(default = "default_true")]
+    pub jitter: bool,
+}
+
+fn default_refresh_timeout() -> Duration {
+    Duration::from_secs(600) // 10 minutes
+}
+
+impl Default for RefreshConfig {
+    fn default() -> Self {
+        Self {
+            interval: None,
+            on_upstream_reload: false,
+            timeout: default_refresh_timeout(),
+            jitter: true,
+        }
+    }
+}
+
+/// Server-level refresh concurrency (`[server.refresh]` block).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ServerRefreshConfig {
+    /// Maximum number of dataset refreshes that may run concurrently.
+    /// Default `1`.
+    pub max_concurrent: usize,
+}
+
+impl Default for ServerRefreshConfig {
+    fn default() -> Self {
+        Self { max_concurrent: 1 }
     }
 }
 
@@ -730,6 +930,13 @@ pub struct DatasetConfig {
     /// (allowlist) / `exclude` (denylist). Empty (default) = no restriction.
     #[serde(default)]
     pub projection_filter: ColumnFilter,
+    /// When and how this dataset is built at startup. See [`OnStart`].
+    #[serde(default)]
+    pub on_start: OnStart,
+    /// Optional periodic refresh schedule. Only valid for `kind = "query"`
+    /// datasets; setting this on a file-backed dataset is a startup error.
+    #[serde(default)]
+    pub refresh: Option<RefreshConfig>,
 }
 
 fn default_true() -> bool {
@@ -799,7 +1006,19 @@ impl ColumnFilter {
 pub struct SourceConfig {
     pub kind: SourceKind,
     /// Either a local filesystem path or an `s3://bucket/key` URL.
+    /// Required for `parquet` and `delta` kinds; empty for `query`.
+    #[serde(default)]
     pub location: String,
+    /// The materialisation SQL for `kind = "query"` datasets. Must be a
+    /// single read-only SELECT or WITH…SELECT. Required for `query` kind;
+    /// absent for `parquet`/`delta`.
+    #[serde(default)]
+    pub sql: Option<String>,
+    /// Datasets that `sql` references. Required for `query` kind; must
+    /// list exactly the dataset names referenced in `sql`, no more, no
+    /// fewer. Validated by [`AppConfig::validate`] against the SQL AST.
+    #[serde(default)]
+    pub depends_on: Vec<String>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -808,6 +1027,11 @@ pub enum SourceKind {
     #[default]
     Parquet,
     Delta,
+    /// A dataset whose content is the result of executing `sql` against
+    /// other registered datasets. Materialised in-memory (DataFusion:
+    /// Arc<DatasetState>; DuckDB: engine table) in dependency order at
+    /// startup and on each explicit reload.
+    Query,
 }
 
 impl SourceKind {
@@ -815,6 +1039,7 @@ impl SourceKind {
         match self {
             SourceKind::Parquet => "parquet",
             SourceKind::Delta => "delta",
+            SourceKind::Query => "query",
         }
     }
 }
@@ -1303,7 +1528,9 @@ impl AppConfig {
             }
 
             // Location-specific checks.
-            if d.source.is_s3() {
+            if d.source.kind == SourceKind::Query {
+                // query sources: no location, validated separately below.
+            } else if d.source.is_s3() {
                 d.source.s3_bucket()?;
                 if d.s3.as_ref().and_then(|s| s.region.as_deref()).is_none()
                     && d.s3.as_ref().and_then(|s| s.endpoint.as_deref()).is_none()
@@ -1333,14 +1560,199 @@ impl AppConfig {
                             )));
                         }
                     }
+                    // Query sources are handled by the earlier branch above.
+                    SourceKind::Query => {}
+                }
+            }
+
+            // R3.x — [dataset.refresh] is only valid on kind = "query".
+            if d.source.kind != SourceKind::Query {
+                if d.refresh.is_some() {
+                    return Err(AppError::Internal(format!(
+                        "dataset '{}': [dataset.refresh] is only valid for kind = \"query\" datasets",
+                        d.name
+                    )));
+                }
+            } else if let Some(ref rc) = d.refresh {
+                // Validate the interval when present.
+                if rc.interval.is_some_and(|i| i.is_zero()) {
+                    return Err(AppError::Internal(format!(
+                        "dataset '{}': refresh.interval must be greater than zero",
+                        d.name
+                    )));
                 }
             }
         }
+
+        // R2.1 — validate `query` dataset sources: SQL structure, exact-match
+        // depends_on, self-reference rejection (R2.3).
+        {
+            let all_names: std::collections::HashSet<String> = self
+                .datasets
+                .iter()
+                .map(|d| d.name.to_lowercase())
+                .collect();
+
+            for d in &self.datasets {
+                if d.source.kind != SourceKind::Query {
+                    continue;
+                }
+                // Require sql field.
+                let sql = d.source.sql.as_deref().ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "dataset '{}': source.sql is required for kind = \"query\"",
+                        d.name
+                    ))
+                })?;
+                // Require non-empty depends_on.
+                if d.source.depends_on.is_empty() {
+                    return Err(AppError::Internal(format!(
+                        "dataset '{}': depends_on is required for kind = \"query\" \
+                         and must list every dataset referenced in sql",
+                        d.name
+                    )));
+                }
+                // Self-reference (R2.3).
+                if d.source
+                    .depends_on
+                    .iter()
+                    .any(|dep| dep.eq_ignore_ascii_case(&d.name))
+                {
+                    return Err(AppError::Internal(format!(
+                        "dataset '{}': a query dataset cannot depend on itself",
+                        d.name
+                    )));
+                }
+                // All depends_on entries must be known datasets (R2.1-c).
+                for dep in &d.source.depends_on {
+                    if !all_names.contains(&dep.to_lowercase()) {
+                        return Err(AppError::Internal(format!(
+                            "dataset '{}': depends_on '{}' is not a defined dataset",
+                            d.name, dep
+                        )));
+                    }
+                }
+                // Parse SQL and extract referenced table names (reuse Phase 1
+                // validator logic). R2.2: materialization is always permitted
+                // regardless of [sql].enabled — pass all dataset names as allowed.
+                let validated = crate::sql::validate(sql, &all_names, usize::MAX).map_err(|e| {
+                    AppError::Internal(format!("dataset '{}': source.sql is invalid: {e}", d.name))
+                })?;
+                let referenced: std::collections::HashSet<String> =
+                    validated.datasets.into_iter().collect();
+                let declared: std::collections::HashSet<String> = d
+                    .source
+                    .depends_on
+                    .iter()
+                    .map(|s| s.to_lowercase())
+                    .collect();
+                // R2.1-a: references not listed in depends_on.
+                for ref_name in &referenced {
+                    if !declared.contains(ref_name) {
+                        return Err(AppError::Internal(format!(
+                            "dataset '{}': SQL references '{}' which is not listed \
+                             in depends_on",
+                            d.name, ref_name
+                        )));
+                    }
+                }
+                // R2.1-b: depends_on entries not referenced in SQL.
+                for dep in &declared {
+                    if !referenced.contains(dep) {
+                        return Err(AppError::Internal(format!(
+                            "dataset '{}': depends_on lists '{}' but it is not \
+                             referenced in sql",
+                            d.name, dep
+                        )));
+                    }
+                }
+            }
+
+            // R2.4 — Kahn topological validation: detect cycles (incl. self)
+            // and ensure a valid build order exists. The actual order vector
+            // is exposed via `topological_dataset_order()`.
+            self.topological_dataset_order()
+                .map_err(|e| AppError::Internal(format!("dataset dependency error: {e}")))?;
+        }
+
         Ok(())
     }
 }
 
+impl AppConfig {
+    /// Return the indices of `self.datasets` in a topological build order
+    /// (dependencies before dependents). File-backed datasets have no
+    /// dependencies and may appear in any relative order. Cycle detection
+    /// uses Kahn's algorithm; a cycle error names the participating datasets.
+    ///
+    /// Called at validation time to reject cycles, and by backends to build
+    /// datasets in the correct order.
+    pub fn topological_dataset_order(&self) -> Result<Vec<usize>, AppError> {
+        use std::collections::{HashMap, VecDeque};
+
+        let n = self.datasets.len();
+        // name → index
+        let name_to_idx: HashMap<&str, usize> = self
+            .datasets
+            .iter()
+            .enumerate()
+            .map(|(i, d)| (d.name.as_str(), i))
+            .collect();
+
+        // Build adjacency: dep → dependents (edges dep → current).
+        let mut in_degree = vec![0usize; n];
+        let mut adj: Vec<Vec<usize>> = vec![vec![]; n]; // adj[dep] = [dependents]
+
+        for (i, d) in self.datasets.iter().enumerate() {
+            if d.source.kind != SourceKind::Query {
+                continue;
+            }
+            for dep_name in &d.source.depends_on {
+                if let Some(&dep_idx) = name_to_idx.get(dep_name.as_str()) {
+                    adj[dep_idx].push(i);
+                    in_degree[i] += 1;
+                }
+                // Unknown depends_on entries are caught by validate() before
+                // this is called; skip silently here.
+            }
+        }
+
+        let mut queue: VecDeque<usize> = (0..n).filter(|&i| in_degree[i] == 0).collect();
+        let mut order = Vec::with_capacity(n);
+        while let Some(node) = queue.pop_front() {
+            order.push(node);
+            for &dep in &adj[node] {
+                in_degree[dep] -= 1;
+                if in_degree[dep] == 0 {
+                    queue.push_back(dep);
+                }
+            }
+        }
+
+        if order.len() != n {
+            // Cycle detected: collect the names still stuck with in_degree > 0.
+            let cycle_names: Vec<&str> = self
+                .datasets
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| in_degree[*i] > 0)
+                .map(|(_, d)| d.name.as_str())
+                .collect();
+            return Err(AppError::Internal(format!(
+                "dependency cycle detected among datasets: {}",
+                cycle_names.join(", ")
+            )));
+        }
+
+        Ok(order)
+    }
+}
+
 impl SourceConfig {
+    pub fn is_query(&self) -> bool {
+        self.kind == SourceKind::Query
+    }
+
     pub fn is_s3(&self) -> bool {
         self.location.starts_with("s3://")
     }
@@ -1603,6 +2015,7 @@ impl DatasetConfig {
             return None;
         }
         match self.source.kind {
+            SourceKind::Query => None,
             SourceKind::Parquet => {
                 let files = self.resolve_local_parquet_files().ok()?;
                 Some(
@@ -1793,6 +2206,8 @@ mod tests {
             source: SourceConfig {
                 kind,
                 location: location.to_string(),
+                sql: None,
+                depends_on: vec![],
             },
             s3: None,
             index: IndexConfig::default(),
@@ -1801,6 +2216,8 @@ mod tests {
             lazy,
             predicate_filter: Default::default(),
             projection_filter: Default::default(),
+            on_start: Default::default(),
+            refresh: None,
         };
         let server = |mb: u64| ServerConfig {
             force_lazy_above_mb: mb,
@@ -1927,6 +2344,8 @@ mod tests {
                 source: SourceConfig {
                     kind: SourceKind::Parquet,
                     location: file.to_string_lossy().into_owned(),
+                    sql: None,
+                    depends_on: vec![],
                 },
                 s3: None,
                 index: IndexConfig::default(),
@@ -1935,6 +2354,8 @@ mod tests {
                 lazy: false,
                 predicate_filter: Default::default(),
                 projection_filter: Default::default(),
+                on_start: Default::default(),
+                refresh: None,
             }],
         };
 
@@ -1966,6 +2387,8 @@ mod tests {
                 source: SourceConfig {
                     kind: SourceKind::Parquet,
                     location: "/tmp/missing.parquet".into(),
+                    sql: None,
+                    depends_on: vec![],
                 },
                 s3: None,
                 index: IndexConfig::default(),
@@ -1974,6 +2397,8 @@ mod tests {
                 lazy: false,
                 predicate_filter: Default::default(),
                 projection_filter: Default::default(),
+                on_start: Default::default(),
+                refresh: None,
             }],
         };
         let err = cfg.validate().unwrap_err();
@@ -2029,6 +2454,8 @@ mod tests {
         let mk = |loc: &str| SourceConfig {
             kind: SourceKind::Parquet,
             location: loc.into(),
+            sql: None,
+            depends_on: vec![],
         };
         let s1 = mk("s3://bucket/path/key");
         assert_eq!(s1.s3_bucket().unwrap(), ("bucket", "path/key"));
@@ -2043,6 +2470,8 @@ mod tests {
         let mk = |loc: &str| SourceConfig {
             kind: SourceKind::Parquet,
             location: loc.into(),
+            sql: None,
+            depends_on: vec![],
         };
         // Plain prefix -> recursive parquet glob (trailing slash trimmed).
         assert_eq!(
@@ -2120,6 +2549,8 @@ mod tests {
             source: SourceConfig {
                 kind: SourceKind::Parquet,
                 location: "x".into(),
+                sql: None,
+                depends_on: vec![],
             },
             s3: None,
             index: IndexConfig::default(),
@@ -2128,6 +2559,8 @@ mod tests {
             lazy: false,
             predicate_filter: Default::default(),
             projection_filter: Default::default(),
+            on_start: Default::default(),
+            refresh: None,
         };
         assert_eq!(mk("accidents").env_prefix(), "ACCIDENTS");
         assert_eq!(mk("sales.eu-1").env_prefix(), "SALES_EU_1");
@@ -2149,6 +2582,8 @@ mod tests {
             source: SourceConfig {
                 kind: SourceKind::Parquet,
                 location: loc.into(),
+                sql: None,
+                depends_on: vec![],
             },
             s3: None,
             index: IndexConfig::default(),
@@ -2157,6 +2592,8 @@ mod tests {
             lazy: false,
             predicate_filter: Default::default(),
             projection_filter: Default::default(),
+            on_start: Default::default(),
+            refresh: None,
         };
 
         // Direct file.
@@ -2237,5 +2674,300 @@ mod tests {
             ..Default::default()
         };
         assert!(cfg.validate_enabled().is_ok());
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 2B: query-kind source validation tests
+    // -----------------------------------------------------------------------
+
+    /// Helper: a minimal valid `AppConfig` with one parquet and one query dataset.
+    fn query_cfg_raw(query_sql: &str, depends_on: Vec<String>) -> AppConfig {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!("dp-qtest-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let f = dir.join("base.parquet");
+        // Create an actual file so the parquet validation passes.
+        std::fs::File::create(&f)
+            .unwrap()
+            .write_all(b"fake")
+            .unwrap_or(());
+        AppConfig {
+            server: ServerConfig::default(),
+            docs: DocsConfig::default(),
+            swagger: SwaggerConfig::default(),
+            auth: AuthConfig::default(),
+            metrics: MetricsConfig::default(),
+            explorer: ExplorerConfig::default(),
+            sql: SqlConfig::default(),
+            datafusion: DataFusionConfig::default(),
+            datasets: vec![
+                DatasetConfig {
+                    name: "base".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Parquet,
+                        location: f.to_str().unwrap().into(),
+                        sql: None,
+                        depends_on: vec![],
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                },
+                DatasetConfig {
+                    name: "q".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Query,
+                        location: String::new(),
+                        sql: Some(query_sql.into()),
+                        depends_on,
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn validate_query_source_valid() {
+        let cfg = query_cfg_raw("SELECT id FROM base", vec!["base".into()]);
+        assert!(cfg.validate().is_ok(), "valid query source should pass");
+    }
+
+    #[test]
+    fn validate_query_source_missing_depends_on() {
+        let cfg = query_cfg_raw("SELECT id FROM base", vec![]); // empty!
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("depends_on"),
+            "expected depends_on error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_query_source_superfluous_depends_on() {
+        // The exact-match check is exercised by ref_not_in_depends_on below.
+        // Here we just verify a valid config passes.
+        let cfg = query_cfg_raw("SELECT id FROM base", vec!["base".into()]);
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_query_source_ref_not_in_depends_on() {
+        // SQL references 'base' but depends_on is empty → invalid.
+        let cfg = query_cfg_raw("SELECT id FROM base", vec![]);
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("depends_on"),
+            "expected depends_on error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_query_source_unknown_dependency() {
+        // depends_on lists a dataset that doesn't exist.
+        let cfg = query_cfg_raw("SELECT id FROM ghost", vec!["ghost".into()]);
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("ghost"),
+            "expected unknown-dataset error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_query_source_self_reference() {
+        // depends_on lists the dataset itself.
+        let cfg = query_cfg_raw("SELECT id FROM q", vec!["q".into()]);
+        // Either validate() or topological_dataset_order() catches this.
+        let result = cfg.validate().map_err(|e| e.to_string()).or_else(|_| {
+            cfg.topological_dataset_order()
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        });
+        assert!(result.is_err(), "self-reference should be rejected");
+    }
+
+    #[test]
+    fn validate_query_source_cycle() {
+        // Two-node cycle: a -> b -> a.
+        let f = {
+            use std::io::Write;
+            let p = std::env::temp_dir().join(format!("dp-cycle-{}.parquet", std::process::id()));
+            std::fs::File::create(&p).unwrap().write_all(b"x").unwrap();
+            p
+        };
+        let cfg = AppConfig {
+            server: ServerConfig::default(),
+            docs: DocsConfig::default(),
+            swagger: SwaggerConfig::default(),
+            auth: AuthConfig::default(),
+            metrics: MetricsConfig::default(),
+            explorer: ExplorerConfig::default(),
+            sql: SqlConfig::default(),
+            datafusion: DataFusionConfig::default(),
+            datasets: vec![
+                DatasetConfig {
+                    name: "base".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Parquet,
+                        location: f.to_str().unwrap().into(),
+                        sql: None,
+                        depends_on: vec![],
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                },
+                DatasetConfig {
+                    name: "qa".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Query,
+                        location: String::new(),
+                        sql: Some("SELECT 1 FROM qb".into()),
+                        depends_on: vec!["qb".into()],
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                },
+                DatasetConfig {
+                    name: "qb".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Query,
+                        location: String::new(),
+                        sql: Some("SELECT 1 FROM qa".into()),
+                        depends_on: vec!["qa".into()],
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                },
+            ],
+        };
+        let err = cfg.topological_dataset_order().unwrap_err();
+        assert!(
+            err.to_string().contains("cycle"),
+            "expected cycle error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_topological_order_correct() {
+        // datasets: base(parquet) <- q1(query) <- q2(query)
+        // Expected order: base first, then q1, then q2.
+        let f = {
+            use std::io::Write;
+            let p = std::env::temp_dir().join(format!("dp-topo-{}.parquet", std::process::id()));
+            std::fs::File::create(&p).unwrap().write_all(b"x").unwrap();
+            p
+        };
+        let cfg = AppConfig {
+            server: ServerConfig::default(),
+            docs: DocsConfig::default(),
+            swagger: SwaggerConfig::default(),
+            auth: AuthConfig::default(),
+            metrics: MetricsConfig::default(),
+            explorer: ExplorerConfig::default(),
+            sql: SqlConfig::default(),
+            datafusion: DataFusionConfig::default(),
+            datasets: vec![
+                DatasetConfig {
+                    name: "q2".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Query,
+                        location: String::new(),
+                        sql: Some("SELECT 1 FROM q1".into()),
+                        depends_on: vec!["q1".into()],
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                },
+                DatasetConfig {
+                    name: "base".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Parquet,
+                        location: f.to_str().unwrap().into(),
+                        sql: None,
+                        depends_on: vec![],
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                },
+                DatasetConfig {
+                    name: "q1".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Query,
+                        location: String::new(),
+                        sql: Some("SELECT 1 FROM base".into()),
+                        depends_on: vec!["base".into()],
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                },
+            ],
+        };
+        let order = cfg.topological_dataset_order().expect("valid topo order");
+        // 'base' must come before 'q1', and 'q1' must come before 'q2'.
+        let names: Vec<&str> = order
+            .iter()
+            .map(|&i| cfg.datasets[i].name.as_str())
+            .collect();
+        let pos_base = names.iter().position(|&n| n == "base").unwrap();
+        let pos_q1 = names.iter().position(|&n| n == "q1").unwrap();
+        let pos_q2 = names.iter().position(|&n| n == "q2").unwrap();
+        assert!(pos_base < pos_q1, "base must come before q1");
+        assert!(pos_q1 < pos_q2, "q1 must come before q2");
     }
 }

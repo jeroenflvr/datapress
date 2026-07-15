@@ -402,7 +402,7 @@ fn openapi(oauth2: Option<&ResolvedOAuth2>, prefix: &str) -> OpenApi {
                 "post": {
                     "tags":    ["datasets"],
                     "summary": "Run a raw read-only SQL query",
-                    "description": "Execute a single read-only `SELECT` (or `WITH … SELECT`) referencing exactly one registered dataset. Disabled unless `[sql].enabled = true`; returns 404 when off. The statement is parsed and validated before execution, and the result is capped at `[sql].max_rows` rows. Send `Accept: application/vnd.apache.arrow.stream` (or `?format=arrow`) to receive an Arrow IPC stream instead of JSON.",
+                    "description": "Execute a single read-only `SELECT` (or `WITH \u{2026} SELECT`) referencing one or more registered datasets. Disabled unless `[sql].enabled = true`; returns 404 when off. The statement is parsed and validated before execution, and the result is capped at `[sql].max_rows` rows. Send `Accept: application/vnd.apache.arrow.stream` (or `?format=arrow`) to receive an Arrow IPC stream instead of JSON.",
                     "requestBody": {
                         "required": true,
                         "content": {
@@ -433,7 +433,7 @@ fn openapi(oauth2: Option<&ResolvedOAuth2>, prefix: &str) -> OpenApi {
                                 }
                             }
                         },
-                        "400": { "description": "Statement rejected by the validation gate (not read-only, multiple statements, unknown/file-function table, or more than one dataset)" },
+                        "400": { "description": "Statement rejected by the validation gate (not read-only, multiple statements, unknown/file-function table, or more datasets than the server limit)" },
                         "404": { "description": "Endpoint disabled (`[sql].enabled = false`)" }
                     }
                 }

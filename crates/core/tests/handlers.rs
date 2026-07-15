@@ -172,10 +172,8 @@ fn mount(
                 .service(handlers::readyz)
                 .service(handlers::version)
                 .service(handlers::health)
-                // Canonical versioned scope.
-                .service(web::scope("/api/v1").configure(handlers::v1::configure))
-                // Legacy alias kept for back-compat (tested below).
-                .service(web::scope("/api").configure(handlers::v1::configure)),
+                // Canonical versioned scope — the only API mount.
+                .service(web::scope("/api/v1").configure(handlers::v1::configure)),
         )
 }
 
@@ -199,8 +197,7 @@ fn mount_prefixed(
                 .service(handlers::readyz)
                 .service(handlers::version)
                 .service(handlers::health)
-                .service(web::scope("/api/v1").configure(handlers::v1::configure))
-                .service(web::scope("/api").configure(handlers::v1::configure)),
+                .service(web::scope("/api/v1").configure(handlers::v1::configure)),
         )
 }
 
@@ -288,7 +285,9 @@ async fn prefixed_api_accessible_under_prefix() {
 #[actix_web::test]
 async fn list_datasets_returns_summaries() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-    let req = test::TestRequest::get().uri("/api/datasets").to_request();
+    let req = test::TestRequest::get()
+        .uri("/api/v1/datasets")
+        .to_request();
     let body: Value = test::call_and_read_body_json(&app, req).await;
     let ds = &body["datasets"];
     assert_eq!(ds[0]["name"], "people");
@@ -300,7 +299,7 @@ async fn list_datasets_returns_summaries() {
 async fn schema_returns_columns_and_sample() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::get()
-        .uri("/api/datasets/people/schema")
+        .uri("/api/v1/datasets/people/schema")
         .to_request();
     let body: Value = test::call_and_read_body_json(&app, req).await;
     assert_eq!(body["name"], "people");
@@ -316,7 +315,7 @@ async fn schema_returns_columns_and_sample() {
 async fn schema_unknown_dataset_returns_404() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::get()
-        .uri("/api/datasets/nope/schema")
+        .uri("/api/v1/datasets/nope/schema")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
@@ -326,7 +325,7 @@ async fn schema_unknown_dataset_returns_404() {
 async fn query_json_envelope() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/query")
+        .uri("/api/v1/datasets/people/query")
         .set_json(serde_json::json!({}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -348,7 +347,7 @@ async fn query_json_envelope() {
 async fn query_arrow_via_accept_header() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/query")
+        .uri("/api/v1/datasets/people/query")
         .insert_header(("Accept", "application/vnd.apache.arrow.stream"))
         .set_json(serde_json::json!({}))
         .to_request();
@@ -374,7 +373,7 @@ async fn query_arrow_via_accept_header() {
 async fn query_arrow_via_format_query_param() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/query?format=arrow")
+        .uri("/api/v1/datasets/people/query?format=arrow")
         .set_json(serde_json::json!({}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -388,7 +387,7 @@ async fn query_arrow_via_format_query_param() {
 async fn query_stream_returns_arrow_without_paging_envelope() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/query/stream")
+        .uri("/api/v1/datasets/people/query/stream")
         .set_json(serde_json::json!({"columns": ["id", "name"]}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -411,14 +410,14 @@ async fn count_with_and_without_predicates() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
 
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/count")
+        .uri("/api/v1/datasets/people/count")
         .set_json(serde_json::json!({}))
         .to_request();
     let body: Value = test::call_and_read_body_json(&app, req).await;
     assert_eq!(body["count"], 5);
 
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/count")
+        .uri("/api/v1/datasets/people/count")
         .set_json(serde_json::json!({
             "predicates": [{"col": "name", "op": "eq", "value": "Anna"}],
         }))
@@ -433,7 +432,7 @@ async fn reload_requires_admin_token() {
     // disabled and return 403 regardless of headers.
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/reload")
+        .uri("/api/v1/datasets/people/reload")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
@@ -444,7 +443,7 @@ async fn arbitrary_accept_does_not_force_arrow() {
     // `*/*` should still go through the JSON path.
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/query")
+        .uri("/api/v1/datasets/people/query")
         .insert_header(("Accept", "*/*"))
         .set_json(serde_json::json!({}))
         .to_request();
@@ -458,70 +457,23 @@ async fn arbitrary_accept_does_not_force_arrow() {
     assert!(ct.starts_with("application/json"));
 }
 
-// ------------------------------------------------------------- v1 routing --
-//
-// Every route above is also reachable under the canonical `/api/v1/...`
-// scope. The existing tests target the legacy `/api/...` alias so we
-// keep regression coverage on both mount points.
+// --------------------------------------------------------- 404 on removed legacy paths --
 
 #[actix_web::test]
-async fn v1_list_datasets() {
+async fn legacy_api_datasets_returns_404() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-    let req = test::TestRequest::get()
-        .uri("/api/v1/datasets")
-        .to_request();
-    let body: Value = test::call_and_read_body_json(&app, req).await;
-    assert_eq!(body["datasets"][0]["name"], "people");
+    let req = test::TestRequest::get().uri("/api/datasets").to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
 #[actix_web::test]
-async fn v1_schema() {
+async fn legacy_api_dataset_query_returns_404() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-    let req = test::TestRequest::get()
-        .uri("/api/v1/datasets/people/schema")
-        .to_request();
-    let body: Value = test::call_and_read_body_json(&app, req).await;
-    assert_eq!(body["name"], "people");
-}
-
-#[actix_web::test]
-async fn v1_query_json_and_arrow() {
-    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-
-    // JSON envelope.
     let req = test::TestRequest::post()
-        .uri("/api/v1/datasets/people/query")
-        .set_json(serde_json::json!({}))
-        .to_request();
-    let body: Value = test::call_and_read_body_json(&app, req).await;
-    assert_eq!(body["data"][0]["name"], "Anna");
-
-    // Arrow IPC via query param.
-    let req = test::TestRequest::post()
-        .uri("/api/v1/datasets/people/query?format=arrow")
+        .uri("/api/datasets/people/query")
         .set_json(serde_json::json!({}))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(
-        resp.headers().get("content-type").unwrap(),
-        "application/vnd.apache.arrow.stream",
-    );
-}
-
-#[actix_web::test]
-async fn v1_count_and_reload_guard() {
-    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/datasets/people/count")
-        .set_json(serde_json::json!({}))
-        .to_request();
-    let body: Value = test::call_and_read_body_json(&app, req).await;
-    assert_eq!(body["count"], 5);
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/datasets/people/reload")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

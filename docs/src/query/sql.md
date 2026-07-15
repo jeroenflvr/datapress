@@ -313,9 +313,6 @@ table.
   enabled, the endpoint enforces the same `read` scopes as the structured
   query API.
 
-The legacy un-versioned alias `POST /api/sql` is also mounted and behaves
-identically.
-
 ## Roadmap
 
 The validation gate already tracks **which** datasets a statement touches
