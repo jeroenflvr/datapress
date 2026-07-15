@@ -5,15 +5,20 @@ use async_trait::async_trait;
 use duckdb::Connection;
 
 use datapress_core::backend::{
-    ArrowIpcStream, Backend, DatasetStatus, DatasetStatusEntry, DatasetSummary, ReloadStats,
-    arrow_ipc_stream_channel,
+    ArrowIpcStream, Backend, CascadeHandle, DatasetStatus, DatasetStatusEntry, DatasetSummary,
+    ReloadStats, arrow_ipc_stream_channel,
 };
 use datapress_core::config::{
-    AddressingStyle, AppConfig, DatasetConfig, OnStart, Partitioning, QuackConfig, SourceKind,
+    AddressingStyle, AppConfig, DatasetConfig, MaterializeResidency, OnStart, Partitioning,
+    QuackConfig, SourceKind, StorageBackendKind,
 };
 use datapress_core::errors::AppError;
 use datapress_core::models::{CountRequest, QueryRequest};
 use datapress_core::schema::{ColumnInfo, DatasetSchema, LogicalType};
+use datapress_core::storage::{
+    MaterializationStorage, build_materialization_storage, fnv1a_hash, gc_generations,
+    list_complete_generations, new_ulid, now_rfc3339,
+};
 
 use crate::repository::DatasetRepository;
 
@@ -93,6 +98,12 @@ pub struct Registry {
     /// Per-dataset lifecycle state (Pending / Building / Published / Failed)
     /// and startup policy. All configured datasets are present.
     statuses: RwLock<HashMap<String, (DatasetStatus, OnStart)>>,
+    /// Cascade notification handle (R4.3). Set once by the server after
+    /// building the cascade engine; `None` when no cascade is configured.
+    cascade_handle: Mutex<Option<CascadeHandle>>,
+    /// Phase 2B: optional server-level storage backend for query-dataset
+    /// materialization. `None` → all query datasets stay in DuckDB memory.
+    storage: Option<Arc<MaterializationStorage>>,
 }
 
 impl Registry {
@@ -201,10 +212,11 @@ impl Registry {
         self.set_status(name, DatasetStatus::Building);
         let pool = self.pool.clone();
         let cfg_clone = cfg.clone();
+        let storage = self.storage.clone();
 
         let result = actix_web::web::block(move || -> Result<(DatasetSchema, i64), AppError> {
             let conn = DbPool::get(&pool);
-            replace_table(&conn, &cfg_clone)?;
+            replace_table(&conn, &cfg_clone, storage.as_deref())?;
             let schema = introspect_schema(&conn, &cfg_clone)?;
             let rows = count_rows(&conn, &cfg_clone.name)?;
             Ok((schema, rows))
@@ -237,6 +249,10 @@ impl Registry {
 
         let elapsed_ms = started.elapsed().as_millis();
         log::info!("reloaded dataset '{name}': {rows} rows in {elapsed_ms} ms");
+        // R4.3: notify cascade engine of successful publish.
+        if let Some(h) = self.cascade_handle.lock().unwrap().as_ref() {
+            h.notify_published(name);
+        }
         Ok(ReloadStats {
             rows: rows as usize,
             elapsed_ms,
@@ -278,6 +294,7 @@ impl Registry {
         let started = std::time::Instant::now();
         let pool = self.pool.clone();
         let build_cfg = cfg.clone();
+        let storage = self.storage.clone();
 
         let (schema, rows) =
             actix_web::web::block(move || -> Result<(DatasetSchema, i64), AppError> {
@@ -292,7 +309,7 @@ impl Registry {
                 if build_cfg.source.kind == SourceKind::Delta {
                     conn.execute_batch("INSTALL delta; LOAD delta;")?;
                 }
-                let schema = register_dataset(&conn, &build_cfg)?;
+                let schema = register_dataset(&conn, &build_cfg, storage.as_deref())?;
                 let rows = count_rows(&conn, &build_cfg.name)?;
                 Ok((schema, rows))
             })
@@ -340,7 +357,12 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
     // Install the extensions we'll need across the dataset list. Each
     // INSTALL is a no-op when the extension is already cached on disk;
     // the first run downloads from the DuckDB extension repo.
-    let needs_httpfs = cfg.datasets.iter().any(|d| d.source.is_s3());
+    let needs_httpfs = cfg.datasets.iter().any(|d| d.source.is_s3())
+        || cfg
+            .server
+            .storage
+            .as_ref()
+            .is_some_and(|sc| sc.backend == StorageBackendKind::S3);
     let needs_delta = cfg
         .datasets
         .iter()
@@ -362,9 +384,38 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
         }
     }
 
+    // Phase 2B: build storage backend early so dataset builds can use it.
+    // For S3: create a DuckDB SECRET scoped to the storage bucket once.
+    let storage: Option<Arc<MaterializationStorage>> = if let Some(sc) = &cfg.server.storage {
+        let stor = build_materialization_storage(sc).map(Arc::new)?;
+        if sc.backend == StorageBackendKind::S3 {
+            apply_storage_s3_secret(&conn, sc)?;
+        }
+        Some(stor)
+    } else {
+        None
+    };
+
     let mut datasets = HashMap::new();
-    let mut configs = HashMap::new();
+    let mut configs: HashMap<String, DatasetConfig> = cfg
+        .datasets
+        .iter()
+        .map(|d| (d.name.clone(), d.clone()))
+        .collect();
     let mut row_counts = HashMap::new();
+
+    // Pre-populate statuses for ALL configured datasets (Published / Failed
+    // are filled in below; start as Pending so the registry always has a
+    // complete picture for /readyz and dataset listing).
+    let mut statuses: HashMap<String, (DatasetStatus, OnStart)> = cfg
+        .datasets
+        .iter()
+        .map(|d| (d.name.clone(), (DatasetStatus::Pending, d.on_start.clone())))
+        .collect();
+
+    // R4.2: track datasets that failed so their eager dependents can be
+    // skipped without attempting a build.
+    let mut failed_at_startup: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     // Build datasets in topological dependency order (R2.4): query datasets
     // that depend on others must be registered after their dependencies.
@@ -374,6 +425,27 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
 
     for idx in build_order {
         let d = &cfg.datasets[idx];
+
+        // R4.2: skip if any direct dependency failed (upstream_unavailable).
+        let failed_dep = d
+            .source
+            .depends_on
+            .iter()
+            .find(|dep| failed_at_startup.contains(*dep))
+            .cloned();
+        if let Some(upstream) = failed_dep {
+            log::warn!(
+                "startup: skipping '{}' — upstream '{}' failed (upstream_unavailable)",
+                d.name,
+                upstream
+            );
+            if let Some(entry) = statuses.get_mut(&d.name) {
+                entry.0 = DatasetStatus::Failed;
+            }
+            failed_at_startup.insert(d.name.clone());
+            continue;
+        }
+
         if d.source.kind == SourceKind::Query {
             log::info!("Loading dataset '{}' (query)", d.name);
         } else {
@@ -404,13 +476,31 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
             None => std::borrow::Cow::Borrowed(d),
         };
         let d = d.as_ref();
-        let schema = match register_dataset(&conn, d) {
+        let schema = match register_dataset(&conn, d, storage.as_deref()) {
             Ok(schema) => schema,
             Err(AppError::EmptyDataset(msg)) => {
                 log::warn!("skipping empty dataset '{}': {msg}", d.name);
+                if let Some(entry) = statuses.get_mut(&d.name) {
+                    entry.0 = DatasetStatus::Failed;
+                }
+                failed_at_startup.insert(d.name.clone());
                 continue;
             }
-            Err(e) => return Err(e),
+            Err(e) => {
+                if d.source.kind == SourceKind::Query {
+                    // Query datasets: log and continue with Failed status so
+                    // the server can still start and serve other datasets.
+                    log::error!("startup: failed to build query dataset '{}': {e}", d.name);
+                    if let Some(entry) = statuses.get_mut(&d.name) {
+                        entry.0 = DatasetStatus::Failed;
+                    }
+                    failed_at_startup.insert(d.name.clone());
+                    continue;
+                } else {
+                    // Non-query datasets: fail startup on error.
+                    return Err(e);
+                }
+            }
         };
         let rows = count_rows(&conn, &d.name)?;
         if d.source.kind == SourceKind::Query {
@@ -433,26 +523,28 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
             );
         }
         datasets.insert(d.name.clone(), Arc::new(schema));
+        // Update the effective config if lazy was forced.
         configs.insert(d.name.clone(), d.clone());
         row_counts.insert(d.name.clone(), rows);
+        if let Some(entry) = statuses.get_mut(&d.name) {
+            entry.0 = DatasetStatus::Published;
+        }
     }
-
-    // Build statuses map: all successfully loaded datasets = Published.
-    let statuses: HashMap<String, (DatasetStatus, OnStart)> = configs
-        .iter()
-        .map(|(name, cfg)| {
-            (
-                name.clone(),
-                (DatasetStatus::Published, cfg.on_start.clone()),
-            )
-        })
-        .collect();
 
     if cfg.server.quack.enabled {
         start_quack_server(&conn, &cfg.server.quack)?;
     }
 
     let pool = init_pool(conn)?;
+
+    // For S3 storage: create the httpfs SECRET on a pooled connection too,
+    // since pooled connections are used by reload/register. Idempotent.
+    if matches!(&cfg.server.storage, Some(sc) if sc.backend == StorageBackendKind::S3) {
+        let sc = cfg.server.storage.as_ref().unwrap();
+        let boot_conn = DbPool::get(&pool);
+        apply_storage_s3_secret(&boot_conn, sc)?;
+    }
+
     Ok(Registry {
         pool,
         max_page_size: cfg.server.max_page_size.max(1),
@@ -461,6 +553,8 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
         row_counts: RwLock::new(row_counts),
         reload_locks: Mutex::new(HashMap::new()),
         statuses: RwLock::new(statuses),
+        cascade_handle: Mutex::new(None),
+        storage,
     })
 }
 
@@ -656,17 +750,42 @@ fn duckdb_s3_url_style(style: AddressingStyle) -> &'static str {
 /// Atomically replace the dataset's table by re-reading its source.
 /// `CREATE OR REPLACE TABLE ... AS SELECT ...` is a single DuckDB transaction:
 /// if the source read fails, the existing table is preserved.
-fn replace_table(conn: &Connection, cfg: &DatasetConfig) -> Result<(), AppError> {
+fn replace_table(
+    conn: &Connection,
+    cfg: &DatasetConfig,
+    storage: Option<&MaterializationStorage>,
+) -> Result<(), AppError> {
     let table = DatasetSchema::quote_ident(&cfg.name);
     if cfg.source.kind == SourceKind::Query {
-        // Query-kind: materialise the SQL directly into a table.
         let sql = cfg.source.sql.as_deref().ok_or_else(|| {
             AppError::Internal(format!(
                 "dataset '{}': source.sql missing for kind = query",
                 cfg.name
             ))
         })?;
-        conn.execute_batch(&format!("CREATE OR REPLACE TABLE {table} AS {sql};"))?;
+        // Phase 2B: try storage path first.
+        if register_query_with_storage(conn, cfg, sql, storage)?.is_some() {
+            return Ok(());
+        }
+        // In-memory replace with optional ORDER BY for sort_by (R2B.5).
+        let order_by: String = cfg
+            .materialize
+            .as_ref()
+            .map(|m| &m.sort_by)
+            .filter(|v| !v.is_empty())
+            .map(|cols| {
+                format!(
+                    " ORDER BY {}",
+                    cols.iter()
+                        .map(|c| DatasetSchema::quote_ident(c))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })
+            .unwrap_or_default();
+        conn.execute_batch(&format!(
+            "CREATE OR REPLACE TABLE {table} AS {sql}{order_by};"
+        ))?;
         return Ok(());
     }
     let scan = build_scan_clause(cfg)?;
@@ -682,23 +801,43 @@ fn replace_table(conn: &Connection, cfg: &DatasetConfig) -> Result<(), AppError>
 /// Register the source as a queryable relation named `cfg.name` and
 /// introspect its schema via DuckDB's `DESCRIBE`.
 ///
-/// Eager datasets are materialised into an in-memory table
-/// (`CREATE TABLE … AS SELECT …`). Lazy datasets are registered as a
-/// **view** over the source scan (`CREATE VIEW … AS SELECT …`), so DuckDB
-/// streams row groups from disk / S3 at query time — with predicate and
-/// projection pushdown into the parquet reader — instead of holding the
-/// whole dataset in RAM.
-fn register_dataset(conn: &Connection, cfg: &DatasetConfig) -> Result<DatasetSchema, AppError> {
+/// For `kind = "query"` datasets with `residency = lazy` or auto-demotion,
+/// the result is written to parquet files on the storage backend and served
+/// via a `CREATE VIEW … AS SELECT * FROM read_parquet(...)`.
+fn register_dataset(
+    conn: &Connection,
+    cfg: &DatasetConfig,
+    storage: Option<&MaterializationStorage>,
+) -> Result<DatasetSchema, AppError> {
     let table = DatasetSchema::quote_ident(&cfg.name);
     if cfg.source.kind == SourceKind::Query {
-        // Query-kind: materialise the SQL directly into an in-memory table.
         let sql = cfg.source.sql.as_deref().ok_or_else(|| {
             AppError::Internal(format!(
                 "dataset '{}': source.sql missing for kind = query",
                 cfg.name
             ))
         })?;
-        conn.execute_batch(&format!("CREATE TABLE {table} AS {sql};"))
+        if let Some(schema) = register_query_with_storage(conn, cfg, sql, storage)? {
+            return Ok(schema);
+        }
+        // In-memory path (residency = memory or auto without storage).
+        // Apply sort_by ORDER BY for the memory case too (R2B.5).
+        let order_by: String = cfg
+            .materialize
+            .as_ref()
+            .map(|m| &m.sort_by)
+            .filter(|v| !v.is_empty())
+            .map(|cols| {
+                format!(
+                    " ORDER BY {}",
+                    cols.iter()
+                        .map(|c| DatasetSchema::quote_ident(c))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })
+            .unwrap_or_default();
+        conn.execute_batch(&format!("CREATE TABLE {table} AS {sql}{order_by};"))
             .map_err(|e| {
                 AppError::Internal(format!("dataset '{}': query execute: {e}", cfg.name))
             })?;
@@ -711,6 +850,422 @@ fn register_dataset(conn: &Connection, cfg: &DatasetConfig) -> Result<DatasetSch
     ))
     .map_err(|e| classify_scan_error(cfg, e))?;
     introspect_schema(conn, cfg)
+}
+
+/// Phase 2B: Try to register a query dataset with storage spill (R2B.3).
+///
+/// Returns `Some(schema)` when the lazy/storage path was taken, `None` to
+/// fall through to the in-memory path.
+///
+/// Handles both `local` and `s3` storage backends, and `auto` residency
+/// by measuring the built temp-table size via `duckdb_tables()` (R2B.3).
+fn register_query_with_storage(
+    conn: &Connection,
+    cfg: &DatasetConfig,
+    sql: &str,
+    storage: Option<&MaterializationStorage>,
+) -> Result<Option<DatasetSchema>, AppError> {
+    let residency = cfg
+        .materialize
+        .as_ref()
+        .map(|m| m.residency)
+        .unwrap_or(MaterializeResidency::Auto);
+
+    // Apply sort_by ORDER BY (R2B.5).
+    let sort_by: Vec<String> = cfg
+        .materialize
+        .as_ref()
+        .map(|m| m.sort_by.clone())
+        .unwrap_or_default();
+    let order_by_clause: String = if sort_by.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " ORDER BY {}",
+            sort_by
+                .iter()
+                .map(|c| DatasetSchema::quote_ident(c))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+
+    // For lazy residency: storage is required.
+    if residency == MaterializeResidency::Lazy && storage.is_none() {
+        return Err(AppError::Internal(format!(
+            "dataset '{}': residency = lazy requires [server.storage]",
+            cfg.name
+        )));
+    }
+    // Memory: no storage path.
+    if residency == MaterializeResidency::Memory {
+        return Ok(None);
+    }
+    // Auto without storage: fall through to in-memory.
+    if residency == MaterializeResidency::Auto && storage.is_none() {
+        return Ok(None);
+    }
+
+    let stor = match storage {
+        Some(s) => s,
+        None => return Ok(None),
+    };
+
+    let gen_id = new_ulid();
+
+    // Tmp table name: unique per build so concurrent calls don't collide.
+    let tmp_name = format!(
+        "__dp_tmp_{}_{}",
+        cfg.name
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect::<String>(),
+        &gen_id[..8]
+    );
+    let tmp_table = DatasetSchema::quote_ident(&tmp_name);
+
+    // Build into a temp table first.
+    conn.execute_batch(&format!(
+        "CREATE TABLE {tmp_table} AS {sql}{order_by_clause};"
+    ))
+    .map_err(|e| AppError::Internal(format!("dataset '{}': query execute: {e}", cfg.name)))?;
+
+    // Auto residency: measure the estimated size and decide.
+    let use_storage = match residency {
+        MaterializeResidency::Lazy => true,
+        MaterializeResidency::Auto => {
+            let threshold = stor.config.force_lazy_above_mb.saturating_mul(1024 * 1024);
+            let estimated = estimated_table_bytes(conn, &tmp_name);
+            if estimated > threshold {
+                log::info!(
+                    "dataset '{}': auto-demoting to storage (estimated {} MiB > {} MiB threshold)",
+                    cfg.name,
+                    estimated / (1024 * 1024),
+                    stor.config.force_lazy_above_mb,
+                );
+                true
+            } else {
+                false
+            }
+        }
+        MaterializeResidency::Memory => false, // already returned above
+    };
+
+    if !use_storage {
+        // Rename temp table to the real name (stays in memory as engine table).
+        let table = DatasetSchema::quote_ident(&cfg.name);
+        // CREATE OR REPLACE semantics: drop old table/view if it exists, then rename.
+        conn.execute_batch(&format!(
+            "DROP TABLE IF EXISTS {table}; DROP VIEW IF EXISTS {table};"
+        ))
+        .ok();
+        conn.execute_batch(&format!("ALTER TABLE {tmp_table} RENAME TO {table};"))
+            .map_err(|e| AppError::Internal(format!("dataset '{}': rename: {e}", cfg.name)))?;
+        // Return Some so the caller skips CREATE TABLE and calls introspect.
+        return introspect_schema(conn, cfg).map(Some);
+    }
+
+    // Spill to storage.
+    let rows = count_rows(conn, &tmp_name).unwrap_or(0) as u64;
+
+    let (parquet_dest, view_glob) = storage_paths(stor, &cfg.name, &gen_id);
+
+    conn.execute_batch(&format!(
+        "COPY {tmp_table} TO '{parquet_dest}' (FORMAT PARQUET);"
+    ))
+    .map_err(|e| AppError::Internal(format!("dataset '{}': COPY TO storage: {e}", cfg.name)))?;
+
+    // Drop temp table — parquet file is the durable copy.
+    conn.execute_batch(&format!("DROP TABLE IF EXISTS {tmp_table};"))
+        .ok();
+
+    // Create view over the parquet files.
+    let table = DatasetSchema::quote_ident(&cfg.name);
+    conn.execute_batch(&format!(
+        "CREATE OR REPLACE VIEW {table} AS SELECT * FROM read_parquet('{view_glob}');"
+    ))
+    .map_err(|e| AppError::Internal(format!("dataset '{}': create view: {e}", cfg.name)))?;
+
+    let schema = introspect_schema(conn, cfg)?;
+
+    // Write manifest (atomicity seal). For S3, use tokio runtime to call async put.
+    let sql_hash = fnv1a_hash(sql);
+    let byte_size = manifest_byte_size(stor, &cfg.name, &gen_id);
+    let manifest = datapress_core::storage::GenerationManifest {
+        sql_hash,
+        schema_hash: fnv1a_hash(
+            &schema
+                .columns
+                .iter()
+                .map(|c| format!("{}:{}", c.name, c.sql_type))
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        row_count: rows,
+        byte_size,
+        created_at: now_rfc3339(),
+        files: vec!["data-0.parquet".to_string()],
+    };
+    write_manifest_for_storage(stor, &cfg.name, &gen_id, &manifest)?;
+
+    // GC old generations: keep current + previous (N-2 rule).
+    gc_storage(stor, &cfg.name);
+
+    log::info!(
+        "dataset '{}' [query, lazy/storage]: {} rows, gen {}",
+        cfg.name,
+        rows,
+        gen_id
+    );
+
+    Ok(Some(schema))
+}
+
+/// Compute the COPY-TO path and the view glob for a generation.
+/// Returns `(copy_to_path, view_glob)`.
+fn storage_paths(stor: &MaterializationStorage, dataset: &str, gen_id: &str) -> (String, String) {
+    match &stor.s3_bucket {
+        Some(bucket) => {
+            let prefix = if stor.root_prefix.is_empty() {
+                format!("{dataset}/{gen_id}")
+            } else {
+                format!("{}/{dataset}/{gen_id}", stor.root_prefix)
+            };
+            let copy_to = format!("s3://{bucket}/{prefix}/data-0.parquet");
+            let view_glob = format!("s3://{bucket}/{prefix}/*.parquet");
+            (copy_to, view_glob)
+        }
+        None => {
+            let local = stor
+                .local_root
+                .as_deref()
+                .unwrap_or(std::path::Path::new(&stor.config.root));
+            let gen_dir = local.join(dataset).join(gen_id);
+            std::fs::create_dir_all(&gen_dir).ok();
+            let parquet = gen_dir.join("data-0.parquet");
+            let glob = gen_dir
+                .join("*.parquet")
+                .display()
+                .to_string()
+                .replace('\'', "''");
+            (parquet.display().to_string().replace('\'', "''"), glob)
+        }
+    }
+}
+
+/// Approximate parquet file byte size for the manifest. Local: stat; S3: 0 (unknown pre-write).
+fn manifest_byte_size(stor: &MaterializationStorage, dataset: &str, gen_id: &str) -> u64 {
+    if let Some(ref local_root) = stor.local_root {
+        let p = local_root.join(dataset).join(gen_id).join("data-0.parquet");
+        p.metadata().map(|m| m.len()).unwrap_or(0)
+    } else {
+        0 // S3 size not known synchronously post-COPY
+    }
+}
+
+/// Write manifest. Local: filesystem. S3: tokio block_on.
+fn write_manifest_for_storage(
+    stor: &MaterializationStorage,
+    dataset: &str,
+    gen_id: &str,
+    manifest: &datapress_core::storage::GenerationManifest,
+) -> Result<(), AppError> {
+    if let Some(ref local_root) = stor.local_root {
+        let gen_dir = datapress_core::storage::generation_dir(local_root, dataset, gen_id);
+        std::fs::create_dir_all(&gen_dir).ok();
+        manifest
+            .write(&gen_dir)
+            .map_err(|e| AppError::Internal(format!("dataset '{dataset}': write manifest: {e}")))
+    } else {
+        // S3: must run async in a blocking context. Use tokio's block_on.
+        let rt = tokio::runtime::Handle::current();
+        let stor_clone = stor.object_store.clone();
+        let path = stor.obj_path(dataset, gen_id, "manifest.json");
+        let json = serde_json::to_vec_pretty(manifest).map_err(|e| {
+            AppError::Internal(format!("dataset '{dataset}': manifest serialize: {e}"))
+        })?;
+        rt.block_on(async {
+            use object_store::ObjectStoreExt;
+            stor_clone
+                .put(&path, object_store::PutPayload::from(json))
+                .await
+                .map_err(|e| {
+                    AppError::Internal(format!("dataset '{dataset}': write manifest to S3: {e}"))
+                })
+        })
+        .map(|_| ())
+    }
+}
+
+/// GC old generations after a successful publish.
+fn gc_storage(stor: &MaterializationStorage, dataset: &str) {
+    if let Some(ref local_root) = stor.local_root {
+        let gens = list_complete_generations(local_root, dataset);
+        let keep_ids: Vec<&str> = gens
+            .iter()
+            .rev()
+            .take(2)
+            .map(|(id, _, _)| id.as_str())
+            .collect();
+        gc_generations(local_root, dataset, &keep_ids);
+    } else {
+        // S3 GC: fire-and-forget via tokio background task.
+        if let Ok(rt) = tokio::runtime::Handle::try_current() {
+            let obj = stor.object_store.clone();
+            let dataset = dataset.to_string();
+            let root_prefix = stor.root_prefix.clone();
+            // Detach: GC failure is non-fatal; errors are logged inside.
+            drop(rt.spawn(async move {
+                gc_s3_generations_inner(&obj, &dataset, &root_prefix).await;
+            }));
+        }
+    }
+}
+
+async fn gc_s3_generations_inner(
+    store: &Arc<dyn object_store::ObjectStore>,
+    dataset: &str,
+    root_prefix: &str,
+) {
+    use futures_util::StreamExt;
+    use object_store::ObjectStoreExt;
+    let prefix_str = if root_prefix.is_empty() {
+        format!("{dataset}/")
+    } else {
+        format!("{root_prefix}/{dataset}/")
+    };
+    let prefix = object_store::path::Path::from(prefix_str);
+    let listed = match store.list_with_delimiter(Some(&prefix)).await {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    // Collect gen_ids that have manifests.
+    let mut gen_ids_with_manifests: Vec<String> = Vec::new();
+    for cp in &listed.common_prefixes {
+        let full = cp.to_string();
+        let gen_id = full
+            .trim_end_matches('/')
+            .split('/')
+            .next_back()
+            .unwrap_or("")
+            .to_string();
+        // Check if manifest exists by trying a HEAD.
+        let manifest_path = if root_prefix.is_empty() {
+            object_store::path::Path::from(format!("{dataset}/{gen_id}/manifest.json"))
+        } else {
+            object_store::path::Path::from(format!(
+                "{root_prefix}/{dataset}/{gen_id}/manifest.json"
+            ))
+        };
+        if store.head(&manifest_path).await.is_ok() {
+            gen_ids_with_manifests.push(gen_id);
+        }
+    }
+    gen_ids_with_manifests.sort();
+    let keep: std::collections::HashSet<String> = gen_ids_with_manifests
+        .iter()
+        .rev()
+        .take(2)
+        .cloned()
+        .collect();
+    // Delete generations not in keep.
+    for cp in &listed.common_prefixes {
+        let full = cp.to_string();
+        let gen_id = full
+            .trim_end_matches('/')
+            .split('/')
+            .next_back()
+            .unwrap_or("")
+            .to_string();
+        if keep.contains(&gen_id) {
+            continue;
+        }
+        let gen_prefix = object_store::path::Path::from(full.trim_end_matches('/').to_string());
+        let mut objects = store.list(Some(&gen_prefix));
+        while let Some(item) = objects.next().await {
+            if let Ok(meta) = item {
+                let _ = store.delete(&meta.location).await;
+            }
+        }
+    }
+}
+
+/// Query DuckDB's `duckdb_tables()` view for the estimated_size of a table.
+/// Returns 0 if the table is not found or the query fails.
+fn estimated_table_bytes(conn: &Connection, table_name: &str) -> u64 {
+    let escaped = table_name.replace('\'', "''");
+    let sql = format!(
+        "SELECT coalesce(estimated_size, 0) FROM duckdb_tables() WHERE table_name = '{escaped}'"
+    );
+    conn.query_row(&sql, [], |row| row.get::<_, i64>(0))
+        .map(|v| v.max(0) as u64)
+        .unwrap_or(0)
+}
+
+/// Build a DuckDB SECRET for the server-level storage S3 backend.
+/// Called once at startup; the secret is scoped to the storage bucket.
+/// Values are read from env vars (R2B.7); nothing is logged.
+fn apply_storage_s3_secret(
+    conn: &Connection,
+    sc: &datapress_core::config::StorageConfig,
+) -> Result<(), AppError> {
+    let creds = sc.s3.resolved_creds()?;
+    let (bucket, _) = sc
+        .root
+        .strip_prefix("s3://")
+        .unwrap_or("")
+        .split_once('/')
+        .unwrap_or(("", ""));
+    if bucket.is_empty() {
+        return Err(AppError::Internal(
+            "server.storage: S3 root must start with s3://<bucket>/".into(),
+        ));
+    }
+
+    let mut parts: Vec<String> = vec!["TYPE s3".to_string()];
+    if let (Some(k), Some(s)) = (
+        creds.access_key_id.as_deref(),
+        creds.secret_access_key.as_deref(),
+    ) {
+        parts.push("PROVIDER config".to_string());
+        if let Some(ep) = sc.s3.endpoint.as_deref().filter(|e| !e.is_empty()) {
+            let bare = ep
+                .trim_start_matches("http://")
+                .trim_start_matches("https://");
+            parts.push(format!("ENDPOINT '{}'", bare.replace('\'', "''")));
+        }
+        // Values come from env vars — not logged.
+        parts.push(format!("KEY_ID '{}'", k.replace('\'', "''")));
+        parts.push(format!("SECRET '{}'", s.replace('\'', "''")));
+    } else {
+        parts.push("PROVIDER credential_chain".to_string());
+        parts.push("CHAIN 'env;config'".to_string());
+        if let Some(ep) = sc.s3.endpoint.as_deref().filter(|e| !e.is_empty()) {
+            let bare = ep
+                .trim_start_matches("http://")
+                .trim_start_matches("https://");
+            parts.push(format!("ENDPOINT '{}'", bare.replace('\'', "''")));
+        }
+    }
+    if let Some(r) = &sc.s3.region {
+        parts.push(format!("REGION '{}'", r.replace('\'', "''")));
+    }
+    parts.push(format!(
+        "URL_STYLE '{}'",
+        duckdb_s3_url_style(sc.s3.addressing_style)
+    ));
+    parts.push(format!(
+        "USE_SSL {}",
+        if sc.s3.allow_http { "false" } else { "true" }
+    ));
+    parts.push(format!("SCOPE 's3://{}'", bucket.replace('\'', "''")));
+
+    let sql = format!(
+        "CREATE OR REPLACE SECRET __dp_storage ({});",
+        parts.join(", ")
+    );
+    conn.execute_batch(&sql)?;
+    Ok(())
 }
 
 /// Classify a DuckDB source-scan failure. An S3 / glob source that matches
@@ -1070,6 +1625,10 @@ impl Backend for Registry {
     async fn register(&self, cfg: DatasetConfig) -> Result<DatasetSummary, AppError> {
         Registry::register(self, cfg).await
     }
+
+    fn set_cascade_handle(&self, handle: CascadeHandle) {
+        *self.cascade_handle.lock().unwrap() = Some(handle);
+    }
 }
 
 #[cfg(test)]
@@ -1098,6 +1657,7 @@ mod tests {
             projection_filter: Default::default(),
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
+            materialize: None,
         }
     }
 
@@ -1141,6 +1701,59 @@ mod tests {
         assert_eq!(
             build_s3_secret_sql(&dataset).unwrap(),
             "CREATE OR REPLACE SECRET ds_myaws (TYPE s3, PROVIDER config, ENDPOINT 's3.eu-west-3.amazonaws.com', KEY_ID 'aws access key', SECRET 'aws secret key id', REGION 'eu-west-3', URL_STYLE 'vhost', USE_SSL true, SCOPE 's3://proxy-aws-bucket01');"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // R4.5 — DuckDB MVCC: CREATE OR REPLACE TABLE reads a consistent snapshot
+    // so a concurrent upstream reload does not bleed into the result.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn duckdb_mvcc_create_or_replace_reads_snapshot() {
+        // Open two connections sharing the same in-memory database.
+        let conn1 = duckdb::Connection::open_in_memory().unwrap();
+        let conn2 = conn1.try_clone().unwrap();
+
+        // Create `base` with 3 rows.
+        conn1
+            .execute_batch(
+                "CREATE TABLE base (id INT);\
+                 INSERT INTO base VALUES (1), (2), (3);",
+            )
+            .unwrap();
+
+        // Start a transaction on conn1 and materialize `derived` from `base`.
+        conn1.execute_batch("BEGIN;").unwrap();
+        conn1
+            .execute_batch("CREATE OR REPLACE TABLE derived AS SELECT id FROM base;")
+            .unwrap();
+
+        // While conn1's transaction is open, conn2 inserts 3 more rows into
+        // `base`.  Because DuckDB uses MVCC, conn1's snapshot of `base` is
+        // from before this insert.
+        conn2
+            .execute_batch("INSERT INTO base VALUES (4), (5), (6);")
+            .unwrap();
+
+        // Commit the transaction — `derived` was built from the snapshot at
+        // BEGIN, so it should contain exactly 3 rows.
+        conn1.execute_batch("COMMIT;").unwrap();
+
+        let derived_count: i64 = conn1
+            .query_row("SELECT COUNT(*) FROM derived", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            derived_count, 3,
+            "derived must reflect the pre-insert snapshot (MVCC isolation, R4.5)"
+        );
+
+        // After the transaction, `base` has 6 rows (both transactions visible).
+        let base_count: i64 = conn1
+            .query_row("SELECT COUNT(*) FROM base", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            base_count, 6,
+            "base should have all 6 rows after both commits"
         );
     }
 }

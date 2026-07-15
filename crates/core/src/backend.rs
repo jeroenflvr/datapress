@@ -18,6 +18,36 @@ use crate::config::{DatasetConfig, OnStart};
 use crate::errors::AppError;
 use crate::models::{CountRequest, QueryRequest};
 use crate::schema::DatasetSchema;
+
+// ---------------------------------------------------------------------------
+// Cascade notification handle (R4.3)
+// ---------------------------------------------------------------------------
+
+/// Opaque handle given to backends so they can notify the cascade engine after
+/// a successful publish. Cheap to clone — Arc-backed sender.
+///
+/// Backends receive this via [`Backend::set_cascade_handle`] and call
+/// [`CascadeHandle::notify_published`] at the end of every successful
+/// `reload_inner` (after the ArcSwap / DuckDB status flip to Published).
+#[derive(Clone)]
+pub struct CascadeHandle {
+    tx: Arc<tokio::sync::mpsc::UnboundedSender<String>>,
+}
+
+impl CascadeHandle {
+    /// Create a new handle wrapping `tx`. Only called from inside
+    /// `crate::refresh` when the cascade engine is set up.
+    pub(crate) fn new(tx: tokio::sync::mpsc::UnboundedSender<String>) -> Self {
+        Self { tx: Arc::new(tx) }
+    }
+
+    /// Notify the cascade engine that `name` was successfully published.
+    /// Silently discards the notification when the cascade engine has shut down.
+    pub fn notify_published(&self, name: &str) {
+        let _ = self.tx.send(name.to_string());
+    }
+}
+
 /// Stream of Arrow IPC response chunks emitted by a backend.
 pub type ArrowIpcStream = BoxStream<'static, Result<Bytes, AppError>>;
 
@@ -346,4 +376,11 @@ pub trait Backend: Send + Sync + 'static {
             "live dataset registration is not supported by this backend".into(),
         ))
     }
+
+    /// Install the cascade notification handle (R4.3). Called once by the
+    /// server after building the cascade engine, before the first request.
+    /// Default no-op — backends that sit upstream of datasets with
+    /// `on_upstream_reload = true` should store the handle and call
+    /// `handle.notify_published(name)` inside every successful `reload_inner`.
+    fn set_cascade_handle(&self, _handle: CascadeHandle) {}
 }

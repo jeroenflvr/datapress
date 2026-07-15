@@ -77,6 +77,8 @@ jsonwebtoken      = { workspace = true, optional = true }
 reqwest           = { workspace = true, optional = true }
 arc-swap          = { workspace = true, optional = true }
 askama            = { workspace = true, optional = true }
+# Used by the materialization storage backend (Phase 2B).
+object_store = { workspace = true }
 
 [build-dependencies]
 # Used only by build.rs to pre-gzip the embedded DuckDB-WASM assets (explorer
@@ -87,3 +89,4 @@ flate2 = "1"
 arrow = { workspace = true }
 actix-rt = "2"
 tokio = { workspace = true, features = ["test-util"] }
+tempfile = "3"

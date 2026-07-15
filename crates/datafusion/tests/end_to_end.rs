@@ -123,6 +123,7 @@ async fn make_delta_store_lazy(location: &str, lazy: bool) -> Store {
             projection_filter: Default::default(),
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
+            materialize: None,
         }],
     };
     Store::load(&cfg).await.expect("Store::load")
@@ -184,6 +185,7 @@ async fn make_store_with_max_page_size(location: &str, lazy: bool, max_page_size
             projection_filter: Default::default(),
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
+            materialize: None,
         }],
     };
     Store::load(&cfg).await.expect("Store::load")
@@ -814,6 +816,7 @@ async fn make_store_with_filters(
             projection_filter,
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
+            materialize: None,
         }],
     };
     Store::load(&cfg).await.expect("Store::load")
@@ -877,6 +880,7 @@ async fn unknown_filter_column_fails_registration() {
             projection_filter: bad,
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
+            materialize: None,
         }],
     };
     // A typo'd filter column must not silently pass — registration fails.
@@ -926,6 +930,7 @@ fn make_query_cfg(
             projection_filter: Default::default(),
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
+            materialize: None,
         });
     }
 
@@ -947,6 +952,7 @@ fn make_query_cfg(
             projection_filter: Default::default(),
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
+            materialize: None,
         });
     }
 
@@ -1096,6 +1102,7 @@ async fn df_query_source_reload() {
                 projection_filter: Default::default(),
                 on_start: datapress_core::config::OnStart::Eager,
                 refresh: None,
+                materialize: None,
             },
             DatasetConfig {
                 name: "derived".into(),
@@ -1114,6 +1121,7 @@ async fn df_query_source_reload() {
                 projection_filter: Default::default(),
                 on_start: datapress_core::config::OnStart::Eager,
                 refresh: None,
+                materialize: None,
             },
         ],
     };
@@ -1157,6 +1165,7 @@ fn df_validation_missing_depends_on() {
         projection_filter: Default::default(),
         on_start: datapress_core::config::OnStart::Eager,
         refresh: None,
+        materialize: None,
     }];
 
     // Query with empty depends_on.
@@ -1177,6 +1186,7 @@ fn df_validation_missing_depends_on() {
         projection_filter: Default::default(),
         on_start: datapress_core::config::OnStart::Eager,
         refresh: None,
+        materialize: None,
     });
 
     let cfg = AppConfig {
@@ -1230,6 +1240,7 @@ fn df_validation_rejections() {
             projection_filter: Default::default(),
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
+            materialize: None,
         }
     }
 
@@ -1251,6 +1262,7 @@ fn df_validation_rejections() {
             projection_filter: Default::default(),
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
+            materialize: None,
         }
     }
 

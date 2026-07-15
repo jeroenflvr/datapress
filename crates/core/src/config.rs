@@ -219,6 +219,10 @@ pub struct ServerConfig {
     /// Refresh scheduler concurrency limits.
     #[serde(default)]
     pub refresh: ServerRefreshConfig,
+    /// Optional server-level materialization storage backend.
+    /// When absent, all query-dataset materializations stay in memory.
+    #[serde(default)]
+    pub storage: Option<StorageConfig>,
 }
 
 impl Default for ServerConfig {
@@ -241,6 +245,179 @@ impl Default for ServerConfig {
             environment_color: None,
             startup: StartupConfig::default(),
             refresh: ServerRefreshConfig::default(),
+            storage: None,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2B: materialization storage backend
+// ---------------------------------------------------------------------------
+
+/// Storage backend variant for `[server.storage]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum StorageBackendKind {
+    /// Write materialized query-dataset results to a local filesystem path.
+    #[default]
+    Local,
+    /// Write materialized query-dataset results to an S3-compatible bucket.
+    S3,
+}
+
+/// S3 connection settings for the server-level storage backend
+/// (`[server.storage.s3]`). Credentials are referenced by environment
+/// variable **name** only — inline values are rejected at startup.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct StorageS3Config {
+    pub region: Option<String>,
+    /// Custom endpoint (MinIO, R2, …). Omit for AWS. Plain `host:port`
+    /// or a full `http(s)://host:port` URL.
+    pub endpoint: Option<String>,
+    /// Name of the env var that holds the AWS access key ID.
+    /// If both `access_key_id_env` and `secret_access_key_env` are absent,
+    /// the default AWS credential provider chain is used.
+    pub access_key_id_env: Option<String>,
+    /// Name of the env var that holds the AWS secret access key.
+    pub secret_access_key_env: Option<String>,
+    /// `virtual` (default) or `path`. MinIO requires `path`.
+    pub addressing_style: AddressingStyle,
+    /// Allow plain-HTTP endpoints. Required for local MinIO `http://…`.
+    pub allow_http: bool,
+}
+
+impl Default for StorageS3Config {
+    fn default() -> Self {
+        Self {
+            region: None,
+            endpoint: None,
+            access_key_id_env: None,
+            secret_access_key_env: None,
+            addressing_style: AddressingStyle::Virtual,
+            allow_http: false,
+        }
+    }
+}
+
+/// Resolved credentials from the storage S3 config. Both fields present
+/// means explicit key-pair; both absent means provider chain.
+#[derive(Debug, Clone, Default)]
+pub struct StorageS3Creds {
+    pub access_key_id: Option<String>,
+    pub secret_access_key: Option<String>,
+}
+
+impl StorageS3Config {
+    /// Resolve the access-key pair from the env vars named in the config.
+    /// Returns `Err` if exactly one of the two env vars is set (partial creds).
+    pub fn resolved_creds(&self) -> Result<StorageS3Creds, AppError> {
+        let key = self
+            .access_key_id_env
+            .as_deref()
+            .and_then(|e| std::env::var(e).ok());
+        let secret = self
+            .secret_access_key_env
+            .as_deref()
+            .and_then(|e| std::env::var(e).ok());
+        match (key, secret) {
+            (Some(k), Some(s)) => Ok(StorageS3Creds {
+                access_key_id: Some(k),
+                secret_access_key: Some(s),
+            }),
+            (None, None) => Ok(StorageS3Creds::default()),
+            _ => Err(AppError::Internal(
+                "server.storage.s3: both access_key_id_env and secret_access_key_env \
+                 must be set together, or both omitted"
+                    .into(),
+            )),
+        }
+    }
+}
+
+/// Server-level materialization storage backend (`[server.storage]`).
+///
+/// When present, `query`-kind datasets whose residency requires storage
+/// (i.e. `residency = "lazy"` or automatic demotion) write their
+/// materialized parquet files here. Absent → memory-only behavior.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct StorageConfig {
+    /// Which storage medium to use.
+    pub backend: StorageBackendKind,
+    /// Root path (local) or `s3://bucket/prefix` (S3). Required when
+    /// the block is present.
+    pub root: String,
+    /// Auto-demotion threshold in MiB. When a `query` dataset with
+    /// `residency = "auto"` (the default) exceeds this size during
+    /// materialization, the result is spilled to storage instead of
+    /// staying in memory. Default `512`.
+    #[serde(default = "default_force_lazy_above_mb")]
+    pub force_lazy_above_mb: u64,
+    /// S3 settings. Required when `backend = "s3"`.
+    #[serde(default)]
+    pub s3: StorageS3Config,
+}
+
+fn default_force_lazy_above_mb() -> u64 {
+    512
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            backend: StorageBackendKind::Local,
+            root: String::new(),
+            force_lazy_above_mb: default_force_lazy_above_mb(),
+            s3: StorageS3Config::default(),
+        }
+    }
+}
+
+/// Where a materialized `query`-dataset generation resides at runtime.
+///
+/// Applies to `[dataset.materialize]`; only valid on `kind = "query"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum MaterializeResidency {
+    /// Keep in memory unless the build crosses `force_lazy_above_mb`, in
+    /// which case the generation is automatically demoted to storage.
+    #[default]
+    Auto,
+    /// Always keep in memory. Crossing the threshold logs a WARN and
+    /// increments a metric but does not demote.
+    Memory,
+    /// Always write to the storage backend; serve lazily from parquet.
+    Lazy,
+}
+
+/// Per-dataset materialization options (`[dataset.materialize]`).
+///
+/// Only valid on `kind = "query"` datasets. Requires `[server.storage]`
+/// when `residency = "lazy"` or when the auto-demotion threshold is crossed.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct MaterializeConfig {
+    /// Where to keep the built generation: `auto` (default), `memory`,
+    /// or `lazy`.
+    pub residency: MaterializeResidency,
+    /// Column names to sort by when writing parquet files. Applied as an
+    /// `ORDER BY` so row-group min/max stats prune effectively.
+    #[serde(default)]
+    pub sort_by: Vec<String>,
+    /// When `true`, boot looks for the newest complete prior generation
+    /// whose sql + schema hashes match current config and registers it
+    /// without rebuilding. Default `false`.
+    #[serde(default)]
+    pub reuse_on_start: bool,
+}
+
+impl Default for MaterializeConfig {
+    fn default() -> Self {
+        Self {
+            residency: MaterializeResidency::Auto,
+            sort_by: Vec::new(),
+            reuse_on_start: false,
         }
     }
 }
@@ -334,10 +511,23 @@ pub struct RefreshConfig {
     /// Apply ±10 % uniform jitter to every scheduled fire. Default `true`.
     #[serde(default = "default_true")]
     pub jitter: bool,
+    /// Debounce window for cascade refreshes (R4.3). Multiple upstream publishes
+    /// arriving within this window coalesce to one downstream refresh.
+    /// Default `5s`. Accepted formats: `"500ms"`, `"5s"`, `"1m"`, etc.
+    #[serde(
+        default = "default_debounce",
+        deserialize_with = "deserialize_duration",
+        serialize_with = "serialize_duration"
+    )]
+    pub debounce: Duration,
 }
 
 fn default_refresh_timeout() -> Duration {
     Duration::from_secs(600) // 10 minutes
+}
+
+fn default_debounce() -> Duration {
+    Duration::from_secs(5)
 }
 
 impl Default for RefreshConfig {
@@ -347,6 +537,7 @@ impl Default for RefreshConfig {
             on_upstream_reload: false,
             timeout: default_refresh_timeout(),
             jitter: true,
+            debounce: default_debounce(),
         }
     }
 }
@@ -937,6 +1128,11 @@ pub struct DatasetConfig {
     /// datasets; setting this on a file-backed dataset is a startup error.
     #[serde(default)]
     pub refresh: Option<RefreshConfig>,
+    /// Materialization residency and write options. Only valid for
+    /// `kind = "query"` datasets. Requires `[server.storage]` when
+    /// `residency = "lazy"`.
+    #[serde(default)]
+    pub materialize: Option<MaterializeConfig>,
 }
 
 fn default_true() -> bool {
@@ -1582,6 +1778,68 @@ impl AppConfig {
                     )));
                 }
             }
+
+            // R2B.1 / R2B.5 — [dataset.materialize] validation.
+            if let Some(ref mc) = d.materialize {
+                // Only valid on query datasets.
+                if d.source.kind != SourceKind::Query {
+                    return Err(AppError::Internal(format!(
+                        "dataset '{}': [dataset.materialize] is only valid for kind = \"query\" datasets",
+                        d.name
+                    )));
+                }
+                // Lazy or any materialize block without [server.storage] is a startup error.
+                // auto without storage degrades to memory with a WARN (handled at runtime).
+                if mc.residency == MaterializeResidency::Lazy && self.server.storage.is_none() {
+                    return Err(AppError::Internal(format!(
+                        "dataset '{}': materialize.residency = \"lazy\" requires \
+                         [server.storage] to be configured",
+                        d.name
+                    )));
+                }
+                // R2B.5: explicit [dataset.index] combined with lazy is a startup error.
+                if mc.residency == MaterializeResidency::Lazy && d.index.mode != IndexMode::Auto {
+                    return Err(AppError::Internal(format!(
+                        "dataset '{}': [dataset.index] with mode != \"auto\" is incompatible \
+                         with materialize.residency = \"lazy\" (lazy datasets have no eq-index)",
+                        d.name
+                    )));
+                }
+            }
+        }
+
+        // R2B.7: validate [server.storage] when present — inline credentials are rejected.
+        if let Some(ref sc) = self.server.storage {
+            if sc.root.trim().is_empty() {
+                return Err(AppError::Internal(
+                    "server.storage.root must not be empty when [server.storage] is configured"
+                        .into(),
+                ));
+            }
+            if sc.backend == StorageBackendKind::S3 {
+                // Validate s3 block: no inline credentials allowed (env-var indirection only).
+                // (The StorageS3Config only accepts env-var NAMES, so inline values can only
+                // appear if someone shoves raw values into the env-var-name fields — we can't
+                // distinguish that here. The actual credential values are read from env at
+                // runtime by `resolved_creds()`.)
+                // Validate that the root is an s3:// URL.
+                if !sc.root.starts_with("s3://") {
+                    return Err(AppError::Internal(format!(
+                        "server.storage.root must start with s3:// when backend = \"s3\" \
+                         (got '{}')",
+                        sc.root
+                    )));
+                }
+            } else {
+                // Local backend: root must not look like an S3 URL.
+                if sc.root.starts_with("s3://") {
+                    return Err(AppError::Internal(format!(
+                        "server.storage.root looks like an S3 URL but backend = \"local\" \
+                         (got '{}'); set backend = \"s3\" if you mean S3",
+                        sc.root
+                    )));
+                }
+            }
         }
 
         // R2.1 — validate `query` dataset sources: SQL structure, exact-match
@@ -1679,11 +1937,88 @@ impl AppConfig {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Cycle-path helpers (used by topological_dataset_order on cycle detection)
+// ---------------------------------------------------------------------------
+
+/// Walk the query-dataset dependency graph with DFS and return the indices
+/// of one cycle path.  The returned slice is closed: `path[0] == path.last()`.
+fn find_cycle_path<'a>(
+    datasets: &'a [DatasetConfig],
+    name_to_idx: &std::collections::HashMap<&str, usize>,
+) -> Vec<&'a str> {
+    let n = datasets.len();
+    let mut visited = vec![false; n];
+    let mut in_stack = vec![false; n];
+    let mut path: Vec<usize> = Vec::new();
+
+    for start in 0..n {
+        if visited[start] || datasets[start].source.kind != SourceKind::Query {
+            continue;
+        }
+        if let Some(cycle) = dfs_find_cycle(
+            start,
+            datasets,
+            name_to_idx,
+            &mut visited,
+            &mut in_stack,
+            &mut path,
+        ) {
+            let mut names: Vec<&str> = cycle.iter().map(|&i| datasets[i].name.as_str()).collect();
+            names.push(datasets[cycle[0]].name.as_str()); // close the cycle
+            return names;
+        }
+    }
+    // Fallback (shouldn't be reached when a cycle exists).
+    datasets
+        .iter()
+        .filter(|d| d.source.kind == SourceKind::Query)
+        .map(|d| d.name.as_str())
+        .collect()
+}
+
+fn dfs_find_cycle(
+    node: usize,
+    datasets: &[DatasetConfig],
+    name_to_idx: &std::collections::HashMap<&str, usize>,
+    visited: &mut Vec<bool>,
+    in_stack: &mut Vec<bool>,
+    path: &mut Vec<usize>,
+) -> Option<Vec<usize>> {
+    visited[node] = true;
+    in_stack[node] = true;
+    path.push(node);
+
+    for dep in &datasets[node].source.depends_on {
+        if let Some(&next) = name_to_idx.get(dep.as_str()) {
+            if datasets[next].source.kind != SourceKind::Query {
+                continue;
+            }
+            if !visited[next] {
+                if let Some(cycle) =
+                    dfs_find_cycle(next, datasets, name_to_idx, visited, in_stack, path)
+                {
+                    return Some(cycle);
+                }
+            } else if in_stack[next] {
+                // Back-edge found — extract the cycle portion.
+                let start = path.iter().position(|&x| x == next).unwrap();
+                return Some(path[start..].to_vec());
+            }
+        }
+    }
+
+    path.pop();
+    in_stack[node] = false;
+    None
+}
+
 impl AppConfig {
     /// Return the indices of `self.datasets` in a topological build order
     /// (dependencies before dependents). File-backed datasets have no
     /// dependencies and may appear in any relative order. Cycle detection
-    /// uses Kahn's algorithm; a cycle error names the participating datasets.
+    /// uses Kahn's algorithm; on a cycle the error names the cycle path
+    /// (`a → b → a`).
     ///
     /// Called at validation time to reject cycles, and by backends to build
     /// datasets in the correct order.
@@ -1730,17 +2065,11 @@ impl AppConfig {
         }
 
         if order.len() != n {
-            // Cycle detected: collect the names still stuck with in_degree > 0.
-            let cycle_names: Vec<&str> = self
-                .datasets
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| in_degree[*i] > 0)
-                .map(|(_, d)| d.name.as_str())
-                .collect();
+            // Cycle detected: find and report the actual cycle path (R4.1).
+            let cycle_path = find_cycle_path(&self.datasets, &name_to_idx);
             return Err(AppError::Internal(format!(
-                "dependency cycle detected among datasets: {}",
-                cycle_names.join(", ")
+                "dependency cycle detected: {}",
+                cycle_path.join(" \u{2192} "),
             )));
         }
 
@@ -2218,6 +2547,7 @@ mod tests {
             projection_filter: Default::default(),
             on_start: Default::default(),
             refresh: None,
+            materialize: None,
         };
         let server = |mb: u64| ServerConfig {
             force_lazy_above_mb: mb,
@@ -2356,6 +2686,7 @@ mod tests {
                 projection_filter: Default::default(),
                 on_start: Default::default(),
                 refresh: None,
+                materialize: None,
             }],
         };
 
@@ -2399,6 +2730,7 @@ mod tests {
                 projection_filter: Default::default(),
                 on_start: Default::default(),
                 refresh: None,
+                materialize: None,
             }],
         };
         let err = cfg.validate().unwrap_err();
@@ -2561,6 +2893,7 @@ mod tests {
             projection_filter: Default::default(),
             on_start: Default::default(),
             refresh: None,
+            materialize: None,
         };
         assert_eq!(mk("accidents").env_prefix(), "ACCIDENTS");
         assert_eq!(mk("sales.eu-1").env_prefix(), "SALES_EU_1");
@@ -2594,6 +2927,7 @@ mod tests {
             projection_filter: Default::default(),
             on_start: Default::default(),
             refresh: None,
+            materialize: None,
         };
 
         // Direct file.
@@ -2718,6 +3052,7 @@ mod tests {
                     projection_filter: Default::default(),
                     on_start: Default::default(),
                     refresh: None,
+                    materialize: None,
                 },
                 DatasetConfig {
                     name: "q".into(),
@@ -2736,6 +3071,7 @@ mod tests {
                     projection_filter: Default::default(),
                     on_start: Default::default(),
                     refresh: None,
+                    materialize: None,
                 },
             ],
         }
@@ -2836,6 +3172,7 @@ mod tests {
                     projection_filter: Default::default(),
                     on_start: Default::default(),
                     refresh: None,
+                    materialize: None,
                 },
                 DatasetConfig {
                     name: "qa".into(),
@@ -2854,6 +3191,7 @@ mod tests {
                     projection_filter: Default::default(),
                     on_start: Default::default(),
                     refresh: None,
+                    materialize: None,
                 },
                 DatasetConfig {
                     name: "qb".into(),
@@ -2872,6 +3210,7 @@ mod tests {
                     projection_filter: Default::default(),
                     on_start: Default::default(),
                     refresh: None,
+                    materialize: None,
                 },
             ],
         };
@@ -2919,6 +3258,7 @@ mod tests {
                     projection_filter: Default::default(),
                     on_start: Default::default(),
                     refresh: None,
+                    materialize: None,
                 },
                 DatasetConfig {
                     name: "base".into(),
@@ -2937,6 +3277,7 @@ mod tests {
                     projection_filter: Default::default(),
                     on_start: Default::default(),
                     refresh: None,
+                    materialize: None,
                 },
                 DatasetConfig {
                     name: "q1".into(),
@@ -2955,6 +3296,7 @@ mod tests {
                     projection_filter: Default::default(),
                     on_start: Default::default(),
                     refresh: None,
+                    materialize: None,
                 },
             ],
         };

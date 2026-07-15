@@ -59,6 +59,7 @@ tokio-postgres = "0.7"
 tokio-postgres-rustls = "0.13"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 rcgen = "0.13"
+toml.workspace = true
 
 [[bin]]
 name = "datapress-datafusion"

@@ -99,6 +99,7 @@ fn make_registry_at(location: &str) -> Arc<Registry> {
             projection_filter: Default::default(),
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
+            materialize: None,
         }],
     };
     Arc::new(load_registry(&cfg).expect("load_registry"))
@@ -134,6 +135,7 @@ fn make_registry_lazy(location: &str) -> Arc<Registry> {
             projection_filter: Default::default(),
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
+            materialize: None,
         }],
     };
     Arc::new(load_registry(&cfg).expect("load_registry"))
@@ -224,6 +226,7 @@ fn make_registry_with_filters(
             projection_filter,
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
+            materialize: None,
         }],
     };
     load_registry(&cfg).map(Arc::new)
@@ -822,6 +825,7 @@ fn make_query_registry(
             projection_filter: Default::default(),
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
+            materialize: None,
         });
     }
 
@@ -843,6 +847,7 @@ fn make_query_registry(
             projection_filter: Default::default(),
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
+            materialize: None,
         });
     }
 
@@ -988,6 +993,7 @@ async fn duck_query_source_reload() {
                 projection_filter: Default::default(),
                 on_start: datapress_core::config::OnStart::Eager,
                 refresh: None,
+                materialize: None,
             },
             DatasetConfig {
                 name: "high_scores".into(),
@@ -1006,6 +1012,7 @@ async fn duck_query_source_reload() {
                 projection_filter: Default::default(),
                 on_start: datapress_core::config::OnStart::Eager,
                 refresh: None,
+                materialize: None,
             },
         ],
     };

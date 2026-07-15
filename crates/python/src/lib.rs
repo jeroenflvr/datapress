@@ -553,6 +553,8 @@ impl PyDatasetConfig {
             predicate_filter,
             projection_filter,
             on_start: datapress_core::config::OnStart::Eager,
+            refresh: None,
+            materialize: None,
         })
     }
 }

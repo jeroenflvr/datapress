@@ -691,6 +691,9 @@ fn build_register_config(f: &RegisterForm) -> Result<DatasetConfig, crate::error
         lazy: f.lazy.is_some(),
         predicate_filter: crate::config::ColumnFilter::default(),
         projection_filter: crate::config::ColumnFilter::default(),
+        on_start: crate::config::OnStart::Eager,
+        refresh: None,
+        materialize: None,
     })
 }
 

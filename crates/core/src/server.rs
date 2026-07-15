@@ -11,7 +11,7 @@ use actix_web::{App, HttpServer, middleware, web};
 use crate::backend::Backend;
 use crate::config::AppConfig;
 use crate::handlers;
-use crate::refresh::{DatasetSchedule, RefreshScheduler};
+use crate::refresh::{CascadeDag, CascadeDep, DatasetSchedule, RefreshScheduler};
 use crate::timeout::Timeout;
 
 /// How the running server is asked to begin a graceful shutdown.
@@ -351,6 +351,9 @@ async fn run_server(
 
     // Clone backend for the scheduler BEFORE it is moved into HttpServer::new.
     let scheduler_backend = backend.clone();
+    // Clone again to install the cascade handle after spawn (both need the
+    // concrete type to call set_cascade_handle via the Backend trait).
+    let scheduler_backend_for_cascade = backend.clone();
 
     let mut server = HttpServer::new(move || {
         let backend = backend.clone();
@@ -470,6 +473,27 @@ async fn run_server(
         .collect();
     let refresh_max_concurrent = cfg.server.refresh.max_concurrent;
 
+    // Build the cascade DAG (R4.3) from datasets with on_upstream_reload = true.
+    let mut cascade_dag: CascadeDag = CascadeDag::new();
+    for d in &cfg.datasets {
+        let rc = match d.refresh.as_ref() {
+            Some(rc) if rc.on_upstream_reload => rc,
+            _ => continue,
+        };
+        let timeout = rc.timeout;
+        let debounce = rc.debounce;
+        for upstream in &d.source.depends_on {
+            cascade_dag
+                .entry(upstream.clone())
+                .or_default()
+                .push(CascadeDep {
+                    name: d.name.clone(),
+                    debounce,
+                    timeout,
+                });
+        }
+    }
+
     // Disable actix's built-in signal handling so we can log which signal
     // triggered shutdown, then drive the same `ServerHandle::stop(true)`
     // path it would have used internally.
@@ -483,17 +507,25 @@ async fn run_server(
     // Shutdown token shared between the OS-signal listener and the scheduler.
     let scheduler_token = tokio_util::sync::CancellationToken::new();
 
-    // Spawn the refresh scheduler (if any schedules exist).
-    let scheduler_handle = if !refresh_schedules.is_empty() {
+    // Spawn the refresh scheduler (and cascade engine if configured).
+    let should_spawn = !refresh_schedules.is_empty() || !cascade_dag.is_empty();
+    let scheduler_handles: Vec<tokio::task::JoinHandle<()>> = if should_spawn {
         log::info!(
-            "[refresh] starting scheduler: {} dataset(s), max_concurrent={}",
+            "[refresh] starting scheduler: {} scheduled dataset(s), {} cascade upstream(s), \
+             max_concurrent={}",
             refresh_schedules.len(),
+            cascade_dag.len(),
             refresh_max_concurrent,
         );
         let sched = RefreshScheduler::new(refresh_schedules, refresh_max_concurrent);
-        Some(sched.spawn(scheduler_backend, scheduler_token.clone()))
+        let result = sched.spawn(scheduler_backend, scheduler_token.clone(), cascade_dag);
+        // Install cascade handle on the backend so publishes trigger cascades.
+        if let Some(handle) = result.cascade_handle {
+            scheduler_backend_for_cascade.set_cascade_handle(handle);
+        }
+        result.handles
     } else {
-        None
+        Vec::new()
     };
 
     tokio::spawn(shutdown_listener(
@@ -501,7 +533,7 @@ async fn run_server(
         shutdown_secs,
         shutdown,
         scheduler_token,
-        scheduler_handle,
+        scheduler_handles,
     ));
 
     running.await
@@ -515,7 +547,7 @@ async fn shutdown_listener(
     grace_secs: u64,
     shutdown: Shutdown,
     scheduler_token: tokio_util::sync::CancellationToken,
-    scheduler_handle: Option<tokio::task::JoinHandle<()>>,
+    scheduler_handles: Vec<tokio::task::JoinHandle<()>>,
 ) {
     match shutdown {
         Shutdown::Signals => {
@@ -532,23 +564,25 @@ async fn shutdown_listener(
         }
     }
 
-    // Signal the scheduler to stop (R3.6).
+    // Signal the scheduler (and cascade engine) to stop (R3.6).
     scheduler_token.cancel();
 
     // Stop the HTTP server (graceful drain).
     handle.stop(true).await;
 
-    // Wait for the scheduler to exit within the grace period (R3.6).
-    if let Some(jh) = scheduler_handle {
+    // Wait for all scheduler / cascade engine tasks within the grace period.
+    if !scheduler_handles.is_empty() {
         let deadline = Duration::from_secs(grace_secs);
-        match tokio::time::timeout(deadline, jh).await {
-            Ok(_) => {}
-            Err(_) => {
-                log::warn!(
-                    "[refresh] scheduler did not finish within {}s shutdown deadline; \
-                     abandoning in-flight build",
-                    grace_secs
-                );
+        for jh in scheduler_handles {
+            match tokio::time::timeout(deadline, jh).await {
+                Ok(_) => {}
+                Err(_) => {
+                    log::warn!(
+                        "[refresh] scheduler/cascade task did not finish within \
+                         {}s shutdown deadline; abandoning",
+                        grace_secs
+                    );
+                }
             }
         }
     }

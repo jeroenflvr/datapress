@@ -36,9 +36,12 @@ env_logger.workspace  = true
 duckdb.workspace = true
 arrow.workspace  = true
 tempfile = "3"
+object_store = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+parquet = { workspace = true }
+arrow = { workspace = true }
 
 [[bin]]
 name = "datapress-duckdb"
