@@ -830,3 +830,71 @@ async fn build_info_no_storage_backend_omitted() {
     let json = serde_json::to_value(&info).unwrap();
     assert!(json.get("storage_backend").is_none());
 }
+
+// ---------------------------------------------------------------------------
+// JS syntax guard: run `node --check` on every embedded explorer asset.
+//
+// Skipped (with a warning) when `node` is not on PATH so CI in minimal
+// environments still passes. This is not an actix test — it's a plain
+// synchronous `#[test]` because there is no async work.
+// ---------------------------------------------------------------------------
+
+/// Check that every `.js` file embedded in the explorer passes `node --check`.
+///
+/// - When `node` is not on PATH the test emits a `cargo test` warning and
+///   passes (the CI smoke script re-checks unconditionally where node is
+///   guaranteed available).
+/// - A syntax error in any asset is a hard failure: it means the explorer
+///   UI will refuse to load for all users.
+#[actix_web::test]
+async fn explorer_js_assets_pass_node_syntax_check() {
+    // Walk the assets directory relative to the manifest root.
+    let assets_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/explorer");
+
+    // Find node. Accept both `node` and `nodejs`.
+    let node = ["node", "nodejs"].iter().find(|&&n| which_node(n)).copied();
+
+    let Some(node_bin) = node else {
+        eprintln!(
+            "WARNING: `node` not found on PATH — skipping explorer JS syntax check. \
+             Re-run with node installed or use the smoke script."
+        );
+        return;
+    };
+
+    let mut failures: Vec<String> = Vec::new();
+
+    for entry in std::fs::read_dir(&assets_dir)
+        .expect("assets/explorer directory must exist")
+        .flatten()
+    {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("js") {
+            continue;
+        }
+        let result = std::process::Command::new(node_bin)
+            .arg("--check")
+            .arg(&path)
+            .output()
+            .expect("failed to run node --check");
+
+        if !result.status.success() {
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            failures.push(format!("{}: {}", path.display(), stderr.trim()));
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "node --check failed for explorer JS assets:\n{}",
+        failures.join("\n")
+    );
+}
+
+fn which_node(bin: &str) -> bool {
+    std::process::Command::new(bin)
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}

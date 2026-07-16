@@ -81,52 +81,62 @@
   // -----------------------------------------------------------------------
   window.dpReloadDataset = async function dpReloadDataset(name, apiBase) {
     if (!ensureToken("save-admin-token")) return;
-    const btn = document.getElementById("reload-btn-" + name);
+    const btn   = document.getElementById("reload-btn-" + name);
     const badge = document.getElementById("state-badge-" + name);
-    if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    function setBuilding() {
+      if (btn)   { btn.disabled = true; btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span>`; }
+      if (badge) { badge.className = "badge text-bg-warning ms-1"; badge.textContent = "building"; }
     }
-    if (badge) {
-      badge.className = "badge text-bg-warning ms-1";
-      badge.textContent = "building";
+    function restore(btn) {
+      if (btn) { btn.disabled = false; btn.innerHTML = `<i class="bi bi-arrow-clockwise"></i> Reload`; }
     }
-    try {
+    setBuilding();
+
+    async function doReload() {
       const resp = await apiFetch(apiBase + "/datasets/" + encodeURIComponent(name) + "/reload", {
-        method: "POST",
-        headers: authHeaders(),
+        method: "POST", headers: authHeaders(),
       });
       if (resp.status === 403) {
-        if (!ensureToken("save-admin-token")) return;
-        // Re-prompt and retry once.
+        if (!ensureToken("save-admin-token")) { restore(btn); return false; }
         const resp2 = await apiFetch(apiBase + "/datasets/" + encodeURIComponent(name) + "/reload", {
-          method: "POST",
-          headers: authHeaders(),
+          method: "POST", headers: authHeaders(),
         });
-        if (!resp2.ok) {
-          alert("Reload failed: " + resp2.status);
-          return;
-        }
+        if (!resp2.ok) { alert("Reload failed: " + resp2.status); restore(btn); return false; }
       } else if (!resp.ok) {
         const text = await resp.text();
         alert("Reload failed: " + resp.status + "\n" + text);
-        return;
+        restore(btn);
+        return false;
       }
-      if (badge) {
-        badge.className = "badge text-bg-success ms-1";
-        badge.textContent = "reloaded";
-        setTimeout(function () {
-          badge.className = "";
-          badge.textContent = "";
-        }, 4000);
-      }
+      return true;
+    }
+
+    try {
+      const ok = await doReload();
+      if (!ok) return;
+      // POST succeeded — the build is now in progress (async reload path).
+      // Poll /status until the dataset reaches a terminal state, then
+      // re-enable the button and surface the outcome.
+      pollUntilTerminal(name, function (entry) {
+        restore(btn);
+        if (!entry) return;   // timed out
+        const state = (entry.state || "").toLowerCase();
+        if (badge) {
+          if (state === "published") {
+            badge.className = "badge text-bg-success ms-1";
+            badge.textContent = "reloaded";
+            setTimeout(function () { badge.className = ""; badge.textContent = ""; }, 4000);
+          } else if (state === "failed") {
+            badge.className = "badge text-bg-danger ms-1";
+            badge.textContent = "failed";
+            if (entry.last_error) badge.title = entry.last_error;
+          }
+        }
+      });
     } catch (e) {
       alert("Reload error: " + e.message);
-    } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Reload';
-      }
+      restore(btn);
     }
   };
 
@@ -183,7 +193,7 @@
       if (!ensureToken(null)) return;
 
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Reloading…';
+      btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> Reloading…`;
 
       try {
         const resp = await apiFetch(API_BASE + "/datasets/reload-all", {
@@ -199,24 +209,48 @@
           return;
         }
         const body = await resp.json();
-        const enqueued = (body.enqueued || []).join(", ") || "none";
-        const skipped = (body.skipped || []).join(", ") || "none";
-        // Show a transient summary.
+        const enqueuedList = (body.enqueued || []);
+        const skippedList  = (body.skipped  || []);
+        const enqueued = enqueuedList.join(", ") || "none";
+        const skipped  = skippedList.join(", ")  || "none";
+
+        // Show a transient summary that auto-updates as builds complete.
         const existing = document.getElementById("reload-all-summary");
         if (existing) existing.remove();
         const summary = document.createElement("div");
         summary.id = "reload-all-summary";
         summary.className = "alert alert-info alert-dismissible mt-2 small";
-        summary.innerHTML = "<strong>Reload-all:</strong> enqueued: " + enqueued +
-          " | skipped: " + skipped +
-          '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>';
+        const closeBtn = `<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>`;
+        function renderSummary(doneCount) {
+          const prog = enqueuedList.length > 0
+            ? " (" + doneCount + "/" + enqueuedList.length + " done)"
+            : "";
+          summary.innerHTML = `<strong>Reload-all:</strong> enqueued: ${enqueued}${prog} | skipped: ${skipped}${closeBtn}`;
+        }
+        renderSummary(0);
         btn.parentNode.insertAdjacentElement("afterend", summary);
-        setTimeout(function () { if (summary.parentNode) summary.remove(); }, 10000);
+
+        // Poll each enqueued dataset and update the summary + list-item rows.
+        if (enqueuedList.length > 0) {
+          let done = 0;
+          enqueuedList.forEach(function (name) {
+            pollUntilTerminal(name, function (entry) {
+              done++;
+              renderSummary(done);
+              if (done >= enqueuedList.length) {
+                // All done — remove summary after a short delay.
+                setTimeout(function () { if (summary.parentNode) summary.remove(); }, 5000);
+              }
+            });
+          });
+        } else {
+          setTimeout(function () { if (summary.parentNode) summary.remove(); }, 10000);
+        }
       } catch (e) {
         alert("Reload-all error: " + e.message);
       } finally {
         btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> Reload all';
+        btn.innerHTML = `<i class="bi bi-arrow-repeat"></i> Reload all`;
       }
     });
   }
@@ -358,36 +392,218 @@
     });
   }
 
-  // Poll /status until state != building, then update the badge.
+  // Poll /status until terminal — delegates to pollUntilTerminal (defined below).
+  // Kept as a thin adapter so the "Save as dataset" call site is unchanged.
   function pollUntilPublished(name, el) {
-    let attempts = 0;
-    const max = 60;   // 60 × 2s = 2 min max
+    pollUntilTerminal(name, function (entry) {
+      if (el) el.textContent = entry ? ("State: " + (entry.state || "?") + ".") : "(timed out)";
+    });
+  }
+
+  // -----------------------------------------------------------------------
+
+  // -----------------------------------------------------------------------
+  // Startup-state polling (COMMIT 2)
+  //
+  // When datasets are pending or building on page load, poll the listing
+  // endpoint at increasing intervals and update each list-item row in place.
+  // Polling stops when every dataset reaches a terminal state (published /
+  // failed), or when a user navigates away.
+  // -----------------------------------------------------------------------
+
+  /**
+   * Return the Bootstrap badge class + label for a lifecycle state string.
+   */
+  function stateBadge(state, lastError) {
+    switch (state) {
+      case "published": return null;   // rendered as "N rows" — no override badge
+      case "building":  return { cls: "text-bg-warning", label: "building", spinner: true };
+      case "failed":    return { cls: "text-bg-danger",  label: "failed",   title: lastError || "" };
+      default:          return { cls: "text-bg-light text-dark border", label: "pending" };
+    }
+  }
+
+  /**
+   * Update a single list-group-item from a DatasetStatusEntry.
+   * `item` is the <a> element; `entry` is the JSON entry from the listing.
+   */
+  function applyStatusToListItem(item, entry) {
+    if (!item) return;
+    const state    = (entry.state || "pending").toLowerCase();
+    const rows     = entry.rows  || 0;
+    const cols     = entry.columns || 0;
+    const kind     = item.dataset.kind || entry.kind || "";
+    const lastError = entry.last_error || "";
+
+    // Update data attributes used by the sort controls.
+    item.dataset.state = state;
+    if (state === "published") {
+      item.dataset.rows = rows;
+      item.dataset.cols = cols;
+    }
+
+    // Rows badge.
+    const badge = item.querySelector(".dp-rows-badge");
+    if (badge) {
+      badge.className = "badge flex-shrink-0 dp-rows-badge";
+      if (state === "published") {
+        badge.className += " text-bg-secondary";
+        badge.textContent = rows + " rows";
+        badge.removeAttribute("title");
+      } else if (state === "building") {
+        badge.className += " text-bg-warning";
+        badge.innerHTML = `<span class="spinner-border spinner-border-sm" style="width:.6em;height:.6em;border-width:.15em"></span> building`;
+      } else if (state === "failed") {
+        badge.className += " text-bg-danger";
+        badge.textContent = "failed";
+        if (lastError) badge.title = lastError;
+      } else {
+        badge.className += " text-bg-light text-dark border";
+        badge.textContent = "pending";
+      }
+    }
+
+    // Meta line.
+    const meta = item.querySelector(".dp-meta");
+    if (meta) {
+      if (state === "published") {
+        meta.innerHTML = kind + " &middot; " + cols + " cols";
+      } else if (state === "building" || state === "pending") {
+        meta.innerHTML = kind + " &middot; loading&hellip;";
+      } else if (state === "failed") {
+        const errTitle = lastError ? ` title="${lastError.replace(/"/g, "&quot;")}"` : "";
+        meta.innerHTML = `${kind} &middot; <span class="text-danger"${errTitle}>error</span>`;
+      }
+    }
+  }
+
+  /**
+   * Start the startup-state polling loop.
+   *
+   * Polls GET {API_BASE}/datasets at an interval that backs off from 2 s to
+   * 8 s.  Stops when no dataset is pending or building, or after 120 ticks.
+   */
+  function initStartupStatePoll() {
+    // Only bother if any list item has a non-published initial state.
+    const list = document.querySelector(".dataset-list");
+    if (!list) return;
+    const allItems = Array.from(list.querySelectorAll(".list-group-item[data-state]"));
+    const needsPoll = allItems.some(function (el) {
+      return el.dataset.state === "pending" || el.dataset.state === "building";
+    });
+    if (!needsPoll) return;
+
+    let interval  = 2000;
+    let ticks     = 0;
+    const MAX     = 120;
+
     function tick() {
-      if (attempts++ > max) { if (el) el.textContent = "(timed out polling)"; return; }
+      if (ticks++ >= MAX) return;
+      fetch(API_BASE + "/datasets")
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!data) { schedule(); return; }
+          // data may be { datasets: [...] } or just [...]
+          const entries = Array.isArray(data) ? data
+            : (Array.isArray(data.datasets) ? data.datasets : []);
+
+          let anyActive = false;
+          entries.forEach(function (entry) {
+            const state = (entry.state || "pending").toLowerCase();
+            const el = list.querySelector(
+              `.list-group-item[data-name="${CSS.escape(entry.name)}"]`
+            );
+            if (el) applyStatusToListItem(el, entry);
+            if (state === "pending" || state === "building") anyActive = true;
+          });
+
+          if (!anyActive) return;   // all terminal — stop polling
+          schedule();
+        })
+        .catch(schedule);
+    }
+
+    function schedule() {
+      // Back off up to 8 s.
+      interval = Math.min(interval * 1.4, 8000);
+      setTimeout(tick, interval);
+    }
+
+    // Fire first tick soon after page load.
+    setTimeout(tick, 1500);
+  }
+
+  // -----------------------------------------------------------------------
+  // Reload completion feedback (COMMIT 3)
+  // -----------------------------------------------------------------------
+
+  /**
+   * After dpReloadDataset triggers a reload, poll /status until terminal,
+   * then update the list-item row and dataset-detail state badge.
+   */
+  function pollUntilTerminal(name, onDone) {
+    let attempts = 0;
+    const max = 120;
+    let interval = 1500;
+    function tick() {
+      if (attempts++ > max) { if (onDone) onDone(null); return; }
       fetch(API_BASE + "/datasets/" + encodeURIComponent(name) + "/status")
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (data) {
-          if (!data) return;
-          if (data.state === "building") {
-            setTimeout(tick, 2000);
+          if (!data) { schedule(); return; }
+          const state = (data.state || "").toLowerCase();
+          // Update the list-item row.
+          const list  = document.querySelector(".dataset-list");
+          const el    = list && list.querySelector(
+            `.list-group-item[data-name="${CSS.escape(name)}"]`
+          );
+          if (el) applyStatusToListItem(el, data);
+          // Update the detail-pane state badge (may be from a previous htmx load).
+          const detailBadge = document.getElementById("state-badge-" + name);
+          if (detailBadge) {
+            if (state === "published") {
+              detailBadge.className = "badge text-bg-success ms-1";
+              detailBadge.textContent = "reloaded";
+              setTimeout(function () {
+                detailBadge.className = "";
+                detailBadge.textContent = "";
+              }, 4000);
+            } else if (state === "failed") {
+              detailBadge.className = "badge text-bg-danger ms-1";
+              detailBadge.textContent = "failed";
+              if (data.last_error) detailBadge.title = data.last_error;
+            }
+          }
+          if (state === "building" || state === "pending") {
+            schedule();
           } else {
-            if (el) el.textContent = "State: " + data.state + ".";
+            if (onDone) onDone(data);
           }
         })
-        .catch(function () { setTimeout(tick, 2000); });
+        .catch(schedule);
     }
-    setTimeout(tick, 2000);
+    function schedule() {
+      interval = Math.min(interval * 1.3, 5000);
+      setTimeout(tick, interval);
+    }
+    tick();
   }
-
   // -----------------------------------------------------------------------
   // Init
   // -----------------------------------------------------------------------
   document.addEventListener("DOMContentLoaded", function () {
     initReloadAll();
     initSaveAsDataset();
+    initStartupStatePoll();
+    // Initialize Bootstrap tooltips for truncated dataset name labels.
+    // This runs in {% block scripts %} which loads after bootstrap.bundle.min.js
+    // (in the base template's <body> tail), so `bootstrap` is defined here.
+    if (typeof bootstrap !== "undefined" && bootstrap.Tooltip) {
+      document.querySelectorAll("[data-bs-toggle=\"tooltip\"]").forEach(function (el) {
+        new bootstrap.Tooltip(el);
+      });
+    }
   });
-
-  // Also expose for dataset.html which is loaded via htmx (no DOMContentLoaded
   // fires for it). The inline onclick attrs call window.dpReloadDataset /
   // window.dpDeleteDataset which are already set above.
 })();

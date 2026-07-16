@@ -614,6 +614,16 @@ async fn run_server(
 /// Wait for the configured shutdown trigger (OS signal or an external
 /// future), log it, then ask the actix server handle to stop gracefully
 /// and drain the refresh scheduler.
+///
+/// # Second-signal force-quit
+///
+/// When the shutdown trigger is `Shutdown::Signals`, a **second** SIGINT or
+/// SIGTERM received *during* the graceful drain logs a single WARN line and
+/// calls [`std::process::exit(130)`] immediately — the same exit code that
+/// a SIGINT-killed process would have in a POSIX shell.  This matches the
+/// widely-expected Ctrl-C behaviour: one press → drain, two presses → quit
+/// now.  The external-future path (`Shutdown::External`) is intentionally
+/// not affected: the host process owns signal semantics there.
 async fn shutdown_listener(
     handle: actix_web::dev::ServerHandle,
     grace_secs: u64,
@@ -625,8 +635,19 @@ async fn shutdown_listener(
         Shutdown::Signals => {
             let which = wait_for_signal().await;
             log::info!(
-                "Received {which}, shutting down gracefully (up to {grace_secs}s for in-flight requests)..."
+                "Received {which}, shutting down gracefully \
+                 (up to {grace_secs}s for in-flight requests)..."
             );
+
+            // Spawn a background task that watches for a *second* signal
+            // during the drain window.  If one arrives, exit immediately.
+            tokio::spawn(async move {
+                let which2 = wait_for_signal().await;
+                log::warn!(
+                    "Received {which2} a second time — forcing immediate shutdown (exit 130)"
+                );
+                std::process::exit(130);
+            });
         }
         Shutdown::External(fut) => {
             fut.await;

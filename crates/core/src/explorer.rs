@@ -117,6 +117,10 @@ struct DatasetListItem {
     rows: usize,
     columns: usize,
     kind: String,
+    /// Lifecycle state: `published`, `pending`, `building`, or `failed`.
+    state: String,
+    /// Last error, if any (truncated).  Non-empty only when state == `failed`.
+    last_error: String,
 }
 
 #[derive(Template)]
@@ -199,6 +203,7 @@ pub fn configure(state: web::Data<ExplorerState>, cfg: &mut web::ServiceConfig) 
                 .route("/", web::get().to(index))
                 .route("/terminal", web::get().to(terminal))
                 .route("/oauth2-redirect.html", web::get().to(oauth2_redirect))
+                .route("/favicon.ico", web::get().to(asset_favicon))
                 .route("/assets/explorer.css", web::get().to(asset_explorer_css))
                 .route("/assets/explorer.js", web::get().to(asset_explorer_js))
                 .route("/assets/query-api.js", web::get().to(asset_query_api_js))
@@ -254,18 +259,32 @@ fn env_badge_class(env: &str, color_override: Option<&str>) -> String {
 /// console and shell terminal, alongside the discovery list items.
 fn collect_datasets(state: &ExplorerState) -> (Vec<DatasetListItem>, String) {
     let datasets = state.datasets.read().unwrap();
+    // Fetch full statuses once so we have lifecycle state + rows in one call.
+    let statuses: std::collections::HashMap<String, crate::backend::DatasetStatusEntry> = state
+        .backend
+        .dataset_statuses()
+        .into_iter()
+        .map(|s| (s.name.clone(), s))
+        .collect();
     let mut items = Vec::with_capacity(datasets.len());
     let mut json_items = Vec::with_capacity(datasets.len());
     for ds in datasets.iter() {
-        let (rows, columns) = match state.backend.summary(&ds.name) {
-            Ok(s) => (s.rows, s.columns),
-            Err(_) => (0, 0),
+        let (rows, columns, ds_state, last_error) = match statuses.get(&ds.name) {
+            Some(s) => (
+                s.rows,
+                s.columns,
+                format!("{:?}", s.status).to_lowercase(),
+                s.last_error.clone().unwrap_or_default(),
+            ),
+            None => (0, 0, "pending".to_string(), String::new()),
         };
         items.push(DatasetListItem {
             name: ds.name.clone(),
             rows,
             columns,
             kind: ds.source.kind.as_str().to_string(),
+            state: ds_state,
+            last_error,
         });
         json_items.push(serde_json::json!({
             "name": ds.name,
@@ -375,6 +394,21 @@ async fn asset_query_api_js() -> HttpResponse {
 
 async fn asset_manage_js() -> HttpResponse {
     asset("application/javascript; charset=utf-8", MANAGE_JS)
+}
+
+/// Minimal inline favicon so browsers don't 404 on `/favicon.ico`.
+/// A single 1×1 transparent pixel encoded as a data-URI SVG, served as
+/// `image/svg+xml`.  The `<link rel="icon">` in `base.html` points here.
+async fn asset_favicon() -> HttpResponse {
+    // Compass-needle SVG icon (matches the navbar glyph) at 16×16.
+    const FAVICON_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="#6ea8fe"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm0 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zM5.5 5.5l5 2-2 5-5-2z"/></svg>"##;
+    HttpResponse::Ok()
+        .content_type("image/svg+xml")
+        .insert_header((
+            actix_web::http::header::CACHE_CONTROL,
+            "public, max-age=86400",
+        ))
+        .body(FAVICON_SVG)
 }
 
 async fn asset_terminal_css() -> HttpResponse {
