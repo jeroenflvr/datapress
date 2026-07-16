@@ -34,6 +34,13 @@ pub fn init(token: Option<&str>) {
     let _ = EXPECTED.set(token.filter(|s| !s.is_empty()).map(str::to_owned));
 }
 
+/// Returns `true` when an admin token has been configured (i.e. the `ADMIN_TOKEN`
+/// env var is set and non-empty, or [`init`] was called with a non-empty value).
+/// Used by the server to decide whether to enable admin-gated routes.
+pub fn require_admin_configured() -> bool {
+    expected().is_some()
+}
+
 /// Verify the request carries a valid admin token.
 ///
 /// Returns `Err(AppError::Forbidden)` when the token is missing, malformed,

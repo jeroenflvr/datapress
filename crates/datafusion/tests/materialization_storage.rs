@@ -105,6 +105,8 @@ fn two_dataset_cfg(
                 on_start: datapress_core::config::OnStart::Eager,
                 refresh: None,
                 materialize: None,
+                managed: false,
+                temp: false,
             },
             DatasetConfig {
                 name: "derived".into(),
@@ -128,6 +130,8 @@ fn two_dataset_cfg(
                     sort_by: vec![],
                     reuse_on_start,
                 }),
+                managed: false,
+                temp: false,
             },
         ],
     }
@@ -719,6 +723,8 @@ async fn test_sort_by_spills_and_nonoverlapping_row_groups() {
                 on_start: datapress_core::config::OnStart::Eager,
                 refresh: None,
                 materialize: None,
+                managed: false,
+                temp: false,
             },
             DatasetConfig {
                 name: "derived".into(),
@@ -742,6 +748,8 @@ async fn test_sort_by_spills_and_nonoverlapping_row_groups() {
                     sort_by: vec!["sort_key".to_string()],
                     reuse_on_start: false,
                 }),
+                managed: false,
+                temp: false,
             },
         ],
     };
@@ -1069,6 +1077,8 @@ async fn test_sort_by_no_spill_fails_resources_exhausted() {
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         }],
     };
 
@@ -1113,5 +1123,170 @@ async fn test_sort_by_no_spill_fails_resources_exhausted() {
         store.session_context().runtime_env().memory_pool.reserved(),
         0,
         "the no-spill failure must not have affected the serving context pool"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 Deviation closure: spill_total and override_exceeded flags in
+// ReloadStats, surfacing through reload() to the metrics layer.
+// ---------------------------------------------------------------------------
+
+/// T5.3 deviation closure — auto-demotion sets demoted_to_storage=true.
+///
+/// Uses force_lazy_above_mb=0 (zero threshold) so any result immediately
+/// crosses the threshold and is demoted to storage.
+#[tokio::test]
+async fn test_auto_demotion_sets_demoted_flag() {
+    let tmp = TempDir::new().unwrap();
+    let src_path = tmp.path().join("src.parquet");
+    write_parquet(&src_path, &[1, 2, 3], &["a", "b", "c"], &[1.0, 2.0, 3.0]);
+
+    let storage_dir = tmp.path().join("storage");
+    // force_lazy_above_mb=0: threshold is 0 bytes → always demote.
+    let cfg = two_dataset_cfg(
+        src_path.to_str().unwrap(),
+        Some(storage_dir.to_str().unwrap()),
+        "SELECT * FROM src",
+        MaterializeResidency::Auto,
+        false,
+        0,
+    );
+
+    let store = Store::load(&cfg).await.expect("Store::load");
+
+    // A manual reload should also demote and set the flag.
+    let stats = store.reload("derived").await.expect("reload");
+    assert!(
+        stats.demoted_to_storage,
+        "auto-demotion with threshold=0 must set demoted_to_storage=true"
+    );
+    assert!(
+        !stats.memory_override_exceeded,
+        "auto path must not set memory_override"
+    );
+}
+
+/// T5.3 deviation closure — memory residency over threshold sets
+/// memory_override_exceeded=true.
+///
+/// Uses force_lazy_above_mb=0 (zero threshold) and residency=memory so the
+/// result is kept in RAM despite exceeding the threshold.
+#[tokio::test]
+async fn test_memory_residency_over_threshold_sets_override_flag() {
+    let tmp = TempDir::new().unwrap();
+    let src_path = tmp.path().join("src.parquet");
+    write_parquet(&src_path, &[1, 2, 3], &["a", "b", "c"], &[1.0, 2.0, 3.0]);
+
+    let storage_dir = tmp.path().join("storage");
+    // force_lazy_above_mb=0 → threshold 0 bytes; residency=memory → stays in RAM.
+    let cfg = two_dataset_cfg(
+        src_path.to_str().unwrap(),
+        Some(storage_dir.to_str().unwrap()),
+        "SELECT * FROM src",
+        MaterializeResidency::Memory,
+        false,
+        0, // tiny threshold — any result exceeds it
+    );
+
+    let store = Store::load(&cfg).await.expect("Store::load");
+    let stats = store.reload("derived").await.expect("reload");
+    assert!(
+        stats.memory_override_exceeded,
+        "memory residency over threshold must set memory_override_exceeded=true"
+    );
+    assert!(
+        !stats.demoted_to_storage,
+        "memory residency must not demote"
+    );
+}
+
+/// T5.3 deviation closure — metrics registry accumulates spill and override
+/// counts after successive reload calls. Tests the full path:
+///   reload() → ReloadStats flags → record_spill / record_memory_override → metrics.
+#[cfg(feature = "metrics")]
+#[tokio::test]
+async fn test_metrics_spill_and_override_counters_accumulate() {
+    use datapress_core::metrics::{DatapressMetrics, record_memory_override, record_spill};
+    use prometheus::{Encoder, Registry, TextEncoder};
+
+    let reg = Registry::new();
+    let m = DatapressMetrics::register(&reg).expect("register");
+
+    let tmp = TempDir::new().unwrap();
+    let src_path = tmp.path().join("src.parquet");
+    write_parquet(&src_path, &[1, 2, 3], &["a", "b", "c"], &[1.0, 2.0, 3.0]);
+    let storage_dir = tmp.path().join("storage");
+
+    // Build an auto-demotion store (threshold=0 → always spill).
+    let auto_cfg = two_dataset_cfg(
+        src_path.to_str().unwrap(),
+        Some(storage_dir.to_str().unwrap()),
+        "SELECT * FROM src",
+        MaterializeResidency::Auto,
+        false,
+        0,
+    );
+    let auto_store = Store::load(&auto_cfg).await.expect("Store::load (auto)");
+    let stats = auto_store.reload("derived").await.expect("reload (auto)");
+    // Simulate what the handler / scheduler does with the flags.
+    if stats.demoted_to_storage {
+        record_spill(&m, "derived");
+    }
+    if stats.memory_override_exceeded {
+        record_memory_override(&m, "derived");
+    }
+
+    // Build a memory-override store (threshold=0, residency=memory).
+    let mem_cfg = two_dataset_cfg(
+        src_path.to_str().unwrap(),
+        Some(storage_dir.to_str().unwrap()),
+        "SELECT * FROM src",
+        MaterializeResidency::Memory,
+        false,
+        0,
+    );
+    let mem_store = Store::load(&mem_cfg).await.expect("Store::load (mem)");
+    let mem_stats = mem_store.reload("derived").await.expect("reload (mem)");
+    if mem_stats.demoted_to_storage {
+        record_spill(&m, "derived");
+    }
+    if mem_stats.memory_override_exceeded {
+        record_memory_override(&m, "derived");
+    }
+
+    // Scrape and verify both metric names appear with non-zero values.
+    let mut buf = Vec::new();
+    TextEncoder::new()
+        .encode(&reg.gather(), &mut buf)
+        .expect("encode");
+    let text = String::from_utf8(buf).unwrap();
+
+    assert!(
+        text.contains("datapress_materialize_spill_total"),
+        "spill_total metric missing from scrape"
+    );
+    assert!(
+        text.contains("datapress_memory_override_exceeded_total"),
+        "memory_override_exceeded_total metric missing from scrape"
+    );
+
+    // Verify the spill counter is 1 (one auto-demote).
+    let spill_count = m
+        .materialize_spill_total
+        .with_label_values(&["derived"])
+        .get();
+    assert_eq!(
+        spill_count, 1,
+        "spill counter must be 1 after one auto-demote"
+    );
+
+    // Verify the override counter is 1 (one memory-override).
+    let override_count = m
+        .memory_override_exceeded_total
+        .with_label_values(&["derived"])
+        .get();
+    assert_eq!(
+        override_count, 1,
+        "override counter must be 1 after one override"
     );
 }

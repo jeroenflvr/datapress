@@ -82,6 +82,14 @@ where
     }
 }
 
+/// Public re-export for use in model deserialization outside this module.
+pub fn deserialize_optional_duration_pub<'de, D>(de: D) -> Result<Option<Duration>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_optional_duration(de)
+}
+
 /// Serialize a `Duration` as its millisecond count (for JSON/TOML output).
 fn serialize_duration<S>(d: &Duration, ser: S) -> Result<S::Ok, S::Error>
 where
@@ -117,6 +125,11 @@ pub fn source_config_path() -> Option<&'static std::path::Path> {
 const RESERVED_MOUNTS: &[&str] = &[
     "/", "/api", "/api/v1", "/health", "/healthz", "/readyz", "/version", "/metrics",
 ];
+
+/// Dataset names that are forbidden because they would clash with
+/// fixed route segments (e.g. `reload-all` clashes with the bulk-
+/// reload endpoint, R8.11).
+pub const RESERVED_DATASET_NAMES: &[&str] = &["reload-all"];
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -223,6 +236,13 @@ pub struct ServerConfig {
     /// When absent, all query-dataset materializations stay in memory.
     #[serde(default)]
     pub storage: Option<StorageConfig>,
+    /// Directory from which runtime-persisted (`kind = "query"`) saved
+    /// datasets are loaded at startup and written to on
+    /// `POST /api/v1/queries`. Defaults to `<config_dir>/datasets.d/`
+    /// (a sibling directory of the main `datasets.toml`). When set to an
+    /// absolute path that directory is used as-is; a relative path is
+    /// resolved relative to the config file's directory.
+    pub saved_queries_dir: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -246,6 +266,7 @@ impl Default for ServerConfig {
             startup: StartupConfig::default(),
             refresh: ServerRefreshConfig::default(),
             storage: None,
+            saved_queries_dir: None,
         }
     }
 }
@@ -1012,6 +1033,11 @@ pub struct AuthConfig {
     /// Scopes required for admin/mutation endpoints (POST `…/reload`).
     /// Empty list means "no scope check, just a valid token is enough".
     pub reload_scopes: Vec<String>,
+    /// Scopes required for dataset management endpoints
+    /// (`POST /api/v1/queries`, `DELETE /api/v1/queries/{name}`).
+    /// When auth is enabled and this list is empty, a valid token alone
+    /// is sufficient. Defaults to `["datasets:manage"]`.
+    pub manage_scopes: Vec<String>,
     /// Allow unauthenticated GETs through. Useful for public datasets
     /// and demo deployments. Defaults to `false`.
     pub anonymous_read: bool,
@@ -1054,6 +1080,7 @@ impl Default for AuthConfig {
             audience: String::new(),
             read_scopes: Vec::new(),
             reload_scopes: Vec::new(),
+            manage_scopes: vec!["datasets:manage".into()],
             anonymous_read: false,
             start_degraded: true,
             algorithms: vec!["RS256".into()],
@@ -1133,6 +1160,48 @@ pub struct DatasetConfig {
     /// `residency = "lazy"`.
     #[serde(default)]
     pub materialize: Option<MaterializeConfig>,
+    /// Set to `true` on datasets created through `POST /api/v1/queries`
+    /// ("saved queries"). These datasets are managed by the server at
+    /// runtime and are the only ones the `DELETE /api/v1/queries/{name}`
+    /// endpoint will remove. Config-file datasets always have `managed =
+    /// false` (the field is silently ignored when present in
+    /// `datasets.toml`, but required in `datasets.d/` files).
+    #[serde(default)]
+    pub managed: bool,
+    /// When `true` the dataset exists only for the lifetime of the
+    /// current process and is **not** written to `datasets.d/`. Only
+    /// meaningful when `managed = true`.
+    #[serde(default)]
+    pub temp: bool,
+}
+
+/// Helper for constructing `DatasetConfig` values in tests and other
+/// contexts where not all fields are relevant. All fields default to their
+/// zero/empty values; callers override only the ones they care about.
+impl Default for DatasetConfig {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            source: SourceConfig {
+                kind: SourceKind::Parquet,
+                location: String::new(),
+                sql: None,
+                depends_on: vec![],
+            },
+            s3: None,
+            index: IndexConfig::default(),
+            columns: vec![],
+            dict_encode: true,
+            lazy: false,
+            predicate_filter: ColumnFilter::default(),
+            projection_filter: ColumnFilter::default(),
+            on_start: OnStart::Eager,
+            refresh: None,
+            materialize: None,
+            managed: false,
+            temp: false,
+        }
+    }
 }
 
 fn default_true() -> bool {
@@ -1448,18 +1517,97 @@ impl ResolvedCreds {
 
 impl AppConfig {
     /// Read and validate a TOML config file.
+    ///
+    /// Also scans the `saved_queries_dir` (default `<config_dir>/datasets.d/`)
+    /// for runtime-persisted query datasets and merges them in. Name
+    /// collisions between the main file and `datasets.d/` are a startup error.
     pub fn load(path: &str) -> Result<Self, AppError> {
         let raw = std::fs::read_to_string(path)
             .map_err(|e| AppError::Internal(format!("failed to read {path}: {e}")))?;
         let mut cfg: AppConfig =
             toml::from_str(&raw).map_err(|e| AppError::Internal(format!("invalid {path}: {e}")))?;
         cfg.normalize();
+
+        // Load datasets.d/ managed datasets BEFORE validate so the full
+        // merged dataset list (with dependency cross-references) is validated
+        // as a unit.
+        let config_dir = Path::new(path)
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
+        let managed_dir: PathBuf = match &cfg.server.saved_queries_dir {
+            Some(d) => {
+                let p = PathBuf::from(d);
+                if p.is_absolute() {
+                    p
+                } else {
+                    config_dir.join(p)
+                }
+            }
+            None => config_dir.join("datasets.d"),
+        };
+        if managed_dir.is_dir() {
+            let managed = AppConfig::load_managed_dir(&managed_dir)?;
+            if !managed.is_empty() {
+                let existing: std::collections::HashSet<&str> =
+                    cfg.datasets.iter().map(|d| d.name.as_str()).collect();
+                for md in &managed {
+                    if existing.contains(md.name.as_str()) {
+                        return Err(AppError::Internal(format!(
+                            "name collision between datasets.toml and datasets.d/: '{}'",
+                            md.name
+                        )));
+                    }
+                }
+                cfg.datasets.extend(managed);
+            }
+        }
+
         cfg.validate()?;
         // Remember where we loaded from so the explorer can optionally
         // append newly-registered datasets back to this file. Ignore the
         // error if it was already set (only the first load wins).
         let _ = SOURCE_CONFIG_PATH.set(PathBuf::from(path));
         Ok(cfg)
+    }
+
+    /// Read all `*.toml` files in `dir` as managed dataset definitions.
+    /// Each file must be a valid TOML document containing exactly one
+    /// `[[dataset]]` entry with `managed = true`.
+    pub fn load_managed_dir(dir: &Path) -> Result<Vec<DatasetConfig>, AppError> {
+        let mut out = Vec::new();
+        let entries = std::fs::read_dir(dir)
+            .map_err(|e| AppError::Internal(format!("failed to read datasets.d/ dir: {e}")))?;
+        let mut paths: Vec<PathBuf> = entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("toml"))
+            .collect();
+        paths.sort(); // deterministic load order
+        for p in paths {
+            let raw = std::fs::read_to_string(&p)
+                .map_err(|e| AppError::Internal(format!("failed to read {}: {e}", p.display())))?;
+            // Parse as a mini-AppConfig with only a `dataset` array key.
+            #[derive(serde::Deserialize)]
+            struct OneDataset {
+                #[serde(rename = "dataset", default)]
+                datasets: Vec<DatasetConfig>,
+            }
+            let doc: OneDataset = toml::from_str(&raw)
+                .map_err(|e| AppError::Internal(format!("invalid {}: {e}", p.display())))?;
+            if doc.datasets.len() != 1 {
+                return Err(AppError::Internal(format!(
+                    "{}: expected exactly one [[dataset]] entry, got {}",
+                    p.display(),
+                    doc.datasets.len()
+                )));
+            }
+            let mut d = doc.datasets.into_iter().next().unwrap();
+            // Force managed=true regardless of what the file says.
+            d.managed = true;
+            out.push(d);
+        }
+        Ok(out)
     }
 
     /// Canonicalise fields that are compared case-insensitively at runtime.
@@ -1475,6 +1623,7 @@ impl AppConfig {
             .read_scopes
             .iter_mut()
             .chain(self.auth.reload_scopes.iter_mut())
+            .chain(self.auth.manage_scopes.iter_mut())
         {
             *s = s.to_ascii_lowercase();
         }
@@ -1498,7 +1647,9 @@ impl AppConfig {
 
         if self.datasets.is_empty() {
             return Err(AppError::Internal(
-                "datasets.toml has no [[dataset]] entries".into(),
+                "no datasets configured (add at least one [[dataset]] entry in datasets.toml \
+                 or datasets.d/)"
+                    .into(),
             ));
         }
 
@@ -1712,6 +1863,14 @@ impl AppConfig {
             {
                 return Err(AppError::Internal(format!(
                     "dataset name '{}' must be alphanumeric (plus _ - .)",
+                    d.name
+                )));
+            }
+
+            // Reserved name guard (R8.11: reload-all must not be a dataset name).
+            if RESERVED_DATASET_NAMES.contains(&d.name.as_str()) {
+                return Err(AppError::Internal(format!(
+                    "dataset name '{}' is reserved and cannot be used",
                     d.name
                 )));
             }
@@ -2147,6 +2306,12 @@ impl DatasetConfig {
                 self.name
             )));
         }
+        if RESERVED_DATASET_NAMES.contains(&self.name.as_str()) {
+            return Err(AppError::InvalidValue(format!(
+                "dataset name '{}' is reserved and cannot be used",
+                self.name
+            )));
+        }
         if self.index.mode == IndexMode::List && self.index.columns.is_empty() {
             return Err(AppError::InvalidValue(format!(
                 "dataset '{}': index.mode = 'list' requires non-empty index.columns",
@@ -2215,6 +2380,80 @@ impl DatasetConfig {
         };
         toml::to_string_pretty(&doc)
             .map_err(|e| AppError::Internal(format!("failed to render dataset TOML: {e}")))
+    }
+
+    /// Render this dataset as a `datasets.d/`-style TOML file (includes
+    /// `managed = true`; excludes `temp`). Used by `POST /api/v1/queries`
+    /// when `kind = "query"` to persist the definition across restarts.
+    pub fn to_managed_toml(&self) -> Result<String, AppError> {
+        #[derive(Serialize)]
+        struct Block {
+            name: String,
+            managed: bool,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            columns: Vec<String>,
+            dict_encode: bool,
+            lazy: bool,
+            on_start: OnStart,
+            source: SourceConfig,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            refresh: Option<RefreshConfig>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            materialize: Option<MaterializeConfig>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            index: Option<IndexConfig>,
+        }
+        #[derive(Serialize)]
+        struct Doc {
+            dataset: [Block; 1],
+        }
+        let doc = Doc {
+            dataset: [Block {
+                name: self.name.clone(),
+                managed: true,
+                columns: self.columns.clone(),
+                dict_encode: self.dict_encode,
+                lazy: self.lazy,
+                on_start: self.on_start.clone(),
+                source: self.source.clone(),
+                refresh: self.refresh.clone(),
+                materialize: self.materialize.clone(),
+                index: if self.index.is_default() {
+                    None
+                } else {
+                    Some(self.index.clone())
+                },
+            }],
+        };
+        toml::to_string_pretty(&doc)
+            .map_err(|e| AppError::Internal(format!("failed to render managed dataset TOML: {e}")))
+    }
+
+    /// Write this managed dataset to `<dir>/<name>.toml`.
+    pub fn persist_to_managed_dir(&self, dir: &std::path::Path) -> Result<PathBuf, AppError> {
+        std::fs::create_dir_all(dir).map_err(|e| {
+            AppError::Internal(format!(
+                "failed to create datasets.d/ dir {}: {e}",
+                dir.display()
+            ))
+        })?;
+        let path = dir.join(format!("{}.toml", self.name));
+        let toml = self.to_managed_toml()?;
+        std::fs::write(&path, toml)
+            .map_err(|e| AppError::Internal(format!("failed to write {}: {e}", path.display())))?;
+        Ok(path)
+    }
+
+    /// Delete the managed TOML file for this dataset from `dir`, if it
+    /// exists. Non-existence is silently ignored.
+    pub fn remove_from_managed_dir(name: &str, dir: &std::path::Path) -> Result<(), AppError> {
+        let path = dir.join(format!("{name}.toml"));
+        if path.exists() {
+            std::fs::remove_file(&path).map_err(|e| {
+                AppError::Internal(format!("failed to remove {}: {e}", path.display()))
+            })?;
+        }
+        Ok(())
     }
 
     /// Append this dataset's `[[dataset]]` block to the config file this
@@ -2548,6 +2787,8 @@ mod tests {
             on_start: Default::default(),
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         };
         let server = |mb: u64| ServerConfig {
             force_lazy_above_mb: mb,
@@ -2687,6 +2928,8 @@ mod tests {
                 on_start: Default::default(),
                 refresh: None,
                 materialize: None,
+                managed: false,
+                temp: false,
             }],
         };
 
@@ -2731,6 +2974,8 @@ mod tests {
                 on_start: Default::default(),
                 refresh: None,
                 materialize: None,
+                managed: false,
+                temp: false,
             }],
         };
         let err = cfg.validate().unwrap_err();
@@ -2894,6 +3139,8 @@ mod tests {
             on_start: Default::default(),
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         };
         assert_eq!(mk("accidents").env_prefix(), "ACCIDENTS");
         assert_eq!(mk("sales.eu-1").env_prefix(), "SALES_EU_1");
@@ -2928,6 +3175,8 @@ mod tests {
             on_start: Default::default(),
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         };
 
         // Direct file.
@@ -3053,6 +3302,8 @@ mod tests {
                     on_start: Default::default(),
                     refresh: None,
                     materialize: None,
+                    managed: false,
+                    temp: false,
                 },
                 DatasetConfig {
                     name: "q".into(),
@@ -3072,6 +3323,8 @@ mod tests {
                     on_start: Default::default(),
                     refresh: None,
                     materialize: None,
+                    managed: false,
+                    temp: false,
                 },
             ],
         }
@@ -3173,6 +3426,8 @@ mod tests {
                     on_start: Default::default(),
                     refresh: None,
                     materialize: None,
+                    managed: false,
+                    temp: false,
                 },
                 DatasetConfig {
                     name: "qa".into(),
@@ -3192,6 +3447,8 @@ mod tests {
                     on_start: Default::default(),
                     refresh: None,
                     materialize: None,
+                    managed: false,
+                    temp: false,
                 },
                 DatasetConfig {
                     name: "qb".into(),
@@ -3211,6 +3468,8 @@ mod tests {
                     on_start: Default::default(),
                     refresh: None,
                     materialize: None,
+                    managed: false,
+                    temp: false,
                 },
             ],
         };
@@ -3259,6 +3518,8 @@ mod tests {
                     on_start: Default::default(),
                     refresh: None,
                     materialize: None,
+                    managed: false,
+                    temp: false,
                 },
                 DatasetConfig {
                     name: "base".into(),
@@ -3278,6 +3539,8 @@ mod tests {
                     on_start: Default::default(),
                     refresh: None,
                     materialize: None,
+                    managed: false,
+                    temp: false,
                 },
                 DatasetConfig {
                     name: "q1".into(),
@@ -3297,6 +3560,8 @@ mod tests {
                     on_start: Default::default(),
                     refresh: None,
                     materialize: None,
+                    managed: false,
+                    temp: false,
                 },
             ],
         };

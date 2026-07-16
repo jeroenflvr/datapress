@@ -60,6 +60,8 @@ tokio-postgres-rustls = "0.13"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 rcgen = "0.13"
 toml.workspace = true
+# Used by the metrics deviation-closure tests (#[cfg(feature = "metrics")]).
+prometheus = { workspace = true }
 
 [[bin]]
 name = "datapress-datafusion"

@@ -87,6 +87,18 @@ impl Default for ReadinessSettings {
     }
 }
 
+/// Saved-queries settings — where persisted `kind = "query"` datasets live.
+#[derive(Debug, Clone)]
+pub struct SavedQueriesSettings {
+    /// Absolute path to the `datasets.d/` directory (or override).
+    /// `None` when the server was not loaded from a config file (e.g. in
+    /// tests), in which case persisted-kind creation is rejected with 400.
+    pub dir: Option<std::path::PathBuf>,
+    /// Whether the queries API is live (ADMIN_TOKEN set, or auth configured).
+    /// When `false`, all three routes return 404 (R8.6).
+    pub enabled: bool,
+}
+
 /// MIME type used for Arrow IPC stream responses.
 pub const ARROW_IPC_MIME: &str = "application/vnd.apache.arrow.stream";
 #[get("/health")]
@@ -199,6 +211,12 @@ pub struct BuildInfo {
     /// not set at build time.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<&'static str>,
+    /// Active server-level materialization storage backend (`"local"` or
+    /// `"s3"`).  `None` when `[server.storage]` is not configured — query
+    /// datasets must then use `residency = "memory"` (the default).
+    /// Exposed so client UIs can show/hide residency controls.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage_backend: Option<String>,
 }
 
 impl BuildInfo {
@@ -218,7 +236,15 @@ impl BuildInfo {
                 "release"
             },
             target: option_env!("DATAPRESS_TARGET"),
+            storage_backend: None,
         }
+    }
+
+    /// Attach the server-level storage backend label (e.g. `"local"` or
+    /// `"s3"`), returning `self` for chaining.
+    pub fn with_storage_backend(mut self, kind: Option<String>) -> Self {
+        self.storage_backend = kind;
+        self
     }
 }
 

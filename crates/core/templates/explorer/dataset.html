@@ -2,6 +2,7 @@
   <h4 class="mb-0"><i class="bi bi-table"></i> {{ name }}</h4>
   <span class="badge text-bg-secondary ms-2">{{ source_kind }}</span>
   {% if lazy %}<span class="badge text-bg-info ms-1">lazy</span>{% endif %}
+  <span class="badge ms-1 dataset-state-badge" id="state-badge-{{ name }}"></span>
 </div>
 
 <div class="row g-2 mb-3">
@@ -31,6 +32,18 @@
   <a class="btn btn-sm btn-outline-primary" href="{{ parquet_url }}"><i class="bi bi-download"></i> Parquet</a>
   <a class="btn btn-sm btn-outline-secondary" href="{{ schema_url }}" target="_blank">Schema JSON</a>
   <a class="btn btn-sm btn-outline-secondary" href="{{ datasets_url }}" target="_blank">Datasets API</a>
+  <button class="btn btn-sm btn-outline-warning" id="reload-btn-{{ name }}"
+          onclick="dpReloadDataset('{{ name }}', '{{ api_base }}')"
+          title="Rebuild this dataset from its source">
+    <i class="bi bi-arrow-clockwise"></i> Reload
+  </button>
+  {% if is_managed %}
+  <button class="btn btn-sm btn-outline-danger" id="delete-btn-{{ name }}"
+          onclick="dpDeleteDataset('{{ name }}', '{{ api_base }}')"
+          title="Delete this managed dataset">
+    <i class="bi bi-trash"></i> Delete
+  </button>
+  {% endif %}
 </div>
 
 <div class="card mb-3">

@@ -20,6 +20,8 @@ pub mod errors;
 #[cfg(feature = "explorer")]
 pub mod explorer;
 pub mod handlers;
+#[cfg(feature = "metrics")]
+pub mod metrics;
 pub mod models;
 // Shared OIDC discovery for the Swagger UI + explorer OAuth2 login flows.
 #[cfg(any(feature = "swagger", feature = "explorer"))]

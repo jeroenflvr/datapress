@@ -100,6 +100,8 @@ fn make_registry_at(location: &str) -> Arc<Registry> {
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         }],
     };
     Arc::new(load_registry(&cfg).expect("load_registry"))
@@ -136,6 +138,8 @@ fn make_registry_lazy(location: &str) -> Arc<Registry> {
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         }],
     };
     Arc::new(load_registry(&cfg).expect("load_registry"))
@@ -227,6 +231,8 @@ fn make_registry_with_filters(
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         }],
     };
     load_registry(&cfg).map(Arc::new)
@@ -826,6 +832,8 @@ fn make_query_registry(
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         });
     }
 
@@ -848,6 +856,8 @@ fn make_query_registry(
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         });
     }
 
@@ -994,6 +1004,8 @@ async fn duck_query_source_reload() {
                 on_start: datapress_core::config::OnStart::Eager,
                 refresh: None,
                 materialize: None,
+                managed: false,
+                temp: false,
             },
             DatasetConfig {
                 name: "high_scores".into(),
@@ -1013,6 +1025,8 @@ async fn duck_query_source_reload() {
                 on_start: datapress_core::config::OnStart::Eager,
                 refresh: None,
                 materialize: None,
+                managed: false,
+                temp: false,
             },
         ],
     };
@@ -1030,4 +1044,314 @@ async fn duck_query_source_reload() {
     // Reload derived dataset.
     let stats = reg.reload("high_scores").await.expect("reload");
     assert_eq!(stats.rows, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6A gap-closure: persisted round-trip & delete+storage-GC (DuckDB)
+// ---------------------------------------------------------------------------
+
+/// Phase 6A gap — Test 1 (DuckDB): POST /queries with kind=query writes a
+/// datasets.d/ file; reloading AppConfig picks it up; the new Registry
+/// builds and serves the managed dataset correctly.
+#[tokio::test]
+async fn phase6_managed_query_persisted_round_trip_duck() {
+    use datapress_core::backend::Backend;
+    use datapress_core::config::{AppConfig, OnStart};
+
+    let tmp = TempDir::new().unwrap();
+
+    // 1. Write base parquet via DuckDB.
+    let parquet_path = tmp.path().join("base.parquet");
+    {
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        let sql = format!(
+            "COPY (
+                SELECT 1 AS id, 'alpha' AS name UNION ALL
+                SELECT 2, 'beta'  UNION ALL
+                SELECT 3, 'gamma'
+             ) TO '{}' (FORMAT PARQUET);",
+            parquet_path.display()
+        );
+        conn.execute_batch(&sql).expect("write base parquet");
+    }
+
+    // 2. Write minimal datasets.toml.
+    let toml_path = tmp.path().join("datasets.toml");
+    let toml_content = format!(
+        r#"
+[[dataset]]
+name = "base"
+
+[dataset.source]
+kind = "parquet"
+location = "{}"
+"#,
+        parquet_path.display()
+    );
+    std::fs::write(&toml_path, &toml_content).unwrap();
+
+    // 3. Load config and build Registry.
+    let cfg = AppConfig::load(&toml_path.to_string_lossy()).expect("AppConfig::load (first)");
+    let reg = Arc::new(load_registry(&cfg).expect("load_registry (first)"));
+    assert!(
+        reg.names().contains(&"base".to_string()),
+        "base must be published"
+    );
+
+    // 4. Construct managed query config.
+    let derived_cfg = DatasetConfig {
+        name: "derived_duck".into(),
+        source: SourceConfig {
+            kind: SourceKind::Query,
+            sql: Some("SELECT id, name FROM base WHERE id > 1".into()),
+            depends_on: vec!["base".into()],
+            location: String::new(),
+        },
+        s3: None,
+        index: IndexConfig::default(),
+        columns: vec![],
+        dict_encode: true,
+        lazy: false,
+        predicate_filter: Default::default(),
+        projection_filter: Default::default(),
+        on_start: OnStart::Eager,
+        refresh: None,
+        materialize: None,
+        managed: true,
+        temp: false,
+    };
+
+    // 5. Register via backend.
+    let backend = reg.clone() as Arc<dyn Backend>;
+    backend
+        .register(derived_cfg.clone())
+        .await
+        .expect("register derived_duck");
+    assert!(
+        backend.is_managed("derived_duck"),
+        "derived_duck must be managed"
+    );
+
+    // 6. Persist to datasets.d/.
+    let datasets_d = tmp.path().join("datasets.d");
+    derived_cfg
+        .persist_to_managed_dir(&datasets_d)
+        .expect("persist_to_managed_dir");
+    let managed_file = datasets_d.join("derived_duck.toml");
+    assert!(
+        managed_file.exists(),
+        "datasets.d/derived_duck.toml must exist"
+    );
+
+    // 7. Drop old registry (simulate restart).
+    drop(reg);
+    drop(backend);
+
+    // 8. Reload AppConfig — picks up datasets.d/ automatically.
+    let cfg2 = AppConfig::load(&toml_path.to_string_lossy()).expect("AppConfig::load (second)");
+    assert_eq!(cfg2.datasets.len(), 2, "base + derived in reloaded cfg");
+    let entry = cfg2
+        .datasets
+        .iter()
+        .find(|d| d.name == "derived_duck")
+        .expect("derived_duck in reloaded cfg");
+    assert!(entry.managed, "reloaded entry must be managed");
+    assert_eq!(
+        entry.source.sql.as_deref(),
+        Some("SELECT id, name FROM base WHERE id > 1")
+    );
+
+    // 9. Build new Registry and query.
+    let reg2 = Arc::new(load_registry(&cfg2).expect("load_registry (second)"));
+    assert!(
+        reg2.names().contains(&"derived_duck".to_string()),
+        "derived_duck must be published in new registry"
+    );
+
+    let rows_json = (reg2.clone() as Arc<dyn Backend>)
+        .query(
+            "derived_duck",
+            &QueryRequest {
+                page_size: 100,
+                ..empty_req()
+            },
+        )
+        .await
+        .expect("query derived_duck");
+    let rows: Value = serde_json::from_str(&rows_json).unwrap();
+    assert_eq!(
+        rows.as_array().unwrap().len(),
+        2,
+        "expected 2 rows (id > 1) from derived_duck"
+    );
+}
+
+/// Phase 6A gap — Test 2 (DuckDB): DELETE unregisters the dataset, removes
+/// storage generations from disk (R8.4), and subsequent queries fail.
+#[tokio::test]
+async fn phase6_managed_query_delete_cleans_storage_duck() {
+    use datapress_core::config::{
+        AppConfig, MaterializeConfig, MaterializeResidency, OnStart, StorageBackendKind,
+        StorageConfig,
+    };
+    use datapress_core::errors::AppError;
+
+    let tmp = TempDir::new().unwrap();
+
+    // Write base parquet.
+    let parquet_path = tmp.path().join("base.parquet");
+    {
+        let conn = duckdb::Connection::open_in_memory().unwrap();
+        let sql = format!(
+            "COPY (SELECT 1 AS id, 'a' AS name UNION ALL SELECT 2, 'b')
+             TO '{}' (FORMAT PARQUET);",
+            parquet_path.display()
+        );
+        conn.execute_batch(&sql).expect("write parquet");
+    }
+
+    let storage_dir = tmp.path().join("storage");
+
+    // Build AppConfig with local storage.
+    let cfg = AppConfig {
+        server: ServerConfig {
+            storage: Some(StorageConfig {
+                backend: StorageBackendKind::Local,
+                root: storage_dir.to_string_lossy().to_string(),
+                force_lazy_above_mb: 0, // force lazy at any size
+                s3: Default::default(),
+            }),
+            ..ServerConfig::default()
+        },
+        docs: Default::default(),
+        swagger: Default::default(),
+        auth: Default::default(),
+        metrics: Default::default(),
+        explorer: Default::default(),
+        sql: Default::default(),
+        datafusion: Default::default(),
+        datasets: vec![DatasetConfig {
+            name: "base".into(),
+            source: SourceConfig {
+                kind: SourceKind::Parquet,
+                location: parquet_path.to_string_lossy().to_string(),
+                sql: None,
+                depends_on: vec![],
+            },
+            s3: None,
+            index: IndexConfig::default(),
+            columns: vec![],
+            dict_encode: true,
+            lazy: false,
+            predicate_filter: Default::default(),
+            projection_filter: Default::default(),
+            on_start: OnStart::Eager,
+            refresh: None,
+            materialize: None,
+            managed: false,
+            temp: false,
+        }],
+    };
+
+    let reg = Arc::new(load_registry(&cfg).expect("load_registry"));
+    let backend = reg.clone() as Arc<dyn Backend>;
+
+    // Register a managed lazy query dataset.
+    let lazy_cfg = DatasetConfig {
+        name: "lazy_duck".into(),
+        source: SourceConfig {
+            kind: SourceKind::Query,
+            sql: Some("SELECT id, name FROM base".into()),
+            depends_on: vec!["base".into()],
+            location: String::new(),
+        },
+        s3: None,
+        index: IndexConfig::default(),
+        columns: vec![],
+        dict_encode: true,
+        lazy: false,
+        predicate_filter: Default::default(),
+        projection_filter: Default::default(),
+        on_start: OnStart::Eager,
+        refresh: None,
+        materialize: Some(MaterializeConfig {
+            residency: MaterializeResidency::Lazy,
+            sort_by: vec![],
+            reuse_on_start: false,
+        }),
+        managed: true,
+        temp: false,
+    };
+    backend
+        .register(lazy_cfg)
+        .await
+        .expect("register lazy_duck");
+    assert!(backend.is_managed("lazy_duck"), "lazy_duck must be managed");
+
+    // Verify storage generation dir was created.
+    let ds_storage_dir = storage_dir.join("lazy_duck");
+    assert!(
+        ds_storage_dir.is_dir(),
+        "storage dir for lazy_duck must exist after register"
+    );
+    let gen_count = std::fs::read_dir(&ds_storage_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .count();
+    assert!(gen_count > 0, "at least one generation dir must exist");
+
+    // Dataset serves queries.
+    let before = backend
+        .query(
+            "lazy_duck",
+            &QueryRequest {
+                page_size: 100,
+                ..empty_req()
+            },
+        )
+        .await
+        .expect("query before unregister");
+    let before_rows: Value = serde_json::from_str(&before).unwrap();
+    assert_eq!(
+        before_rows.as_array().unwrap().len(),
+        2,
+        "expected 2 rows before delete"
+    );
+
+    // Unregister (simulates DELETE /api/v1/queries/lazy_duck).
+    backend
+        .unregister("lazy_duck")
+        .await
+        .expect("unregister lazy_duck");
+
+    // Dataset must be gone from the registry.
+    assert!(
+        !backend.names().contains(&"lazy_duck".to_string()),
+        "lazy_duck must not appear in names() after unregister"
+    );
+
+    // Storage generations must be removed (R8.4).
+    assert!(
+        !ds_storage_dir.exists()
+            || std::fs::read_dir(&ds_storage_dir)
+                .map(|d| d.count() == 0)
+                .unwrap_or(true),
+        "storage dir must be empty/gone after unregister"
+    );
+
+    // Subsequent query must fail.
+    let after = backend
+        .query(
+            "lazy_duck",
+            &QueryRequest {
+                page_size: 100,
+                ..empty_req()
+            },
+        )
+        .await;
+    assert!(
+        after.is_err(),
+        "query after unregister must return Err, got: {after:?}"
+    );
 }

@@ -147,6 +147,32 @@ pub struct DatasetSchedule {
     pub jitter: bool,
 }
 
+/// A handle that lets any server component schedule a one-shot TTL deletion
+/// of a managed dataset (R8.1). Sending the dataset name and the fire
+/// instant into the channel causes the scheduler loop to call
+/// `backend.unregister(name)` at (approximately) the requested time.
+///
+/// The handle is stored as actix app-data (`web::Data<TtlHandle>`) so
+/// handlers can call [`TtlHandle::schedule`] after registering a temp dataset.
+#[derive(Clone)]
+pub struct TtlHandle {
+    tx: tokio::sync::mpsc::UnboundedSender<(tokio::time::Instant, String)>,
+}
+
+impl TtlHandle {
+    pub fn new(tx: tokio::sync::mpsc::UnboundedSender<(tokio::time::Instant, String)>) -> Self {
+        Self { tx }
+    }
+
+    /// Schedule the unregistration of `name` at `fire_at`.
+    ///
+    /// Fails silently if the scheduler has already shut down (the process is
+    /// exiting; the dataset will disappear with it anyway).
+    pub fn schedule(&self, name: String, fire_at: tokio::time::Instant) {
+        let _ = self.tx.send((fire_at, name));
+    }
+}
+
 /// Return value of [`RefreshScheduler::spawn`].
 pub struct SpawnResult {
     /// Join handles for the scheduler loop and optional cascade engine.
@@ -163,6 +189,8 @@ pub struct SpawnResult {
 pub struct RefreshScheduler {
     schedules: Vec<DatasetSchedule>,
     max_concurrent: usize,
+    #[cfg(feature = "metrics")]
+    metrics: Option<std::sync::Arc<crate::metrics::DatapressMetrics>>,
 }
 
 impl RefreshScheduler {
@@ -170,9 +198,25 @@ impl RefreshScheduler {
         Self {
             schedules,
             max_concurrent: max_concurrent.max(1),
+            #[cfg(feature = "metrics")]
+            metrics: None,
         }
     }
 
+    /// Attach Prometheus metrics so the scheduler can increment spill/override
+    /// counters on each successful build (T5.3 deviation closure).
+    #[cfg(feature = "metrics")]
+    pub fn with_metrics(
+        mut self,
+        metrics: std::sync::Arc<crate::metrics::DatapressMetrics>,
+    ) -> Self {
+        self.metrics = Some(metrics);
+        self
+    }
+
+    /// Whether there are no periodic schedules and no cascade DAG. Note:
+    /// the scheduler loop is still spawned even when this returns `true`,
+    /// because TTL deletion requests may arrive later.
     pub fn is_empty(&self) -> bool {
         self.schedules.is_empty()
     }
@@ -180,11 +224,17 @@ impl RefreshScheduler {
     /// Spawn the scheduler loop and, when `cascade_dag` is non-empty, a
     /// cascade engine task.  Cancel `shutdown` to stop both tasks between
     /// ticks (R3.6 / Phase 4).
+    ///
+    /// `ttl_rx` receives one-shot deletion requests from the queries API
+    /// (R8.1); pass the receiver end of a pre-created channel so the
+    /// transmit half can be wrapped in a `TtlHandle` before the HTTP server
+    /// starts.
     pub fn spawn(
         self,
         backend: Arc<dyn Backend>,
         shutdown: CancellationToken,
         cascade_dag: CascadeDag,
+        ttl_rx: Option<tokio::sync::mpsc::UnboundedReceiver<(tokio::time::Instant, String)>>,
     ) -> SpawnResult {
         let semaphore = Arc::new(Semaphore::new(self.max_concurrent));
 
@@ -204,12 +254,19 @@ impl RefreshScheduler {
             (None, None, None)
         };
 
+        #[cfg(feature = "metrics")]
+        let sched_metrics = self.metrics.clone();
+        #[cfg(not(feature = "metrics"))]
+        let sched_metrics = ();
+
         let sched_jh = tokio::spawn(run_loop(
             self.schedules,
             backend,
             semaphore,
             shutdown,
             cascade_rx,
+            ttl_rx,
+            sched_metrics,
         ));
 
         let mut handles = vec![sched_jh];
@@ -311,14 +368,23 @@ async fn run_loop(
     shutdown: CancellationToken,
     // Receives one-shot cascade requests from the cascade engine (R4.4).
     mut cascade_rx: Option<tokio::sync::mpsc::UnboundedReceiver<CascadeRequest>>,
+    // Receives one-shot TTL deletion requests from the queries API (R8.1).
+    // Wrapped in Option so the arm is skipped after the sender is dropped.
+    mut ttl_rx: Option<tokio::sync::mpsc::UnboundedReceiver<(tokio::time::Instant, String)>>,
+    #[cfg(feature = "metrics")] metrics: Option<std::sync::Arc<crate::metrics::DatapressMetrics>>,
+    #[cfg(not(feature = "metrics"))] _metrics: (),
 ) {
     // Only return early when there is genuinely nothing to do.
     if schedules.is_empty() && cascade_rx.is_none() {
-        return;
+        // Note: we never return early even when schedules+cascade are empty
+        // because TTL events may arrive at any time.
     }
 
     let mut rng = Rng::new();
     let now = Instant::now();
+
+    // Pending TTL deletions: (fire_at, name)
+    let mut ttl_pending: Vec<(tokio::time::Instant, String)> = Vec::new();
 
     let mut heap: BinaryHeap<Entry> = schedules
         .into_iter()
@@ -336,12 +402,61 @@ async fn run_loop(
         .collect();
 
     loop {
+        // Check for TTL events whose fire_at has passed or is next.
+        ttl_pending.retain(|(fire_at, name)| {
+            if *fire_at <= tokio::time::Instant::now() {
+                let name = name.clone();
+                let backend = backend.clone();
+                tokio::spawn(async move {
+                    match backend.unregister(&name).await {
+                        Ok(()) => log::info!("[ttl] dataset='{}' expired and unregistered", name),
+                        Err(e) => log::warn!("[ttl] dataset='{}' unregister error: {}", name, e),
+                    }
+                });
+                false // remove
+            } else {
+                true // keep
+            }
+        });
+
+        // Compute time until the next TTL fire (if any).
+        let ttl_next: Option<tokio::time::Instant> = ttl_pending.iter().map(|(t, _)| *t).min();
+
         tokio::select! {
             biased;
 
             _ = shutdown.cancelled() => {
                 log::debug!("[refresh] scheduler shutting down");
                 return;
+            }
+
+            // Receive new TTL requests.
+            item = async {
+                match ttl_rx.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                match item {
+                    Some((fire_at, name)) => {
+                        ttl_pending.push((fire_at, name));
+                    }
+                    None => {
+                        // TTL channel closed — stop polling it.
+                        ttl_rx = None;
+                    }
+                }
+            }
+
+            // Wake when the next TTL fires.
+            _ = async {
+                match ttl_next {
+                    Some(t) => tokio::time::sleep_until(t).await,
+                    None => std::future::pending::<()>().await,
+                }
+            } => {
+                // The top of the loop will process expired TTLs.
+                continue;
             }
 
             // R4.4: cascade requests — immediate fire, one-shot (no heap entry).
@@ -369,21 +484,35 @@ async fn run_loop(
                 match outcome {
                     Err(_elapsed) => {
                         log::warn!(
-                            "[cascade] '{}': build timed out after {:?}",
-                            name, timeout_dur,
+                            "[refresh] dataset='{}' trigger=cascade outcome=timeout elapsed_ms={}",
+                            name, timeout_dur.as_millis(),
                         );
                     }
                     Ok(Err(e)) => {
-                        log::warn!("[cascade] '{}': build failed: {e}", name);
+                        log::warn!(
+                            "[refresh] dataset='{}' trigger=cascade outcome=failed error=\"{}\"",
+                            name, e,
+                        );
                     }
                     Ok(Ok(None)) => {
-                        log::debug!("[cascade] '{}': coalesced (reload mutex held)", name);
+                        log::debug!("[refresh] dataset='{}' trigger=cascade outcome=skipped reason=\"reload mutex held\"", name);
                     }
                     Ok(Ok(Some(stats))) => {
                         log::info!(
-                            "[cascade] '{}': refreshed — {} rows in {} ms",
+                            "[publish] dataset='{}' trigger=cascade rows={} elapsed_ms={}",
                             name, stats.rows, stats.elapsed_ms,
                         );
+                        use crate::backend::{RefreshRecord, RefreshSource};
+                        use crate::storage::now_rfc3339;
+                        let rec = RefreshRecord {
+                            last_refresh_at: Some(now_rfc3339()),
+                            last_refresh_duration_ms: Some(stats.elapsed_ms),
+                            refresh_source: Some(RefreshSource::Cascade),
+                            consecutive_failures: 0,
+                            last_error: None,
+                            ..Default::default()
+                        };
+                        backend.record_refresh(&name, rec);
                     }
                 }
             }
@@ -421,43 +550,118 @@ async fn run_loop(
                     Err(_elapsed) => {
                         entry.consecutive_failures += 1;
                         log::warn!(
-                            "[refresh] '{}': timed out after {:?} (consecutive_failures={})",
+                            "[refresh] dataset='{}' outcome=timeout elapsed_ms={} consecutive_failures={}",
                             name,
-                            timeout_dur,
+                            timeout_dur.as_millis(),
                             entry.consecutive_failures,
                         );
+                        let err_msg = format!("timed out after {:?}", timeout_dur);
+                        {
+                            use crate::backend::RefreshRecord;
+                            let rec = RefreshRecord {
+                                consecutive_failures: entry.consecutive_failures,
+                                last_error: Some(truncate_error(&err_msg)),
+                                ..Default::default()
+                            };
+                            backend.record_refresh(&name, rec);
+                        }
                         backoff_interval(entry.interval, entry.consecutive_failures)
                     }
                     Ok(Err(e)) => {
                         entry.consecutive_failures += 1;
+                        let err_str = e.to_string();
                         log::warn!(
-                            "[refresh] '{}': failed: {} (consecutive_failures={})",
+                            "[refresh] dataset='{}' outcome=failed consecutive_failures={} error=\"{}\"",
                             name,
-                            e,
                             entry.consecutive_failures,
+                            err_str,
                         );
+                        {
+                            use crate::backend::RefreshRecord;
+                            let rec = RefreshRecord {
+                                consecutive_failures: entry.consecutive_failures,
+                                last_error: Some(truncate_error(&err_str)),
+                                ..Default::default()
+                            };
+                            backend.record_refresh(&name, rec);
+                        }
                         backoff_interval(entry.interval, entry.consecutive_failures)
                     }
                     Ok(Ok(None)) => {
                         // Coalesced — not a failure, normal interval.
-                        log::debug!("[refresh] '{}': skipped (reload mutex held)", name);
+                        log::debug!("[refresh] dataset='{}' outcome=skipped reason=\"reload mutex held\"", name);
                         entry.consecutive_failures = 0;
+                        {
+                            use crate::backend::RefreshRecord;
+                            let rec = RefreshRecord {
+                                consecutive_failures: 0,
+                                ..Default::default()
+                            };
+                            backend.record_refresh(&name, rec);
+                        }
                         entry.interval
                     }
                     Ok(Ok(Some(stats))) => {
                         entry.consecutive_failures = 0;
                         log::info!(
-                            "[refresh] '{}': refreshed — {} rows in {} ms",
+                            "[publish] dataset='{}' trigger=schedule rows={} elapsed_ms={}",
                             name,
                             stats.rows,
                             stats.elapsed_ms,
                         );
+                        {
+                            use crate::backend::{RefreshRecord, RefreshSource};
+                            use crate::storage::now_rfc3339;
+                            let rec = RefreshRecord {
+                                last_refresh_at: Some(now_rfc3339()),
+                                last_refresh_duration_ms: Some(stats.elapsed_ms),
+                                refresh_source: Some(RefreshSource::Schedule),
+                                consecutive_failures: 0,
+                                last_error: None,
+                                ..Default::default()
+                            };
+                            backend.record_refresh(&name, rec);
+                        }
+                        // Increment spill / memory-override metrics from build flags.
+                        #[cfg(feature = "metrics")]
+                        if let Some(ref m) = metrics {
+                            if stats.demoted_to_storage {
+                                crate::metrics::record_spill(m, &name);
+                            }
+                            if stats.memory_override_exceeded {
+                                crate::metrics::record_memory_override(m, &name);
+                            }
+                        }
                         entry.interval
                     }
                 };
 
                 let next = jittered(next_interval, entry.jitter, &mut rng);
                 entry.fire_at = Reverse(tick_start + next);
+                // Push next_refresh_at to the backend so /status can report it.
+                {
+                    use crate::backend::RefreshRecord;
+                    use std::time::{SystemTime, UNIX_EPOCH};
+                    let fire_instant = entry.fire_at.0;
+                    // Convert tokio Instant offset to a wall-clock RFC3339.
+                    let now_inst = tokio::time::Instant::now();
+                    let offset = if fire_instant > now_inst {
+                        fire_instant.duration_since(now_inst)
+                    } else {
+                        Duration::ZERO
+                    };
+                    let fire_wall = SystemTime::now() + offset;
+                    let secs = fire_wall
+                        .duration_since(UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    let next_at = format_rfc3339_secs(secs);
+                    let rec = RefreshRecord {
+                        next_refresh_at: Some(next_at),
+                        ..Default::default()
+                    };
+                    backend.record_refresh(&name, rec);
+                }
                 heap.push(entry);
             }
         }
@@ -468,6 +672,65 @@ async fn run_loop(
 fn backoff_interval(base: Duration, consecutive_failures: u32) -> Duration {
     let factor = 1u32.checked_shl(consecutive_failures.min(3)).unwrap_or(8);
     base * factor
+}
+
+/// Truncate an error string to 500 characters (T5.1).
+fn truncate_error(msg: &str) -> String {
+    if msg.len() <= 500 {
+        msg.to_string()
+    } else {
+        format!("{}…", &msg[..499])
+    }
+}
+
+/// Format a Unix epoch seconds value as an RFC-3339 UTC string
+/// (`YYYY-MM-DDTHH:MM:SSZ`) without pulling in the `chrono` crate.
+fn format_rfc3339_secs(secs: u64) -> String {
+    // Days since 1970-01-01 and time-within-day.
+    let s_per_day = 86_400u64;
+    let time_of_day = secs % s_per_day;
+    let days = secs / s_per_day;
+    let hh = time_of_day / 3600;
+    let mm = (time_of_day % 3600) / 60;
+    let ss = time_of_day % 60;
+
+    // Calendar conversion (no leap-seconds).
+    let (year, month, day) = days_to_ymd(days);
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        year, month, day, hh, mm, ss
+    )
+}
+
+fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
+    // Gregorian calendar algorithm (valid for Unix timestamps).
+    let mut year = 1970u64;
+    loop {
+        let dy = if is_leap(year) { 366 } else { 365 };
+        if days < dy {
+            break;
+        }
+        days -= dy;
+        year += 1;
+    }
+    let months = if is_leap(year) {
+        [31u64, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31u64, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+    let mut month = 1u64;
+    for dm in &months {
+        if days < *dm {
+            break;
+        }
+        days -= dm;
+        month += 1;
+    }
+    (year, month, days + 1)
+}
+
+fn is_leap(y: u64) -> bool {
+    (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400)
 }
 
 // ---------------------------------------------------------------------------
@@ -549,6 +812,7 @@ mod tests {
                 opt.unwrap_or(ReloadStats {
                     rows: 0,
                     elapsed_ms: 0,
+                    ..Default::default()
                 })
             })
         }
@@ -571,6 +835,7 @@ mod tests {
                 Ok(Some(ReloadStats {
                     rows: 42,
                     elapsed_ms: 1,
+                    ..Default::default()
                 }))
             }
         }
@@ -604,7 +869,10 @@ mod tests {
         let token = CancellationToken::new();
 
         let sched = RefreshScheduler::new(vec![schedule("ds", Duration::from_secs(1))], 1);
-        let result = sched.spawn(backend, token.clone(), HashMap::new());
+        let result = {
+            let (_ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+            sched.spawn(backend, token.clone(), HashMap::new(), Some(ttl_rx))
+        };
         tokio::task::yield_now().await;
         tokio::task::yield_now().await;
 
@@ -639,7 +907,10 @@ mod tests {
         let token = CancellationToken::new();
 
         let sched = RefreshScheduler::new(vec![schedule("ds", Duration::from_secs(1))], 1);
-        let result = sched.spawn(backend, token.clone(), HashMap::new());
+        let result = {
+            let (_ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+            sched.spawn(backend, token.clone(), HashMap::new(), Some(ttl_rx))
+        };
         tokio::task::yield_now().await;
 
         for _ in 0..4 {
@@ -704,6 +975,7 @@ mod tests {
                     o.unwrap_or(ReloadStats {
                         rows: 0,
                         elapsed_ms: 0,
+                        ..Default::default()
                     })
                 })
             }
@@ -717,6 +989,7 @@ mod tests {
                 Ok(Some(ReloadStats {
                     rows: 1,
                     elapsed_ms: 100,
+                    ..Default::default()
                 }))
             }
         }
@@ -736,7 +1009,10 @@ mod tests {
             ],
             1,
         );
-        let result = sched.spawn(backend, token.clone(), HashMap::new());
+        let result = {
+            let (_ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+            sched.spawn(backend, token.clone(), HashMap::new(), Some(ttl_rx))
+        };
         tokio::task::yield_now().await;
 
         for _ in 0..4 {
@@ -773,7 +1049,10 @@ mod tests {
             )],
             1,
         );
-        let result = sched.spawn(backend, token.clone(), HashMap::new());
+        let result = {
+            let (_ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+            sched.spawn(backend, token.clone(), HashMap::new(), Some(ttl_rx))
+        };
         tokio::task::yield_now().await;
 
         tokio::time::advance(Duration::from_secs(1)).await;
@@ -808,7 +1087,10 @@ mod tests {
         let token = CancellationToken::new();
 
         let sched = RefreshScheduler::new(vec![schedule("ds", Duration::from_secs(1))], 1);
-        let result = sched.spawn(backend, token.clone(), HashMap::new());
+        let result = {
+            let (_ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+            sched.spawn(backend, token.clone(), HashMap::new(), Some(ttl_rx))
+        };
         tokio::task::yield_now().await;
 
         tokio::time::advance(Duration::from_secs(1)).await;
@@ -869,7 +1151,10 @@ mod tests {
         let token = CancellationToken::new();
 
         let sched = RefreshScheduler::new(vec![schedule("ds", Duration::from_secs(100))], 1);
-        let result = sched.spawn(backend, token.clone(), HashMap::new());
+        let result = {
+            let (_ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+            sched.spawn(backend, token.clone(), HashMap::new(), Some(ttl_rx))
+        };
         tokio::task::yield_now().await;
 
         token.cancel();
@@ -971,6 +1256,7 @@ mod tests {
                 o.unwrap_or(ReloadStats {
                     rows: 0,
                     elapsed_ms: 0,
+                    ..Default::default()
                 })
             })
         }
@@ -997,6 +1283,7 @@ mod tests {
             Ok(Some(ReloadStats {
                 rows: 1,
                 elapsed_ms: 1,
+                ..Default::default()
             }))
         }
 
@@ -1055,7 +1342,10 @@ mod tests {
         let token = CancellationToken::new();
 
         let sched = RefreshScheduler::new(vec![], 4);
-        let result = sched.spawn(backend.clone(), token.clone(), dag);
+        let result = {
+            let (_ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+            sched.spawn(backend.clone(), token.clone(), dag, Some(ttl_rx))
+        };
         backend.set_cascade_handle(result.cascade_handle.clone().unwrap());
         tokio::task::yield_now().await;
 
@@ -1102,7 +1392,10 @@ mod tests {
         let token = CancellationToken::new();
 
         let sched = RefreshScheduler::new(vec![], 1);
-        let result = sched.spawn(backend.clone(), token.clone(), dag);
+        let result = {
+            let (_ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+            sched.spawn(backend.clone(), token.clone(), dag, Some(ttl_rx))
+        };
         backend.set_cascade_handle(result.cascade_handle.clone().unwrap());
         tokio::task::yield_now().await;
 
@@ -1180,6 +1473,7 @@ mod tests {
                     o.unwrap_or(ReloadStats {
                         rows: 0,
                         elapsed_ms: 0,
+                        ..Default::default()
                     })
                 })
             }
@@ -1197,6 +1491,7 @@ mod tests {
                 Ok(Some(ReloadStats {
                     rows: 1,
                     elapsed_ms: 1,
+                    ..Default::default()
                 }))
             }
             fn set_cascade_handle(&self, h: CascadeHandle) {
@@ -1212,7 +1507,10 @@ mod tests {
         let token = CancellationToken::new();
 
         let sched = RefreshScheduler::new(vec![], 1);
-        let result = sched.spawn(backend.clone(), token.clone(), dag);
+        let result = {
+            let (_ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+            sched.spawn(backend.clone(), token.clone(), dag, Some(ttl_rx))
+        };
         backend.set_cascade_handle(result.cascade_handle.clone().unwrap());
         tokio::task::yield_now().await;
 
@@ -1263,7 +1561,10 @@ mod tests {
         let token = CancellationToken::new();
 
         let sched = RefreshScheduler::new(vec![], 1);
-        let result = sched.spawn(backend.clone(), token.clone(), dag);
+        let result = {
+            let (_ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+            sched.spawn(backend.clone(), token.clone(), dag, Some(ttl_rx))
+        };
         backend.set_cascade_handle(result.cascade_handle.clone().unwrap());
         tokio::task::yield_now().await;
 
@@ -1347,6 +1648,7 @@ mod tests {
                     o.unwrap_or(ReloadStats {
                         rows: 0,
                         elapsed_ms: 0,
+                        ..Default::default()
                     })
                 })
             }
@@ -1363,6 +1665,7 @@ mod tests {
                 Ok(Some(ReloadStats {
                     rows: 1,
                     elapsed_ms: 0,
+                    ..Default::default()
                 }))
             }
             fn set_cascade_handle(&self, h: CascadeHandle) {
@@ -1377,7 +1680,10 @@ mod tests {
         let token = CancellationToken::new();
 
         let sched = RefreshScheduler::new(vec![], 4);
-        let result = sched.spawn(backend.clone(), token.clone(), dag);
+        let result = {
+            let (_ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+            sched.spawn(backend.clone(), token.clone(), dag, Some(ttl_rx))
+        };
         backend.set_cascade_handle(result.cascade_handle.clone().unwrap());
         tokio::task::yield_now().await;
 

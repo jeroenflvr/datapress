@@ -11,7 +11,7 @@ use actix_web::{App, HttpServer, middleware, web};
 use crate::backend::Backend;
 use crate::config::AppConfig;
 use crate::handlers;
-use crate::refresh::{CascadeDag, CascadeDep, DatasetSchedule, RefreshScheduler};
+use crate::refresh::{CascadeDag, CascadeDep, DatasetSchedule, RefreshScheduler, TtlHandle};
 use crate::timeout::Timeout;
 
 /// How the running server is asked to begin a graceful shutdown.
@@ -79,6 +79,25 @@ async fn run_server(
     let readiness_settings = handlers::ReadinessSettings {
         readiness_mode: cfg.server.startup.readiness.clone(),
     };
+
+    // Compute the saved-queries dir from the config path + optional override.
+    let saved_queries_dir: Option<std::path::PathBuf> =
+        crate::config::source_config_path().map(|p| {
+            let config_dir = p.parent().unwrap_or_else(|| std::path::Path::new("."));
+            match &cfg.server.saved_queries_dir {
+                Some(d) => {
+                    let path = std::path::PathBuf::from(d);
+                    if path.is_absolute() {
+                        path
+                    } else {
+                        config_dir.join(path)
+                    }
+                }
+                None => config_dir.join("datasets.d"),
+            }
+        });
+    // Routes are enabled when the admin token is set OR auth is configured.
+    let queries_api_enabled = crate::admin::require_admin_configured() || cfg.auth.enabled;
     let docs_cfg = cfg.docs.clone();
     let swagger_cfg = cfg.swagger.clone();
     let metrics_cfg = cfg.metrics.clone();
@@ -237,12 +256,21 @@ async fn run_server(
     #[cfg(feature = "metrics")]
     let metrics_mount = format!("{prefix}{}", metrics_cfg.path);
     #[cfg(feature = "metrics")]
-    let prometheus = {
+    let (prometheus, datapress_metrics) = {
         use actix_web_prom::PrometheusMetricsBuilder;
-        PrometheusMetricsBuilder::new("datapress")
+        use std::sync::Arc;
+        // Create a shared prometheus::Registry so our custom metrics and the
+        // actix-web-prom HTTP metrics all land in the same scrape target.
+        let reg = prometheus::Registry::new();
+        // Register our custom refresh/dataset metrics (T5.3) on this registry.
+        let dm = crate::metrics::DatapressMetrics::register(&reg)
+            .map_err(|e| std::io::Error::other(format!("metrics register failed: {e}")))?;
+        let prom = PrometheusMetricsBuilder::new("datapress")
             .endpoint(metrics_mount.as_str())
+            .registry(reg)
             .build()
-            .map_err(|e| std::io::Error::other(format!("metrics init failed: {e}")))?
+            .map_err(|e| std::io::Error::other(format!("metrics init failed: {e}")))?;
+        (prom, Arc::new(dm))
     };
     #[cfg(feature = "metrics")]
     let metrics_enabled = metrics_cfg.enabled;
@@ -263,15 +291,24 @@ async fn run_server(
     #[cfg(feature = "explorer")]
     let explorer_mount = format!("{prefix}{}", explorer_cfg.path);
 
-    let build_info = web::Data::new(handlers::BuildInfo::new(
-        // `&'static str` so it fits BuildInfo's compile-time fields.
-        // The match keeps this generic enough for future backends.
-        match label {
-            "DuckDB" => "DuckDB",
-            "DataFusion" => "DataFusion",
-            _ => "unknown",
-        },
-    ));
+    let build_info = web::Data::new(
+        handlers::BuildInfo::new(
+            // `&'static str` so it fits BuildInfo's compile-time fields.
+            // The match keeps this generic enough for future backends.
+            match label {
+                "DuckDB" => "DuckDB",
+                "DataFusion" => "DataFusion",
+                _ => "unknown",
+            },
+        )
+        .with_storage_backend(cfg.server.storage.as_ref().map(|s| {
+            use crate::config::StorageBackendKind;
+            match s.backend {
+                StorageBackendKind::Local => "local".to_string(),
+                StorageBackendKind::S3 => "s3".to_string(),
+            }
+        })),
+    );
 
     // One Parquet export cache shared across all workers (it wraps an Arc),
     // so a dataset is encoded at most once and every worker serves the same
@@ -344,16 +381,34 @@ async fn run_server(
             oauth2: explorer_oauth2,
             environment: cfg.server.environment.clone(),
             environment_color: cfg.server.environment_color.clone(),
+            queries_enabled: queries_api_enabled,
+            storage_backend: cfg.server.storage.as_ref().map(|s| {
+                use crate::config::StorageBackendKind;
+                match s.backend {
+                    StorageBackendKind::Local => "local".to_string(),
+                    StorageBackendKind::S3 => "s3".to_string(),
+                }
+            }),
         }))
     } else {
         None
     };
+
+    // Create the TTL channel before the HttpServer closure so `ttl_handle`
+    // can be cloned into app data. The receiver is consumed by the scheduler
+    // loop below.
+    let (ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel::<(tokio::time::Instant, String)>();
+    let ttl_handle = TtlHandle::new(ttl_tx);
 
     // Clone backend for the scheduler BEFORE it is moved into HttpServer::new.
     let scheduler_backend = backend.clone();
     // Clone again to install the cascade handle after spawn (both need the
     // concrete type to call set_cascade_handle via the Backend trait).
     let scheduler_backend_for_cascade = backend.clone();
+    // Clone DatapressMetrics for the scheduler before the HttpServer closure
+    // moves the original.
+    #[cfg(feature = "metrics")]
+    let scheduler_metrics = datapress_metrics.clone();
 
     let mut server = HttpServer::new(move || {
         let backend = backend.clone();
@@ -378,6 +433,8 @@ async fn run_server(
         let auth_state = auth_state.clone();
         #[cfg(feature = "metrics")]
         let prometheus = prometheus.clone();
+        #[cfg(feature = "metrics")]
+        let datapress_metrics = datapress_metrics.clone();
         let app = App::new()
             .app_data(web::Data::new(backend))
             .app_data(build_info.clone())
@@ -385,8 +442,16 @@ async fn run_server(
             .app_data(web::Data::new(sql_settings))
             .app_data(web::Data::new(readiness_settings.clone()))
             .app_data(parquet_cache.clone())
+            .app_data(web::Data::new(ttl_handle.clone()))
+            .app_data(web::Data::new(handlers::SavedQueriesSettings {
+                dir: saved_queries_dir.clone(),
+                enabled: queries_api_enabled,
+            }))
             .app_data(json_cfg)
-            .app_data(pay_cfg)
+            .app_data(pay_cfg);
+        #[cfg(feature = "metrics")]
+        let app = app.app_data(web::Data::from(datapress_metrics));
+        let app = app
             .wrap(middleware::Condition::new(timeout_ms > 0, timeout))
             .wrap(middleware::Condition::new(
                 compress,
@@ -507,9 +572,11 @@ async fn run_server(
     // Shutdown token shared between the OS-signal listener and the scheduler.
     let scheduler_token = tokio_util::sync::CancellationToken::new();
 
-    // Spawn the refresh scheduler (and cascade engine if configured).
-    let should_spawn = !refresh_schedules.is_empty() || !cascade_dag.is_empty();
-    let scheduler_handles: Vec<tokio::task::JoinHandle<()>> = if should_spawn {
+    // Always spawn the refresh scheduler — even when there are no periodic
+    // schedules or cascade edges, the scheduler loop handles TTL deletions
+    // for `kind = "temp"` datasets from the queries API (R8.1).
+    let has_schedules_or_cascade = !refresh_schedules.is_empty() || !cascade_dag.is_empty();
+    if has_schedules_or_cascade {
         log::info!(
             "[refresh] starting scheduler: {} scheduled dataset(s), {} cascade upstream(s), \
              max_concurrent={}",
@@ -517,16 +584,21 @@ async fn run_server(
             cascade_dag.len(),
             refresh_max_concurrent,
         );
-        let sched = RefreshScheduler::new(refresh_schedules, refresh_max_concurrent);
-        let result = sched.spawn(scheduler_backend, scheduler_token.clone(), cascade_dag);
-        // Install cascade handle on the backend so publishes trigger cascades.
-        if let Some(handle) = result.cascade_handle {
-            scheduler_backend_for_cascade.set_cascade_handle(handle);
-        }
-        result.handles
-    } else {
-        Vec::new()
-    };
+    }
+    let sched = RefreshScheduler::new(refresh_schedules, refresh_max_concurrent);
+    #[cfg(feature = "metrics")]
+    let sched = sched.with_metrics(scheduler_metrics);
+    let result = sched.spawn(
+        scheduler_backend,
+        scheduler_token.clone(),
+        cascade_dag,
+        Some(ttl_rx),
+    );
+    // Install cascade handle on the backend so publishes trigger cascades.
+    if let Some(handle) = result.cascade_handle {
+        scheduler_backend_for_cascade.set_cascade_handle(handle);
+    }
+    let scheduler_handles = result.handles;
 
     tokio::spawn(shutdown_listener(
         handle,

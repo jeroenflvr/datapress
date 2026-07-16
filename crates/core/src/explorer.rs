@@ -69,6 +69,14 @@ pub struct ExplorerState {
     /// Optional explicit Bootstrap colour name (e.g. `"danger"`, `"success"`).
     /// When `None` the colour is derived automatically from `environment`.
     pub environment_color: Option<String>,
+    /// Whether the saved-queries API (`POST /api/v1/queries`) is available on
+    /// this server. Drives the "Save as dataset" action in the explorer UI.
+    /// `false` hides the action entirely (R8.7: probe once, hide on 404).
+    pub queries_enabled: bool,
+    /// Active server-level materialization storage backend, e.g. `"local"` or
+    /// `"s3"`.  `None` when `[server.storage]` is not configured — the
+    /// residency/sort_by form fields are hidden when `None` (R8.7).
+    pub storage_backend: Option<String>,
 }
 
 #[derive(Template)]
@@ -97,6 +105,11 @@ struct IndexTemplate {
     environment: Option<String>,
     /// Bootstrap badge class computed from `environment` / `environment_color`.
     environment_badge_class: String,
+    /// Whether the saved-queries API is enabled (drives "Save as dataset" UI).
+    queries_enabled: bool,
+    /// Active storage backend label for the save-dataset form residency field.
+    /// Empty string = no storage configured.
+    storage_backend: String,
 }
 
 struct DatasetListItem {
@@ -140,6 +153,11 @@ struct DatasetTemplate {
     s3_addressing: String,
     s3_partitioning: String,
     s3_creds: String,
+    /// API base path (e.g. `/api/v1`). Used by JS reload buttons.
+    api_base: String,
+    /// Whether this dataset was created via the saved-queries API
+    /// (managed = true). Only managed datasets show the delete action.
+    is_managed: bool,
 }
 
 struct ColumnView {
@@ -184,6 +202,7 @@ pub fn configure(state: web::Data<ExplorerState>, cfg: &mut web::ServiceConfig) 
                 .route("/assets/explorer.css", web::get().to(asset_explorer_css))
                 .route("/assets/explorer.js", web::get().to(asset_explorer_js))
                 .route("/assets/query-api.js", web::get().to(asset_query_api_js))
+                .route("/assets/manage.js", web::get().to(asset_manage_js))
                 .route("/assets/terminal.css", web::get().to(asset_terminal_css))
                 .route("/assets/terminal.js", web::get().to(asset_terminal_js))
                 .route("/assets/pypi.svg", web::get().to(asset_pypi_icon))
@@ -294,6 +313,8 @@ async fn index(state: web::Data<ExplorerState>) -> HttpResponse {
         config_path,
         environment: state.environment.clone(),
         environment_badge_class,
+        queries_enabled: state.queries_enabled,
+        storage_backend: state.storage_backend.as_deref().unwrap_or("").to_string(),
     };
     render(&tpl)
 }
@@ -324,6 +345,7 @@ async fn oauth2_redirect() -> HttpResponse {
 const EXPLORER_CSS: &str = include_str!("../assets/explorer/explorer.css");
 const EXPLORER_JS: &str = include_str!("../assets/explorer/explorer.js");
 const QUERY_API_JS: &str = include_str!("../assets/explorer/query-api.js");
+const MANAGE_JS: &str = include_str!("../assets/explorer/manage.js");
 const TERMINAL_CSS: &str = include_str!("../assets/explorer/terminal.css");
 const TERMINAL_JS: &str = include_str!("../assets/explorer/terminal.js");
 const OAUTH2_REDIRECT_HTML: &str = include_str!("../assets/explorer/oauth2-redirect.html");
@@ -349,6 +371,10 @@ async fn asset_explorer_js() -> HttpResponse {
 
 async fn asset_query_api_js() -> HttpResponse {
     asset("application/javascript; charset=utf-8", QUERY_API_JS)
+}
+
+async fn asset_manage_js() -> HttpResponse {
+    asset("application/javascript; charset=utf-8", MANAGE_JS)
 }
 
 async fn asset_terminal_css() -> HttpResponse {
@@ -520,6 +546,8 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
         s3_addressing,
         s3_partitioning,
         s3_creds,
+        api_base: state.api_base.clone(),
+        is_managed: state.backend.is_managed(&ds.name),
     };
     render(&tpl)
 }
@@ -694,6 +722,8 @@ fn build_register_config(f: &RegisterForm) -> Result<DatasetConfig, crate::error
         on_start: crate::config::OnStart::Eager,
         refresh: None,
         materialize: None,
+        managed: false,
+        temp: false,
     })
 }
 

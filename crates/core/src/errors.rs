@@ -9,6 +9,8 @@ pub enum AppError {
     Unauthorized(String),
     Forbidden(String),
     Unavailable(String),
+    /// HTTP 409 Conflict — e.g. deleting a dataset that has dependents.
+    Conflict(String),
     /// Dataset is registered but not yet ready to serve queries (pending or
     /// building). The HTTP response carries `Retry-After: 2` to guide clients.
     NotReady {
@@ -31,6 +33,7 @@ impl std::fmt::Display for AppError {
             AppError::Unauthorized(m) => write!(f, "unauthorized: {m}"),
             AppError::Forbidden(m) => write!(f, "forbidden: {m}"),
             AppError::Unavailable(m) => write!(f, "service unavailable: {m}"),
+            AppError::Conflict(m) => write!(f, "conflict: {m}"),
             AppError::NotReady { dataset, state } => {
                 write!(f, "dataset '{dataset}' is not ready (state: {state})")
             }
@@ -82,6 +85,7 @@ impl ResponseError for AppError {
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
+            AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::Unavailable(_) | AppError::NotReady { .. } => StatusCode::SERVICE_UNAVAILABLE,
             _ => StatusCode::BAD_REQUEST,
         }

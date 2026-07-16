@@ -148,9 +148,10 @@ fn openapi(oauth2: Option<&ResolvedOAuth2>, prefix: &str) -> OpenApi {
                 "get": {
                     "tags":    ["datasets"],
                     "summary": "List registered datasets",
+                    "description": "Returns status entries for all configured datasets (including pending, building, and failed states). Each entry includes lifecycle state, kind, residency, refresh observability fields, and `depends_on`.",
                     "responses": {
                         "200": {
-                            "description": "Dataset summaries",
+                            "description": "Dataset status entries",
                             "content": {
                                 "application/json": {
                                     "schema": {
@@ -158,7 +159,7 @@ fn openapi(oauth2: Option<&ResolvedOAuth2>, prefix: &str) -> OpenApi {
                                         "properties": {
                                             "datasets": {
                                                 "type":  "array",
-                                                "items": { "$ref": "#/components/schemas/DatasetSummary" }
+                                                "items": { "$ref": "#/components/schemas/DatasetStatusEntry" }
                                             }
                                         }
                                     }
@@ -279,6 +280,12 @@ fn openapi(oauth2: Option<&ResolvedOAuth2>, prefix: &str) -> OpenApi {
                     "responses": {
                         "200": {
                             "description": "Query result (JSON or Arrow IPC)",
+                            "headers": {
+                                "X-Dataset-Refreshed-At": {
+                                    "description": "RFC-3339 publish timestamp of the current generation (T5.2).",
+                                    "schema": { "type": "string", "format": "date-time" }
+                                }
+                            },
                             "content": {
                                 "application/json": { "schema": { "type": "object" } },
                                 "application/vnd.apache.arrow.stream": { "schema": { "type": "string", "format": "binary" } }
@@ -353,6 +360,45 @@ fn openapi(oauth2: Option<&ResolvedOAuth2>, prefix: &str) -> OpenApi {
                             }
                         },
                         "400": { "description": "Invalid request" },
+                        "404": { "description": "Unknown dataset" }
+                    }
+                }
+            },
+            "/api/v1/datasets/{name}/status": {
+                "get": {
+                    "tags":    ["datasets"],
+                    "summary": "Full status entry for a single dataset (T5.1)",
+                    "description": "Returns a comprehensive status object including lifecycle state (`state`), source kind, residency, refresh observability fields (`last_refresh_at`, `last_refresh_duration_ms`, `next_refresh_at`, `refresh_source`, `consecutive_failures`, `last_error`), row count, column count, storage metadata, and `depends_on`.",
+                    "parameters": [ dataset_name_param ],
+                    "responses": {
+                        "200": {
+                            "description": "Dataset status",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "name":                     { "type": "string" },
+                                            "state":                    { "type": "string", "enum": ["pending", "building", "published", "failed"] },
+                                            "kind":                     { "type": "string", "enum": ["parquet", "delta", "query"] },
+                                            "residency":                { "type": "string", "enum": ["memory", "lazy"] },
+                                            "storage_bytes":            { "type": "integer", "nullable": true },
+                                            "generation_id":            { "type": "string", "nullable": true },
+                                            "last_refresh_at":          { "type": "string", "format": "date-time", "nullable": true },
+                                            "last_refresh_duration_ms": { "type": "integer", "nullable": true },
+                                            "next_refresh_at":          { "type": "string", "format": "date-time", "nullable": true },
+                                            "refresh_source":           { "type": "string", "enum": ["startup", "manual", "schedule", "cascade"], "nullable": true },
+                                            "consecutive_failures":     { "type": "integer" },
+                                            "last_error":               { "type": "string", "nullable": true },
+                                            "rows":                     { "type": "integer" },
+                                            "columns":                  { "type": "integer" },
+                                            "lazy":                     { "type": "boolean" },
+                                            "depends_on":               { "type": "array", "items": { "type": "string" } }
+                                        }
+                                    }
+                                }
+                            }
+                        },
                         "404": { "description": "Unknown dataset" }
                     }
                 }
@@ -453,6 +499,28 @@ fn openapi(oauth2: Option<&ResolvedOAuth2>, prefix: &str) -> OpenApi {
                     "properties": {
                         "version": { "type": "string" },
                         "backend": { "type": "string", "enum": ["DuckDB", "DataFusion"] }
+                    }
+                },
+                "DatasetStatusEntry": {
+                    "type": "object",
+                    "description": "Full per-dataset status including refresh observability fields (T5.1).",
+                    "properties": {
+                        "name":                     { "type": "string" },
+                        "state":                    { "type": "string", "enum": ["pending", "building", "published", "failed"] },
+                        "kind":                     { "type": "string", "enum": ["parquet", "delta", "query"] },
+                        "residency":                { "type": "string", "enum": ["memory", "lazy"] },
+                        "storage_bytes":            { "type": "integer", "nullable": true },
+                        "generation_id":            { "type": "string", "nullable": true },
+                        "last_refresh_at":          { "type": "string", "format": "date-time", "nullable": true, "description": "RFC-3339 timestamp of the last successful publish." },
+                        "last_refresh_duration_ms": { "type": "integer", "nullable": true, "description": "Build duration of the last successful publish in milliseconds." },
+                        "next_refresh_at":          { "type": "string", "format": "date-time", "nullable": true, "description": "RFC-3339 of the next scheduled refresh fire. null for non-scheduled datasets." },
+                        "refresh_source":           { "type": "string", "enum": ["startup", "manual", "schedule", "cascade"], "nullable": true },
+                        "consecutive_failures":     { "type": "integer", "description": "Consecutive scheduler failures since last success. 0 when no scheduler or last tick succeeded." },
+                        "last_error":               { "type": "string", "nullable": true, "description": "Error message from the last failed build/refresh, truncated to 500 characters." },
+                        "rows":                     { "type": "integer" },
+                        "columns":                  { "type": "integer" },
+                        "lazy":                     { "type": "boolean" },
+                        "depends_on":               { "type": "array", "items": { "type": "string" }, "description": "Upstream dataset names this dataset depends on (query kind only)." }
                     }
                 },
                 "DatasetSummary": {

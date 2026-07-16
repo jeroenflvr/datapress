@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::errors::AppError;
@@ -945,4 +945,67 @@ mod tests {
             AppError::Forbidden(_)
         ));
     }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 — Saved Queries API models
+// ---------------------------------------------------------------------------
+
+/// Whether a runtime-created dataset should survive a server restart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SavedQueryKind {
+    /// Exists only for the lifetime of the current process. Lost on restart.
+    Temp,
+    /// Persisted to `datasets.d/<name>.toml`; rebuilt on next startup.
+    Query,
+}
+
+/// Request body for `POST /api/v1/queries`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateQueryRequest {
+    /// Dataset name. Must be alphanumeric + `_`, `-`, `.`; must not conflict
+    /// with any existing dataset name; must not be `reload-all`.
+    pub name: String,
+    /// Read-only SQL statement that will be materialised. `depends_on` is
+    /// **inferred** from this SQL by the Phase 1 validator; every table
+    /// referenced must be a registered dataset.
+    pub sql: String,
+    /// `"temp"` (default): in-memory, lost on restart.
+    /// `"query"`: persisted to `datasets.d/` and rebuilt on restart.
+    #[serde(default = "default_query_kind")]
+    pub kind: SavedQueryKind,
+    /// Optional refresh schedule. Only meaningful for `kind = "query"`.
+    #[serde(default)]
+    pub refresh: Option<crate::config::RefreshConfig>,
+    /// For `kind = "temp"` only: optional lifetime after which the dataset
+    /// is automatically unregistered. E.g. `"2h"`, `"30m"`.
+    #[serde(
+        default,
+        deserialize_with = "crate::config::deserialize_optional_duration_pub"
+    )]
+    pub ttl: Option<std::time::Duration>,
+    /// Materialization storage options. Only valid on `kind = "query"`.
+    #[serde(default)]
+    pub materialize: Option<crate::config::MaterializeConfig>,
+    /// Equality index options (DataFusion-only; ignored on DuckDB).
+    #[serde(default)]
+    pub index: Option<crate::config::IndexConfig>,
+}
+
+fn default_query_kind() -> SavedQueryKind {
+    SavedQueryKind::Temp
+}
+
+/// Response body for `POST /api/v1/queries` and entries in
+/// `GET /api/v1/queries`.
+#[derive(Debug, Serialize)]
+pub struct SavedQueryEntry {
+    pub name: String,
+    /// `"temp"` or `"query"`.
+    pub kind: SavedQueryKind,
+    /// Inferred (at create time) or configured `depends_on` list.
+    pub depends_on: Vec<String>,
+    /// Current state of the dataset.
+    pub state: String,
 }

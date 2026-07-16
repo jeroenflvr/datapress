@@ -92,6 +92,8 @@ fn two_dataset_cfg(
                 on_start: datapress_core::config::OnStart::Eager,
                 refresh: None,
                 materialize: None,
+                managed: false,
+                temp: false,
             },
             DatasetConfig {
                 name: "derived".into(),
@@ -115,6 +117,8 @@ fn two_dataset_cfg(
                     sort_by: vec![],
                     reuse_on_start: false,
                 }),
+                managed: false,
+                temp: false,
             },
         ],
     }
@@ -284,6 +288,8 @@ async fn test_duckdb_auto_demotion() {
                 on_start: datapress_core::config::OnStart::Eager,
                 refresh: None,
                 materialize: None,
+                managed: false,
+                temp: false,
             },
             DatasetConfig {
                 name: "derived".into(),
@@ -307,6 +313,8 @@ async fn test_duckdb_auto_demotion() {
                     sort_by: vec![],
                     reuse_on_start: false,
                 }),
+                managed: false,
+                temp: false,
             },
         ],
     };
@@ -374,6 +382,8 @@ async fn test_duckdb_sort_by_ordered_results() {
                 on_start: datapress_core::config::OnStart::Eager,
                 refresh: None,
                 materialize: None,
+                managed: false,
+                temp: false,
             },
             DatasetConfig {
                 name: "derived".into(),
@@ -397,6 +407,8 @@ async fn test_duckdb_sort_by_ordered_results() {
                     sort_by: vec!["id".to_string()],
                     reuse_on_start: false,
                 }),
+                managed: false,
+                temp: false,
             },
         ],
     };

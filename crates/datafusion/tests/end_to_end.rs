@@ -124,6 +124,8 @@ async fn make_delta_store_lazy(location: &str, lazy: bool) -> Store {
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         }],
     };
     Store::load(&cfg).await.expect("Store::load")
@@ -186,6 +188,8 @@ async fn make_store_with_max_page_size(location: &str, lazy: bool, max_page_size
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         }],
     };
     Store::load(&cfg).await.expect("Store::load")
@@ -817,6 +821,8 @@ async fn make_store_with_filters(
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         }],
     };
     Store::load(&cfg).await.expect("Store::load")
@@ -881,6 +887,8 @@ async fn unknown_filter_column_fails_registration() {
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         }],
     };
     // A typo'd filter column must not silently pass — registration fails.
@@ -931,6 +939,8 @@ fn make_query_cfg(
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         });
     }
 
@@ -953,6 +963,8 @@ fn make_query_cfg(
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         });
     }
 
@@ -1103,6 +1115,8 @@ async fn df_query_source_reload() {
                 on_start: datapress_core::config::OnStart::Eager,
                 refresh: None,
                 materialize: None,
+                managed: false,
+                temp: false,
             },
             DatasetConfig {
                 name: "derived".into(),
@@ -1122,6 +1136,8 @@ async fn df_query_source_reload() {
                 on_start: datapress_core::config::OnStart::Eager,
                 refresh: None,
                 materialize: None,
+                managed: false,
+                temp: false,
             },
         ],
     };
@@ -1166,6 +1182,8 @@ fn df_validation_missing_depends_on() {
         on_start: datapress_core::config::OnStart::Eager,
         refresh: None,
         materialize: None,
+        managed: false,
+        temp: false,
     }];
 
     // Query with empty depends_on.
@@ -1187,6 +1205,8 @@ fn df_validation_missing_depends_on() {
         on_start: datapress_core::config::OnStart::Eager,
         refresh: None,
         materialize: None,
+        managed: false,
+        temp: false,
     });
 
     let cfg = AppConfig {
@@ -1241,6 +1261,8 @@ fn df_validation_rejections() {
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         }
     }
 
@@ -1263,6 +1285,8 @@ fn df_validation_rejections() {
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         }
     }
 
@@ -1312,4 +1336,311 @@ fn df_validation_rejections() {
             "expected cycle error, got: {err}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6A gap-closure: persisted round-trip & delete+storage-GC (DataFusion)
+// ---------------------------------------------------------------------------
+
+/// Phase 6A gap — Test 1 (DataFusion): POST /queries with kind=query writes
+/// a datasets.d/ file; reloading AppConfig picks it up; the new Store builds
+/// and serves the managed dataset correctly.
+///
+/// Uses only a parquet fixture for the base dataset (no HTTP server needed).
+#[tokio::test]
+async fn phase6_managed_query_persisted_round_trip_df() {
+    use datapress_core::config::{
+        AppConfig, MaterializeConfig, MaterializeResidency, OnStart, StorageBackendKind,
+        StorageConfig,
+    };
+
+    let tmp = TempDir::new().unwrap();
+
+    // 1. Write base parquet.
+    let parquet_path = tmp.path().join("base.parquet");
+    write_parquet(
+        &parquet_path,
+        &[1, 2, 3],
+        &["alpha", "beta", "gamma"],
+        &[1.0, 2.0, 3.0],
+    );
+
+    // 2. Write a minimal datasets.toml referencing the base parquet.
+    //    Omit saved_queries_dir so it defaults to <config_dir>/datasets.d/.
+    let toml_path = tmp.path().join("datasets.toml");
+    let toml_content = format!(
+        r#"
+[[dataset]]
+name = "base"
+
+[dataset.source]
+kind = "parquet"
+location = "{}"
+"#,
+        parquet_path.display()
+    );
+    std::fs::write(&toml_path, &toml_content).unwrap();
+
+    // 3. Load config and build Store.
+    let cfg = AppConfig::load(&toml_path.to_string_lossy()).expect("AppConfig::load (first)");
+    let store = Arc::new(Store::load(&cfg).await.expect("Store::load (first)"));
+    assert!(
+        store.names().contains(&"base".to_string()),
+        "base should be published"
+    );
+
+    // 4. Construct the managed query DatasetConfig (simulates what the
+    //    /queries handler builds after SQL inference).
+    let derived_cfg = DatasetConfig {
+        name: "derived".into(),
+        managed: true,
+        temp: false,
+        source: SourceConfig {
+            kind: SourceKind::Query,
+            sql: Some("SELECT id, name FROM base WHERE id > 1".into()),
+            depends_on: vec!["base".into()],
+            location: String::new(),
+        },
+        s3: None,
+        index: IndexConfig::default(),
+        columns: vec![],
+        dict_encode: true,
+        lazy: false,
+        predicate_filter: Default::default(),
+        projection_filter: Default::default(),
+        on_start: OnStart::Eager,
+        refresh: None,
+        materialize: None,
+    };
+
+    // 5. Register via backend (mirrors what the handler does).
+    store
+        .register(derived_cfg.clone())
+        .await
+        .expect("register derived");
+    assert!(
+        store.is_managed("derived"),
+        "derived must be flagged managed"
+    );
+
+    // 6. Persist to datasets.d/ (mirrors what the handler does after build).
+    let datasets_d = tmp.path().join("datasets.d");
+    derived_cfg
+        .persist_to_managed_dir(&datasets_d)
+        .expect("persist_to_managed_dir");
+    let managed_file = datasets_d.join("derived.toml");
+    assert!(managed_file.exists(), "datasets.d/derived.toml must exist");
+
+    // 7. Drop the old Store (simulate server restart).
+    drop(store);
+
+    // 8. Reload AppConfig — must pick up datasets.d/derived.toml automatically.
+    let cfg2 = AppConfig::load(&toml_path.to_string_lossy()).expect("AppConfig::load (second)");
+    assert_eq!(
+        cfg2.datasets.len(),
+        2,
+        "both base and derived must be in cfg"
+    );
+    let managed_entry = cfg2
+        .datasets
+        .iter()
+        .find(|d| d.name == "derived")
+        .expect("derived in reloaded cfg");
+    assert!(
+        managed_entry.managed,
+        "reloaded derived must be flagged managed"
+    );
+    assert_eq!(
+        managed_entry.source.sql.as_deref(),
+        Some("SELECT id, name FROM base WHERE id > 1")
+    );
+
+    // 9. Build a new Store from the reloaded config.
+    let store2 = Arc::new(Store::load(&cfg2).await.expect("Store::load (second)"));
+    assert!(
+        store2.names().contains(&"derived".to_string()),
+        "derived must be published in new Store"
+    );
+
+    // 10. Query the derived dataset — must return rows (id>1 → rows 2 and 3).
+    let result = store2
+        .query(
+            "derived",
+            &QueryRequest {
+                page_size: 100,
+                ..empty_req()
+            },
+        )
+        .await
+        .expect("query derived");
+    let rows: Value = serde_json::from_str(&result).unwrap();
+    let arr = rows.as_array().expect("JSON array");
+    assert_eq!(arr.len(), 2, "expected 2 rows (id > 1) from derived");
+}
+
+/// Phase 6A gap — Test 2 (DataFusion): DELETE unregisters the dataset from
+/// the engine, marks it gone, and removes its storage generations from disk
+/// (R8.4 / R2B.4) for a lazy-residency dataset.
+#[tokio::test]
+async fn phase6_managed_query_delete_cleans_storage_df() {
+    use datapress_core::config::{
+        MaterializeConfig, MaterializeResidency, OnStart, StorageBackendKind, StorageConfig,
+    };
+    use datapress_core::errors::AppError;
+
+    let tmp = TempDir::new().unwrap();
+    let parquet_path = tmp.path().join("base.parquet");
+    write_parquet(&parquet_path, &[1, 2], &["a", "b"], &[1.0, 2.0]);
+
+    let storage_dir = tmp.path().join("storage");
+    let cfg = AppConfig {
+        server: datapress_core::config::ServerConfig {
+            storage: Some(StorageConfig {
+                backend: StorageBackendKind::Local,
+                root: storage_dir.to_string_lossy().to_string(),
+                force_lazy_above_mb: 0, // force lazy at any size
+                s3: Default::default(),
+            }),
+            ..datapress_core::config::ServerConfig::default()
+        },
+        docs: Default::default(),
+        swagger: Default::default(),
+        auth: Default::default(),
+        metrics: Default::default(),
+        explorer: Default::default(),
+        sql: Default::default(),
+        datafusion: Default::default(),
+        datasets: vec![DatasetConfig {
+            name: "base".into(),
+            source: SourceConfig {
+                kind: SourceKind::Parquet,
+                location: parquet_path.to_string_lossy().to_string(),
+                sql: None,
+                depends_on: vec![],
+            },
+            s3: None,
+            index: IndexConfig::default(),
+            columns: vec![],
+            dict_encode: true,
+            lazy: false,
+            predicate_filter: Default::default(),
+            projection_filter: Default::default(),
+            on_start: OnStart::Eager,
+            refresh: None,
+            materialize: None,
+            managed: false,
+            temp: false,
+        }],
+    };
+
+    let store = Arc::new(Store::load(&cfg).await.expect("Store::load"));
+
+    // Register a managed lazy query dataset.
+    let lazy_cfg = DatasetConfig {
+        name: "lazy_derived".into(),
+        source: SourceConfig {
+            kind: SourceKind::Query,
+            sql: Some("SELECT id, name FROM base".into()),
+            depends_on: vec!["base".into()],
+            location: String::new(),
+        },
+        s3: None,
+        index: IndexConfig::default(),
+        columns: vec![],
+        dict_encode: true,
+        lazy: false,
+        predicate_filter: Default::default(),
+        projection_filter: Default::default(),
+        on_start: OnStart::Eager,
+        refresh: None,
+        materialize: Some(MaterializeConfig {
+            residency: MaterializeResidency::Lazy,
+            sort_by: vec![],
+            reuse_on_start: false,
+        }),
+        managed: true,
+        temp: false,
+    };
+    store
+        .register(lazy_cfg)
+        .await
+        .expect("register lazy_derived");
+    assert!(
+        store.is_managed("lazy_derived"),
+        "lazy_derived must be managed"
+    );
+
+    // Verify at least one generation directory was written to storage.
+    let ds_storage_dir = storage_dir.join("lazy_derived");
+    assert!(
+        ds_storage_dir.is_dir(),
+        "storage dir for lazy_derived must exist after register"
+    );
+    let gen_count = std::fs::read_dir(&ds_storage_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .count();
+    assert!(gen_count > 0, "at least one generation dir must exist");
+
+    // Verify the dataset serves queries.
+    let result = store
+        .query(
+            "lazy_derived",
+            &QueryRequest {
+                page_size: 100,
+                ..empty_req()
+            },
+        )
+        .await
+        .expect("query before unregister");
+    let rows: Value = serde_json::from_str(&result).unwrap();
+    assert_eq!(
+        rows.as_array().unwrap().len(),
+        2,
+        "expected 2 rows before delete"
+    );
+
+    // Unregister (simulates DELETE /api/v1/queries/lazy_derived).
+    store
+        .unregister("lazy_derived")
+        .await
+        .expect("unregister lazy_derived");
+
+    // Dataset must be gone from the registry.
+    assert!(
+        !store.names().contains(&"lazy_derived".to_string()),
+        "lazy_derived must not be in names() after unregister"
+    );
+    assert!(
+        store.summary("lazy_derived").is_err(),
+        "summary must return Err after unregister"
+    );
+
+    // Storage generations must be removed (R8.4).
+    assert!(
+        !ds_storage_dir.exists()
+            || std::fs::read_dir(&ds_storage_dir)
+                .map(|d| d.count() == 0)
+                .unwrap_or(true),
+        "storage dir for lazy_derived must be empty/gone after unregister"
+    );
+
+    // A subsequent query must fail (NotFound or similar).
+    let q_result = store
+        .query(
+            "lazy_derived",
+            &QueryRequest {
+                page_size: 100,
+                ..empty_req()
+            },
+        )
+        .await;
+    assert!(
+        matches!(
+            q_result,
+            Err(AppError::NotFound(_)) | Err(AppError::InvalidValue(_))
+        ),
+        "query after unregister must return Err, got: {q_result:?}"
+    );
 }

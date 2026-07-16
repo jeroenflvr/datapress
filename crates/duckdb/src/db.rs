@@ -104,6 +104,8 @@ pub struct Registry {
     /// Phase 2B: optional server-level storage backend for query-dataset
     /// materialization. `None` → all query datasets stay in DuckDB memory.
     storage: Option<Arc<MaterializationStorage>>,
+    /// T5.1 / T5.2: per-dataset refresh observability records.
+    refresh_records: RwLock<HashMap<String, datapress_core::backend::RefreshRecord>>,
 }
 
 impl Registry {
@@ -128,6 +130,25 @@ impl Registry {
         if let Some(entry) = self.statuses.write().unwrap().get_mut(name) {
             entry.0 = new_status;
         }
+    }
+
+    /// Record a successful publish for `name`.
+    fn record_publish(
+        &self,
+        name: &str,
+        elapsed_ms: u128,
+        source: datapress_core::backend::RefreshSource,
+        generation_id: Option<String>,
+    ) {
+        use datapress_core::storage::now_rfc3339;
+        let mut map = self.refresh_records.write().unwrap();
+        let rec = map.entry(name.to_string()).or_default();
+        rec.last_refresh_at = Some(now_rfc3339());
+        rec.last_refresh_duration_ms = Some(elapsed_ms);
+        rec.refresh_source = Some(source);
+        rec.generation_id = generation_id;
+        rec.consecutive_failures = 0;
+        rec.last_error = None;
     }
 
     fn get_status_entry(&self, name: &str) -> Option<(DatasetStatus, OnStart)> {
@@ -214,17 +235,20 @@ impl Registry {
         let cfg_clone = cfg.clone();
         let storage = self.storage.clone();
 
-        let result = actix_web::web::block(move || -> Result<(DatasetSchema, i64), AppError> {
-            let conn = DbPool::get(&pool);
-            replace_table(&conn, &cfg_clone, storage.as_deref())?;
-            let schema = introspect_schema(&conn, &cfg_clone)?;
-            let rows = count_rows(&conn, &cfg_clone.name)?;
-            Ok((schema, rows))
-        })
+        let result = actix_web::web::block(
+            move || -> Result<(DatasetSchema, i64, bool, bool), AppError> {
+                let conn = DbPool::get(&pool);
+                let (demoted, memory_override) =
+                    replace_table(&conn, &cfg_clone, storage.as_deref())?;
+                let schema = introspect_schema(&conn, &cfg_clone)?;
+                let rows = count_rows(&conn, &cfg_clone.name)?;
+                Ok((schema, rows, demoted, memory_override))
+            },
+        )
         .await
         .map_err(|e| AppError::Internal(format!("join error: {e}")))?;
 
-        let (schema, rows) = match result {
+        let (schema, rows, demoted_to_storage, memory_override_exceeded) = match result {
             Ok(v) => v,
             Err(e) => {
                 // Keep-last-good: revert status if we had a live generation.
@@ -248,7 +272,18 @@ impl Registry {
         self.set_status(name, DatasetStatus::Published);
 
         let elapsed_ms = started.elapsed().as_millis();
-        log::info!("reloaded dataset '{name}': {rows} rows in {elapsed_ms} ms");
+        self.record_publish(
+            name,
+            elapsed_ms,
+            datapress_core::backend::RefreshSource::Manual,
+            None,
+        );
+        log::info!(
+            "[publish] dataset='{}' trigger=manual rows={} elapsed_ms={}",
+            name,
+            rows,
+            elapsed_ms
+        );
         // R4.3: notify cascade engine of successful publish.
         if let Some(h) = self.cascade_handle.lock().unwrap().as_ref() {
             h.notify_published(name);
@@ -256,6 +291,8 @@ impl Registry {
         Ok(ReloadStats {
             rows: rows as usize,
             elapsed_ms,
+            demoted_to_storage,
+            memory_override_exceeded,
         })
     }
 
@@ -329,13 +366,26 @@ impl Registry {
             .write()
             .unwrap()
             .insert(cfg.name.clone(), cfg.clone());
+        // Register status so subsequent queries can find the dataset via
+        // ensure_ready_sync. DataFusion does this in its register impl;
+        // this was missing from the DuckDB path (bug found by Phase 6A tests).
+        self.statuses
+            .write()
+            .unwrap()
+            .insert(cfg.name.clone(), (DatasetStatus::Published, OnStart::Eager));
 
         let elapsed_ms = started.elapsed().as_millis();
+        self.record_publish(
+            &cfg.name,
+            elapsed_ms,
+            datapress_core::backend::RefreshSource::Manual,
+            None,
+        );
         log::info!(
-            "registered dataset '{}' ({} @ {}): {rows} rows in {elapsed_ms} ms",
+            "[publish] dataset='{}' trigger=manual rows={} elapsed_ms={}",
             cfg.name,
-            cfg.source.kind.as_str(),
-            cfg.source.location
+            rows,
+            elapsed_ms
         );
         Ok(DatasetSummary {
             name: cfg.name,
@@ -343,6 +393,80 @@ impl Registry {
             rows: rows.max(0) as usize,
             lazy: cfg.lazy,
         })
+    }
+
+    /// Remove a runtime-managed dataset from the registry (Phase 6 R8.4).
+    ///
+    /// Drops the DuckDB table/view, removes from the schema map, row-counts
+    /// map, configs map, and statuses. Returns `Err(NotFound)` if unknown;
+    /// `Err(Forbidden)` if not managed.
+    pub async fn unregister(&self, name: &str) -> Result<(), AppError> {
+        // Check managed first.
+        {
+            let cfgs = self.configs.read().unwrap();
+            match cfgs.get(name) {
+                None => {
+                    return Err(AppError::NotFound(format!("dataset '{name}' not found")));
+                }
+                Some(c) if !c.managed => {
+                    return Err(AppError::Forbidden(format!(
+                        "dataset '{name}' is not managed and cannot be unregistered"
+                    )));
+                }
+                Some(_) => {}
+            }
+        }
+
+        // Acquire the per-name lock.
+        let lock = {
+            let mut locks = self.reload_locks.lock().unwrap();
+            locks
+                .entry(name.to_string())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                .clone()
+        };
+        let _guard = lock.lock().await;
+
+        // Drop the table/view from DuckDB (best-effort; ignore errors).
+        let pool = self.pool.clone();
+        let name_owned = name.to_string();
+        actix_web::web::block(move || {
+            let conn = DbPool::get(&pool);
+            // Try both TABLE and VIEW so we don't need to know which it is.
+            let _ = conn.execute_batch(&format!(
+                "DROP TABLE IF EXISTS \"{name_owned}\"; DROP VIEW IF EXISTS \"{name_owned}\";"
+            ));
+        })
+        .await
+        .ok(); // ignore JoinError — the in-process state cleanup below still runs
+
+        // Remove from in-memory maps.
+        self.datasets.write().unwrap().remove(name);
+        self.row_counts.write().unwrap().remove(name);
+        self.configs.write().unwrap().remove(name);
+        self.refresh_records.write().unwrap().remove(name);
+
+        // Remove status.
+        self.statuses.write().unwrap().remove(name);
+
+        // Clean up the reload lock entry.
+        self.reload_locks.lock().unwrap().remove(name);
+
+        // GC storage generations (R8.4): remove the entire dataset directory
+        // so no orphaned parquet files are left on disk after deletion.
+        if let Some(ref storage) = self.storage
+            && let Some(ref local_root) = storage.local_root
+        {
+            let ds_dir = local_root.join(name);
+            if ds_dir.is_dir()
+                && let Err(e) = std::fs::remove_dir_all(&ds_dir)
+            {
+                log::warn!("[unregister] storage GC failed for '{}': {e}", name);
+            }
+        }
+
+        log::info!("[unregister] dataset='{}' removed", name);
+        Ok(())
     }
 }
 
@@ -555,6 +679,30 @@ pub fn load_registry(cfg: &AppConfig) -> Result<Registry, AppError> {
         statuses: RwLock::new(statuses),
         cascade_handle: Mutex::new(None),
         storage,
+        refresh_records: RwLock::new(
+            // Seed a RefreshRecord for every dataset that was published at
+            // startup so last_refresh_at and X-Dataset-Refreshed-At work
+            // from the first request.
+            {
+                use datapress_core::backend::{RefreshRecord, RefreshSource};
+                use datapress_core::storage::now_rfc3339;
+                let now = now_rfc3339();
+                cfg.datasets
+                    .iter()
+                    .map(|d| {
+                        (
+                            d.name.clone(),
+                            RefreshRecord {
+                                last_refresh_at: Some(now.clone()),
+                                last_refresh_duration_ms: Some(0),
+                                refresh_source: Some(RefreshSource::Startup),
+                                ..Default::default()
+                            },
+                        )
+                    })
+                    .collect()
+            },
+        ),
     })
 }
 
@@ -754,7 +902,8 @@ fn replace_table(
     conn: &Connection,
     cfg: &DatasetConfig,
     storage: Option<&MaterializationStorage>,
-) -> Result<(), AppError> {
+) -> Result<(bool, bool), AppError> {
+    // Returns (demoted_to_storage, memory_override_exceeded).
     let table = DatasetSchema::quote_ident(&cfg.name);
     if cfg.source.kind == SourceKind::Query {
         let sql = cfg.source.sql.as_deref().ok_or_else(|| {
@@ -764,8 +913,10 @@ fn replace_table(
             ))
         })?;
         // Phase 2B: try storage path first.
-        if register_query_with_storage(conn, cfg, sql, storage)?.is_some() {
-            return Ok(());
+        let (schema_opt, demoted, _override_ignored) =
+            register_query_with_storage(conn, cfg, sql, storage)?;
+        if schema_opt.is_some() {
+            return Ok((demoted, false));
         }
         // In-memory replace with optional ORDER BY for sort_by (R2B.5).
         let order_by: String = cfg
@@ -786,7 +937,9 @@ fn replace_table(
         conn.execute_batch(&format!(
             "CREATE OR REPLACE TABLE {table} AS {sql}{order_by};"
         ))?;
-        return Ok(());
+        // R2B.1: check if residency=memory result exceeds force_lazy_above_mb.
+        let memory_override_exceeded = check_memory_override(conn, cfg, &table, storage);
+        return Ok((false, memory_override_exceeded));
     }
     let scan = build_scan_clause(cfg)?;
     // Lazy datasets are views over the source scan, so a reload just
@@ -795,7 +948,7 @@ fn replace_table(
     conn.execute_batch(&format!(
         "CREATE OR REPLACE {relation} {table} AS SELECT * FROM {scan};"
     ))?;
-    Ok(())
+    Ok((false, false))
 }
 
 /// Register the source as a queryable relation named `cfg.name` and
@@ -817,7 +970,9 @@ fn register_dataset(
                 cfg.name
             ))
         })?;
-        if let Some(schema) = register_query_with_storage(conn, cfg, sql, storage)? {
+        let (schema_opt, _demoted, _override) =
+            register_query_with_storage(conn, cfg, sql, storage)?;
+        if let Some(schema) = schema_opt {
             return Ok(schema);
         }
         // In-memory path (residency = memory or auto without storage).
@@ -841,6 +996,8 @@ fn register_dataset(
             .map_err(|e| {
                 AppError::Internal(format!("dataset '{}': query execute: {e}", cfg.name))
             })?;
+        // R2B.1 override check (startup; flags are discarded — startup doesn't emit ReloadStats).
+        check_memory_override(conn, cfg, &table, storage);
         return introspect_schema(conn, cfg);
     }
     let scan = build_scan_clause(cfg)?;
@@ -850,6 +1007,40 @@ fn register_dataset(
     ))
     .map_err(|e| classify_scan_error(cfg, e))?;
     introspect_schema(conn, cfg)
+}
+
+/// R2B.1: check if a `residency = memory` query result exceeds `force_lazy_above_mb`.
+/// Emits a WARN log and returns `true` when the threshold is crossed.
+/// The caller is responsible for incrementing the metric counter.
+fn check_memory_override(
+    conn: &Connection,
+    cfg: &DatasetConfig,
+    table: &str,
+    storage: Option<&MaterializationStorage>,
+) -> bool {
+    let Some(stor) = storage else {
+        return false;
+    };
+    let threshold = stor.config.force_lazy_above_mb.saturating_mul(1024 * 1024);
+    if cfg
+        .materialize
+        .as_ref()
+        .is_none_or(|m| m.residency != MaterializeResidency::Memory)
+    {
+        return false;
+    }
+    let estimated = estimated_table_bytes(conn, table);
+    if estimated > threshold {
+        log::warn!(
+            "dataset '{}': materialized result ({} MiB) exceeds force_lazy_above_mb \
+             = {} but residency = memory overrides demotion",
+            cfg.name,
+            estimated / (1024 * 1024),
+            stor.config.force_lazy_above_mb,
+        );
+        return true;
+    }
+    false
 }
 
 /// Phase 2B: Try to register a query dataset with storage spill (R2B.3).
@@ -864,7 +1055,8 @@ fn register_query_with_storage(
     cfg: &DatasetConfig,
     sql: &str,
     storage: Option<&MaterializationStorage>,
-) -> Result<Option<DatasetSchema>, AppError> {
+) -> Result<(Option<DatasetSchema>, bool, bool), AppError> {
+    // Returns (schema, demoted_to_storage, memory_override_exceeded).
     let residency = cfg
         .materialize
         .as_ref()
@@ -897,18 +1089,18 @@ fn register_query_with_storage(
             cfg.name
         )));
     }
-    // Memory: no storage path.
+    // Memory: no storage path — caller handles in-memory and checks for override.
     if residency == MaterializeResidency::Memory {
-        return Ok(None);
+        return Ok((None, false, false));
     }
     // Auto without storage: fall through to in-memory.
     if residency == MaterializeResidency::Auto && storage.is_none() {
-        return Ok(None);
+        return Ok((None, false, false));
     }
 
     let stor = match storage {
         Some(s) => s,
-        None => return Ok(None),
+        None => return Ok((None, false, false)),
     };
 
     let gen_id = new_ulid();
@@ -961,8 +1153,8 @@ fn register_query_with_storage(
         .ok();
         conn.execute_batch(&format!("ALTER TABLE {tmp_table} RENAME TO {table};"))
             .map_err(|e| AppError::Internal(format!("dataset '{}': rename: {e}", cfg.name)))?;
-        // Return Some so the caller skips CREATE TABLE and calls introspect.
-        return introspect_schema(conn, cfg).map(Some);
+        // Stayed in memory (auto below threshold): demoted=false.
+        return introspect_schema(conn, cfg).map(|s| (Some(s), false, false));
     }
 
     // Spill to storage.
@@ -1018,7 +1210,8 @@ fn register_query_with_storage(
         gen_id
     );
 
-    Ok(Some(schema))
+    // demoted_to_storage = true for both Lazy and Auto-over-threshold.
+    Ok((Some(schema), true, false))
 }
 
 /// Compute the COPY-TO path and the view glob for a generation.
@@ -1390,6 +1583,7 @@ impl Backend for Registry {
     fn dataset_statuses(&self) -> Vec<DatasetStatusEntry> {
         let row_counts = self.row_counts.read().unwrap();
         let cfgs = self.configs.read().unwrap();
+        let recs = self.refresh_records.read().unwrap();
         let mut entries: Vec<_> = self
             .statuses
             .read()
@@ -1410,18 +1604,59 @@ impl Backend for Registry {
                 } else {
                     (0, false, 0)
                 };
+                let rec = recs.get(name).cloned().unwrap_or_default();
+                let cfg = cfgs.get(name);
+                let kind = cfg
+                    .map(|c| c.source.kind.as_str().to_string())
+                    .unwrap_or_else(|| "parquet".into());
+                let depends_on = cfg.map(|c| c.source.depends_on.clone()).unwrap_or_default();
+                let residency = if lazy { "lazy" } else { "memory" };
                 DatasetStatusEntry {
                     name: name.clone(),
                     status: status.clone(),
                     on_start: on_start.clone(),
+                    kind,
+                    residency: residency.into(),
+                    storage_bytes: None,
+                    generation_id: rec.generation_id,
+                    last_refresh_at: rec.last_refresh_at,
+                    last_refresh_duration_ms: rec.last_refresh_duration_ms,
+                    next_refresh_at: rec.next_refresh_at,
+                    refresh_source: rec.refresh_source,
+                    consecutive_failures: rec.consecutive_failures,
+                    last_error: rec.last_error,
                     columns,
                     rows,
                     lazy,
+                    depends_on,
                 }
             })
             .collect();
         entries.sort_by(|a, b| a.name.cmp(&b.name));
         entries
+    }
+
+    fn refresh_record(&self, name: &str) -> Option<datapress_core::backend::RefreshRecord> {
+        self.refresh_records.read().unwrap().get(name).cloned()
+    }
+
+    fn record_refresh(&self, name: &str, record: datapress_core::backend::RefreshRecord) {
+        let mut map = self.refresh_records.write().unwrap();
+        let existing = map.entry(name.to_string()).or_default();
+        existing.consecutive_failures = record.consecutive_failures;
+        existing.last_error = record.last_error;
+        if record.next_refresh_at.is_some() {
+            existing.next_refresh_at = record.next_refresh_at;
+        }
+        if record.refresh_source.is_some() {
+            existing.refresh_source = record.refresh_source;
+        }
+        if record.last_refresh_at.is_some() {
+            existing.last_refresh_at = record.last_refresh_at;
+        }
+        if record.last_refresh_duration_ms.is_some() {
+            existing.last_refresh_duration_ms = record.last_refresh_duration_ms;
+        }
     }
 
     fn summary(&self, name: &str) -> Result<DatasetSummary, AppError> {
@@ -1629,6 +1864,28 @@ impl Backend for Registry {
     fn set_cascade_handle(&self, handle: CascadeHandle) {
         *self.cascade_handle.lock().unwrap() = Some(handle);
     }
+
+    fn is_managed(&self, name: &str) -> bool {
+        self.configs
+            .read()
+            .unwrap()
+            .get(name)
+            .map(|c| c.managed)
+            .unwrap_or(false)
+    }
+
+    fn is_temp(&self, name: &str) -> bool {
+        self.configs
+            .read()
+            .unwrap()
+            .get(name)
+            .map(|c| c.managed && c.temp)
+            .unwrap_or(false)
+    }
+
+    async fn unregister(&self, name: &str) -> Result<(), AppError> {
+        Registry::unregister(self, name).await
+    }
 }
 
 #[cfg(test)]
@@ -1658,6 +1915,8 @@ mod tests {
             on_start: datapress_core::config::OnStart::Eager,
             refresh: None,
             materialize: None,
+            managed: false,
+            temp: false,
         }
     }
 

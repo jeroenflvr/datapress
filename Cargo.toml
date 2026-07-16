@@ -78,6 +78,7 @@ utoipa-swagger-ui   = { version = "9.0.2", features = ["actix-web"] }
 
 # Prometheus metrics middleware (feature-gated via `metrics` on datapress-core).
 actix-web-prom      = "0.10"
+prometheus          = "0.14"
 
 # OIDC / OAuth2 enforcement (feature-gated via `auth` on datapress-core).
 jsonwebtoken        = "10"

@@ -109,6 +109,16 @@ impl Backend for ControllableBackend {
                 name: name.clone(),
                 status: e.status.clone(),
                 on_start: e.on_start.clone(),
+                kind: "parquet".into(),
+                residency: "memory".into(),
+                storage_bytes: None,
+                generation_id: None,
+                last_refresh_at: None,
+                last_refresh_duration_ms: None,
+                next_refresh_at: None,
+                refresh_source: None,
+                consecutive_failures: 0,
+                last_error: None,
                 columns: if e.status == DatasetStatus::Published {
                     2
                 } else {
@@ -120,6 +130,7 @@ impl Backend for ControllableBackend {
                     0
                 },
                 lazy: false,
+                depends_on: vec![],
             })
             .collect()
     }
@@ -216,6 +227,7 @@ impl Backend for ControllableBackend {
         Ok(ReloadStats {
             rows: 5,
             elapsed_ms: 1,
+            ..Default::default()
         })
     }
 }
