@@ -31,20 +31,44 @@ use crate::schema::DatasetSchema;
 /// `reload_inner` (after the ArcSwap / DuckDB status flip to Published).
 #[derive(Clone)]
 pub struct CascadeHandle {
-    tx: Arc<tokio::sync::mpsc::UnboundedSender<String>>,
+    tx: Arc<tokio::sync::mpsc::UnboundedSender<(String, tokio::time::Instant)>>,
 }
 
 impl CascadeHandle {
     /// Create a new handle wrapping `tx`. Only called from inside
     /// `crate::refresh` when the cascade engine is set up.
-    pub(crate) fn new(tx: tokio::sync::mpsc::UnboundedSender<String>) -> Self {
+    pub(crate) fn new(
+        tx: tokio::sync::mpsc::UnboundedSender<(String, tokio::time::Instant)>,
+    ) -> Self {
         Self { tx: Arc::new(tx) }
     }
 
     /// Notify the cascade engine that `name` was successfully published.
-    /// Silently discards the notification when the cascade engine has shut down.
+    ///
+    /// `build_start` is the [`tokio::time::Instant`] captured at the **start**
+    /// of the build (before the heavy work begins).  The cascade engine uses it
+    /// to clear any pending debounce entry for `name` whose `trigger_at` ≤
+    /// `build_start`, meaning the build already satisfies that cascade request.
+    /// Triggers enqueued **during** the build (`trigger_at > build_start`)
+    /// survive intact and will cause a subsequent cascade build.
+    ///
+    /// This applies to every build source — scheduled, manual, cascade, and
+    /// wave — so that any completed build of D absorbs the outstanding debounce
+    /// entries it covers.  The guarantee holds regardless of what triggered the
+    /// build.
+    pub fn notify_published_at(&self, name: &str, build_start: tokio::time::Instant) {
+        let _ = self.tx.send((name.to_string(), build_start));
+    }
+
+    /// Convenience wrapper for cases where the build start instant is not
+    /// separately tracked (e.g. test mocks with instant builds).  Uses
+    /// [`tokio::time::Instant::now()`] as `build_start`, which clears any
+    /// pending debounce entry for `name` that was enqueued at or before the
+    /// call.  Callers where build duration is significant MUST use
+    /// [`notify_published_at`](Self::notify_published_at) instead so that
+    /// mid-build upstream publishes survive.
     pub fn notify_published(&self, name: &str) {
-        let _ = self.tx.send(name.to_string());
+        self.notify_published_at(name, tokio::time::Instant::now());
     }
 }
 

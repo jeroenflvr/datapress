@@ -772,6 +772,10 @@ impl Store {
     /// The caller must hold the per-dataset reload lock.
     async fn reload_inner(&self, name: &str, cfg: &DatasetConfig) -> Result<ReloadStats, AppError> {
         let started = std::time::Instant::now();
+        // Capture the tokio clock at build start for cascade-clearing (R8.11).
+        // This instant is passed to notify_published_at so the cascade engine can
+        // remove any pending debounce entry whose trigger arrived before this build.
+        let build_start = tokio::time::Instant::now();
         self.set_status(name, DatasetStatus::Building);
 
         if let Some(cache) = self.ctx.runtime_env().cache_manager.get_list_files_cache() {
@@ -828,8 +832,9 @@ impl Store {
             elapsed_ms
         );
         // R4.3: notify cascade engine of successful publish.
+        // Pass build_start so the engine can clear stale cascade entries (R8.11).
         if let Some(h) = self.cascade_handle.lock().unwrap().as_ref() {
-            h.notify_published(name);
+            h.notify_published_at(name, build_start);
         }
         Ok(ReloadStats {
             rows,

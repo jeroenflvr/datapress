@@ -230,6 +230,8 @@ impl Registry {
     /// documented rather than leaking the permit (G-rule).
     async fn reload_inner(&self, name: &str, cfg: &DatasetConfig) -> Result<ReloadStats, AppError> {
         let started = std::time::Instant::now();
+        // Capture the tokio clock at build start for cascade-clearing (R8.11).
+        let build_start = tokio::time::Instant::now();
         self.set_status(name, DatasetStatus::Building);
         let pool = self.pool.clone();
         let cfg_clone = cfg.clone();
@@ -285,8 +287,9 @@ impl Registry {
             elapsed_ms
         );
         // R4.3: notify cascade engine of successful publish.
+        // Pass build_start so the engine can clear stale cascade entries (R8.11).
         if let Some(h) = self.cascade_handle.lock().unwrap().as_ref() {
-            h.notify_published(name);
+            h.notify_published_at(name, build_start);
         }
         Ok(ReloadStats {
             rows: rows as usize,

@@ -240,7 +240,8 @@ impl RefreshScheduler {
 
         // Build the cascade engine when the DAG is non-empty.
         let (cascade_handle, cascade_rx, cascade_jh) = if !cascade_dag.is_empty() {
-            let (pub_tx, pub_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+            let (pub_tx, pub_rx) =
+                tokio::sync::mpsc::unbounded_channel::<(String, tokio::time::Instant)>();
             let (req_tx, req_rx) = tokio::sync::mpsc::unbounded_channel::<CascadeRequest>();
             let handle = CascadeHandle::new(pub_tx);
             let jh = tokio::spawn(cascade_engine_loop(
@@ -289,17 +290,32 @@ impl RefreshScheduler {
 /// Receives upstream publish events, updates per-dataset sliding-window
 /// timers, and sends one-shot [`CascadeRequest`]s to the scheduler loop when
 /// timers expire.
+///
+/// # Cascade-clearing (exactly-once-per-wave, R8.11)
+///
+/// Each entry in `pending` carries the instant the last upstream-publish
+/// trigger arrived (`trigger_at`).  When a successful publish of dataset D
+/// is received (via [`CascadeHandle::notify_published_at`]), this function
+/// removes the pending entry for D if `trigger_at <= build_start` — meaning
+/// the completed build of D already satisfies that cascade request.  Triggers
+/// enqueued *during* the build (`trigger_at > build_start`) survive so that a
+/// subsequent rebuild happens.
+///
+/// This logic applies to builds from **all** sources (scheduled, manual,
+/// cascade, and wave) because every successful `reload_inner` / `try_reload`
+/// calls `notify_published_at` with the build-start instant.
 async fn cascade_engine_loop(
     dag: CascadeDag,
-    mut publish_rx: tokio::sync::mpsc::UnboundedReceiver<String>,
+    mut publish_rx: tokio::sync::mpsc::UnboundedReceiver<(String, tokio::time::Instant)>,
     req_tx: tokio::sync::mpsc::UnboundedSender<CascadeRequest>,
     shutdown: CancellationToken,
 ) {
-    // pending[dataset] = (fire_at, timeout)
-    let mut pending: HashMap<String, (Instant, Duration)> = HashMap::new();
+    // pending[dataset] = (fire_at, timeout, trigger_at)
+    // trigger_at = when the last upstream-publish trigger for this entry arrived.
+    let mut pending: HashMap<String, (Instant, Duration, Instant)> = HashMap::new();
 
     loop {
-        let next_fire: Option<Instant> = pending.values().map(|(t, _)| *t).min();
+        let next_fire: Option<Instant> = pending.values().map(|(t, _, _)| *t).min();
 
         tokio::select! {
             biased;
@@ -307,24 +323,38 @@ async fn cascade_engine_loop(
                 log::debug!("[cascade] engine shutting down");
                 return;
             }
-            name = publish_rx.recv() => {
-                match name {
+            msg = publish_rx.recv() => {
+                match msg {
                     None => {
                         log::debug!("[cascade] publish channel closed; engine exiting");
                         return;
                     }
-                    Some(upstream) => {
-                        if let Some(deps) = dag.get(&upstream) {
-                            let now = Instant::now();
+                    Some((published_name, build_start)) => {
+                        let now = Instant::now();
+
+                        // Cascade-clearing: if dataset D just published and
+                        // there is a pending debounce entry for D whose trigger
+                        // arrived at or before the build started, that build
+                        // already covers the cascade request — remove it.
+                        // Triggers that arrived *during* the build (trigger_at
+                        // > build_start) must survive for a subsequent rebuild.
+                        if matches!(pending.get(&published_name), Some(&(_, _, trigger_at)) if trigger_at <= build_start) {
+                            pending.remove(&published_name);
+                            log::debug!(
+                                "[cascade] cleared stale pending entry for '{published_name}'                                  (trigger_at <= build_start={build_start:?})"
+                            );
+                        }
+
+                        // Update downstream dependents' debounce timers.
+                        if let Some(deps) = dag.get(&published_name) {
                             for dep in deps {
                                 // Sliding-window debounce: reset the timer on
                                 // every upstream publish so a rapid wave of
                                 // reloads coalesces into one downstream build.
                                 let fire_at = now + dep.debounce;
-                                pending.insert(dep.name.clone(), (fire_at, dep.timeout));
+                                pending.insert(dep.name.clone(), (fire_at, dep.timeout, now));
                                 log::debug!(
-                                    "[cascade] upstream '{upstream}' published \
-                                     → '{}' debounced {:?}",
+                                    "[cascade] upstream '{published_name}' published                                      → '{}' debounced {:?}",
                                     dep.name, dep.debounce,
                                 );
                             }
@@ -341,8 +371,8 @@ async fn cascade_engine_loop(
                 let now = Instant::now();
                 let fired: Vec<(String, Duration)> = pending
                     .iter()
-                    .filter(|(_, (t, _))| *t <= now)
-                    .map(|(n, (_, d))| (n.clone(), *d))
+                    .filter(|(_, (t, _, _))| *t <= now)
+                    .map(|(n, (_, d, _))| (n.clone(), *d))
                     .collect();
                 for (name, timeout) in fired {
                     pending.remove(&name);
@@ -900,7 +930,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[tokio::test(start_paused = true)]
     async fn scheduler_coalesces_when_mutex_held() {
-        let (mut backend, build_count) = MockBackend::new();
+        let (backend, build_count) = MockBackend::new();
         backend.coalesce.store(true, Ordering::SeqCst);
         let coalesce_count = backend.coalesce_count.clone();
         let backend: Arc<dyn Backend> = Arc::new(backend);
@@ -1081,7 +1111,7 @@ mod tests {
     // -----------------------------------------------------------------------
     #[tokio::test(start_paused = true)]
     async fn scheduler_applies_backoff_on_failures() {
-        let (mut backend, build_count) = MockBackend::new();
+        let (backend, build_count) = MockBackend::new();
         backend.fail.store(true, Ordering::SeqCst);
         let backend: Arc<dyn Backend> = Arc::new(backend);
         let token = CancellationToken::new();
@@ -1713,5 +1743,400 @@ mod tests {
                 "d{i} should have been built via cascade"
             );
         }
+    }
+    // ==========================================================================
+    // R8.11 — cascade-clearing: exactly-once-per-wave tests
+    // ==========================================================================
+
+    /// A backend that simulates real `reload_inner` behaviour:
+    /// - records build_start with `tokio::time::Instant::now()` at the top of
+    ///   `try_reload`
+    /// - calls `notify_published_at(name, build_start)` on success
+    /// - supports a per-dataset hold channel so tests can pause a build mid-way
+    ///   and publish an upstream while it is in progress
+    struct WaveMockBackend {
+        counts: Arc<Mutex<HashMap<String, u32>>>,
+        cascade_handle: Mutex<Option<CascadeHandle>>,
+        /// When a name has an entry here, `try_reload` waits for the oneshot
+        /// before completing, simulating a long build.
+        hold_rx: Mutex<HashMap<String, tokio::sync::oneshot::Receiver<()>>>,
+    }
+
+    impl WaveMockBackend {
+        fn new() -> (Arc<Self>, Arc<Mutex<HashMap<String, u32>>>) {
+            let counts = Arc::new(Mutex::new(HashMap::new()));
+            let b = Arc::new(Self {
+                counts: counts.clone(),
+                cascade_handle: Mutex::new(None),
+                hold_rx: Mutex::new(HashMap::new()),
+            });
+            (b, counts)
+        }
+
+        /// Install a hold gate for `name`. Returns the sender; the test drops
+        /// it (or calls `send`) to unblock the build.
+        fn install_hold(&self, name: &str) -> tokio::sync::oneshot::Sender<()> {
+            let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+            self.hold_rx.lock().unwrap().insert(name.to_string(), rx);
+            tx
+        }
+    }
+
+    #[async_trait]
+    impl Backend for WaveMockBackend {
+        fn names(&self) -> Vec<String> {
+            vec![]
+        }
+        fn summary(&self, _: &str) -> Result<DatasetSummary, AppError> {
+            Ok(DatasetSummary {
+                name: "x".into(),
+                columns: 0,
+                rows: 0,
+                lazy: false,
+            })
+        }
+        fn schema(&self, _: &str) -> Result<Arc<DatasetSchema>, AppError> {
+            Err(AppError::NotFound("mock".into()))
+        }
+        async fn sample(&self, _: &str) -> Result<String, AppError> {
+            Err(AppError::NotFound("mock".into()))
+        }
+        async fn query(&self, _: &str, _: &QueryRequest) -> Result<String, AppError> {
+            Err(AppError::NotFound("mock".into()))
+        }
+        async fn count(&self, _: &str, _: &CountRequest) -> Result<i64, AppError> {
+            Err(AppError::NotFound("mock".into()))
+        }
+        async fn reload(&self, name: &str) -> Result<ReloadStats, AppError> {
+            self.try_reload(name).await.map(|o| {
+                o.unwrap_or(ReloadStats {
+                    rows: 0,
+                    elapsed_ms: 0,
+                    ..Default::default()
+                })
+            })
+        }
+
+        /// Simulates a real backend reload:
+        /// 1. Captures `build_start = tokio::time::Instant::now()`.
+        /// 2. Optionally waits for a hold gate (to simulate a long build).
+        /// 3. Increments the build counter.
+        /// 4. Calls `notify_published_at(name, build_start)` — exactly what
+        ///    `Store::reload_inner` / `Registry::reload_inner` do.
+        async fn try_reload(&self, name: &str) -> Result<Option<ReloadStats>, AppError> {
+            // Record the build start instant before any work begins.
+            let build_start = tokio::time::Instant::now();
+
+            // Optionally block until the test releases the hold gate.
+            let hold = self.hold_rx.lock().unwrap().remove(name);
+            if let Some(rx) = hold {
+                let _ = rx.await; // unblocked when the sender is dropped / sent
+            }
+
+            *self
+                .counts
+                .lock()
+                .unwrap()
+                .entry(name.to_string())
+                .or_default() += 1;
+
+            // Notify cascade with the actual build_start — mirrors real backends.
+            if let Some(h) = self.cascade_handle.lock().unwrap().as_ref() {
+                h.notify_published_at(name, build_start);
+            }
+            Ok(Some(ReloadStats {
+                rows: 1,
+                elapsed_ms: 1,
+                ..Default::default()
+            }))
+        }
+
+        fn set_cascade_handle(&self, handle: CascadeHandle) {
+            *self.cascade_handle.lock().unwrap() = Some(handle);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 1: reload-all wave over base -> derived; derived built exactly once
+    // even after advancing past the debounce window.
+    // -----------------------------------------------------------------------
+    #[tokio::test(start_paused = true)]
+    async fn wave_reload_all_exactly_once_per_wave() {
+        // base -> derived (debounce 200 ms)
+        let dag = make_dag(&[("base", &[("derived", 200)])]);
+
+        let (backend, counts) = WaveMockBackend::new();
+        let backend: Arc<dyn Backend> = backend;
+        let token = CancellationToken::new();
+
+        let sched = RefreshScheduler::new(vec![], 1);
+        let result = {
+            let (_ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+            sched.spawn(backend.clone(), token.clone(), dag, Some(ttl_rx))
+        };
+        backend.set_cascade_handle(result.cascade_handle.clone().unwrap());
+        tokio::task::yield_now().await;
+
+        let h = result.cascade_handle.as_ref().unwrap();
+
+        // Step 1: upstream "base" publishes — this enqueues a pending debounce
+        //         entry for "derived" with trigger_at = now (t=0).
+        h.notify_published("base");
+        tick(10).await; // let cascade engine process the publish
+
+        // Step 2: simulate the wave building "derived" (using WaveMockBackend).
+        //         build_start ≈ t=10ms, which is > trigger_at=t=0 is false...
+        //         Actually build_start is NOW (t=10ms) and trigger_at=0ms,
+        //         so trigger_at(0) <= build_start(10ms) → entry cleared.
+        backend.try_reload("derived").await.unwrap();
+
+        // Step 3: yield so the cascade engine processes the notify_published_at
+        //         signal (which should clear the pending entry).
+        tick(10).await;
+
+        // Step 4: advance well past the debounce window (200 ms from trigger_at).
+        //         No cascade build should fire because the pending entry was cleared.
+        tick(300).await;
+        tick(100).await;
+
+        token.cancel();
+        for jh in result.handles {
+            let _ = jh.await;
+        }
+
+        let c = counts.lock().unwrap();
+        assert_eq!(
+            *c.get("derived").unwrap_or(&0),
+            1,
+            "derived must build exactly once (wave covers the cascade trigger)"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 2 (edge case): mid-build upstream republish survives.
+    //
+    // Timeline:
+    //   t=0   base publishes → pending["derived"].trigger_at = 0
+    //   t=10  wave starts derived's build (build_start = 10ms)
+    //   t=50  base republishes mid-build → pending["derived"].trigger_at = 50ms
+    //   t=100 wave's derived build completes →
+    //         notify_published_at("derived", build_start=10ms)
+    //         cascade engine: trigger_at(50ms) > build_start(10ms) → KEEP
+    //   t=350 debounce window (200ms from t=50ms trigger) expires → derived
+    //         builds exactly once more (total = 2).
+    // -----------------------------------------------------------------------
+    #[tokio::test(start_paused = true)]
+    async fn wave_mid_build_upstream_republish_survives() {
+        let dag = make_dag(&[("base", &[("derived", 200)])]);
+
+        let (backend, _counts) = WaveMockBackend::new();
+        let backend: Arc<dyn Backend> = backend;
+        let token = CancellationToken::new();
+
+        let sched = RefreshScheduler::new(vec![], 2);
+        let result = {
+            let (_ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+            sched.spawn(backend.clone(), token.clone(), dag, Some(ttl_rx))
+        };
+        backend.set_cascade_handle(result.cascade_handle.clone().unwrap());
+        tokio::task::yield_now().await;
+
+        let h = result.cascade_handle.as_ref().unwrap();
+
+        // t=0: base publishes → pending["derived"] trigger_at=0
+        h.notify_published("base");
+        tick(10).await;
+
+        // t=10: install a hold gate so derived's build pauses mid-way.
+        let hold_tx = {
+            // We need to downcast to WaveMockBackend to call install_hold.
+            // Since backend is Arc<dyn Backend>, we stored it as Arc<WaveMockBackend>
+            // before the cast — use the counts Arc as an indirect check instead,
+            // and install_hold via a separate Arc<WaveMockBackend> reference.
+            // Re-create from the counts pointer is not possible; instead we clone
+            // the Arc before the dyn-cast.  Use a separate variable.
+            // Note: The pattern below works because Arc<WaveMockBackend> is the
+            // concrete type; we just need to call install_hold before the build.
+            // We use a oneshot channel we manage ourselves and set it on backend
+            // via a helper method through the concrete type.
+            //
+            // For test simplicity, we simulate the mid-build republish WITHOUT
+            // pausing the build: we record build_start manually, do the republish
+            // at a later paused time, then verify the count.
+            // Instead: use tokio::task::spawn to run derived's build concurrently
+            // with the mid-build republish.
+            None::<tokio::sync::oneshot::Sender<()>>
+        };
+        let _ = hold_tx; // unused in this simplified form
+
+        // Simpler approach: use tokio::time pausing to sequence events precisely.
+        //
+        // t=10:  Wave's derived build calls try_reload. build_start = t=10ms.
+        //        We spawn it so it runs concurrently.
+        let backend_clone = Arc::clone(&backend);
+        let build_jh = tokio::spawn(async move {
+            backend_clone.try_reload("derived").await.unwrap();
+        });
+
+        // Let the spawned task start and record build_start, but hold it
+        // (it has no hold gate, so it runs instantly in paused time — that's OK
+        // because in paused time "instant" means the same tokio Instant).
+        // The key is: build_start is captured at the tokio::time::Instant
+        // at which the task body executes.
+        // In paused time, that is still t=10ms (we haven't advanced further).
+        for _ in 0..50 {
+            tokio::task::yield_now().await;
+        }
+        // By now the build has completed (instant mock) and notify_published_at
+        // was sent with build_start ≈ t=10ms, clearing pending["derived"]
+        // (trigger_at=0 <= build_start=10ms).
+
+        // t=10: also simulate a mid-build republish of base at the SAME paused
+        //       tick — this sets pending["derived"].trigger_at = 10ms.
+        //       After advancing time, trigger_at(10ms) == build_start(10ms) means
+        //       trigger_at <= build_start → still gets cleared by the first build.
+        //
+        // To test the strict mid-build scenario (trigger_at > build_start) we need
+        // a build that has measurable duration in tokio paused time. We simulate
+        // this by using a hold gate installed BEFORE the build advances time.
+
+        // Restart: this time use install_hold via the concrete backend.
+        // We need to restructure this test. Let's access the concrete Arc.
+        // The 'backend' variable is Arc<dyn Backend> — we lost the concrete type.
+        // Solution: keep both the concrete and dyn Arc separately.
+        let _ = build_jh.await;
+
+        // Restart the test state with a hold gate:
+        // We need a fresh backend to keep counts clean.
+        let (wave_backend, wave_counts) = WaveMockBackend::new();
+        let dag2 = make_dag(&[("base2", &[("dep2", 200)])]);
+        let token2 = CancellationToken::new();
+        let sched2 = RefreshScheduler::new(vec![], 2);
+        let result2 = {
+            let (_ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+            sched2.spawn(
+                Arc::clone(&wave_backend) as Arc<dyn Backend>,
+                token2.clone(),
+                dag2,
+                Some(ttl_rx),
+            )
+        };
+        (Arc::clone(&wave_backend) as Arc<dyn Backend>)
+            .set_cascade_handle(result2.cascade_handle.clone().unwrap());
+        tokio::task::yield_now().await;
+
+        let h2 = result2.cascade_handle.as_ref().unwrap();
+
+        // t=0: base2 publishes → pending["dep2"] trigger_at=0
+        h2.notify_published("base2");
+        tick(10).await; // cascade engine processes; trigger_at=10ms in paused time
+
+        // Install hold so dep2's build pauses.
+        let hold_tx = wave_backend.install_hold("dep2");
+
+        // t=10: start dep2's build in a spawned task. build_start = t=10ms.
+        let wb_clone = Arc::clone(&wave_backend);
+        let build2 = tokio::spawn(async move {
+            wb_clone.try_reload("dep2").await.unwrap();
+        });
+
+        // Let the build task start and reach the hold gate.
+        for _ in 0..50 {
+            tokio::task::yield_now().await;
+        }
+
+        // t=10: mid-build: base2 republishes → updates pending["dep2"]
+        //       trigger_at = NOW = t=10ms.
+        //       (In paused time we haven't advanced, so trigger_at = t=10ms
+        //        which equals build_start = t=10ms → trigger_at <= build_start
+        //        means this would STILL be cleared by the current build.)
+        //
+        // To get trigger_at > build_start we must advance time before the republish.
+        tick(50).await; // advance to t=60ms; build still paused at hold gate
+        h2.notify_published("base2"); // trigger_at = t=60ms > build_start=t=10ms
+        tick(10).await; // cascade engine processes; pending["dep2"].trigger_at=60ms
+
+        // Release the hold gate → dep2's build completes, sends
+        // notify_published_at("dep2", build_start=10ms).
+        // Cascade engine: trigger_at=60ms > build_start=10ms → KEEP the entry.
+        drop(hold_tx);
+        let _ = build2.await;
+        for _ in 0..50 {
+            tokio::task::yield_now().await;
+        }
+
+        // dep2 count = 1 so far (from the wave build above).
+        let c2_now = *wave_counts.lock().unwrap().get("dep2").unwrap_or(&0);
+        assert_eq!(c2_now, 1, "dep2 built once by the wave");
+
+        // Advance past the debounce window (200ms from trigger_at=60ms → t=260ms+).
+        // We're at t=70ms currently; need t >= 260ms.
+        tick(220).await; // → t=290ms > 260ms — cascade fires
+        tick(50).await; // extra slack for scheduler to process
+
+        token2.cancel();
+        for jh in result2.handles {
+            let _ = jh.await;
+        }
+
+        let c2_final = *wave_counts.lock().unwrap().get("dep2").unwrap_or(&0);
+        assert_eq!(
+            c2_final, 2,
+            "dep2 must rebuild exactly once more after mid-build upstream republish"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 3: regression guard — existing cascade tests must remain green.
+    //         This test explicitly verifies the diamond pattern still works
+    //         with the new notify_published_at path in the mock.
+    // -----------------------------------------------------------------------
+    #[tokio::test(start_paused = true)]
+    async fn wave_cascade_clearing_does_not_break_diamond() {
+        // Same diamond as cascade_diamond_fires_once_per_wave but using
+        // WaveMockBackend (which calls notify_published_at) instead of
+        // CascadeMockBackend (which calls notify_published).
+        // D should still build exactly once.
+        let dag = make_dag(&[
+            ("a", &[("b", 100), ("c", 100)]),
+            ("b", &[("d", 100)]),
+            ("c", &[("d", 100)]),
+        ]);
+
+        let (backend, counts) = WaveMockBackend::new();
+        let backend: Arc<dyn Backend> = backend;
+        let token = CancellationToken::new();
+
+        let sched = RefreshScheduler::new(vec![], 4);
+        let result = {
+            let (_ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+            sched.spawn(backend.clone(), token.clone(), dag, Some(ttl_rx))
+        };
+        backend.set_cascade_handle(result.cascade_handle.clone().unwrap());
+        tokio::task::yield_now().await;
+
+        result
+            .cascade_handle
+            .as_ref()
+            .unwrap()
+            .notify_published("a");
+
+        tick(120).await; // B and C build (each sends notify_published_at)
+        tick(150).await; // D debounce expires
+        tick(50).await;
+
+        token.cancel();
+        for jh in result.handles {
+            let _ = jh.await;
+        }
+
+        let c = counts.lock().unwrap();
+        assert_eq!(*c.get("b").unwrap_or(&0), 1, "B must build exactly once");
+        assert_eq!(*c.get("c").unwrap_or(&0), 1, "C must build exactly once");
+        assert_eq!(
+            *c.get("d").unwrap_or(&0),
+            1,
+            "D must build exactly once despite B and C both triggering its cascade"
+        );
     }
 }
