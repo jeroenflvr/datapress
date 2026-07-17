@@ -5,7 +5,10 @@
 //! bindings, which want a plain call-and-wait API.
 
 use crate::error::Result;
-use crate::models::{Predicate, QueryRequest, QueryResponse, SqlResponse};
+use crate::models::{
+    CreateQueryRequest, DatasetStatusEntry, Predicate, QueryRequest, QueryResponse,
+    ReloadAllResponse, SavedQueryEntry, SqlResponse,
+};
 use serde_json::Value as JsonValue;
 
 /// Blocking DataPress client.
@@ -77,6 +80,31 @@ impl Client {
     /// Trigger an in-place reload of `dataset`.
     pub fn reload(&self, dataset: &str) -> Result<JsonValue> {
         self.rt.block_on(self.inner.reload(dataset))
+    }
+
+    /// Create a runtime dataset (`POST /api/v1/queries`).
+    pub fn create_query(&self, request: &CreateQueryRequest) -> Result<SavedQueryEntry> {
+        self.rt.block_on(self.inner.create_query(request))
+    }
+
+    /// List runtime-created datasets (`GET /api/v1/queries`).
+    pub fn list_queries(&self) -> Result<Vec<SavedQueryEntry>> {
+        self.rt.block_on(self.inner.list_queries())
+    }
+
+    /// Delete a runtime dataset (`DELETE /api/v1/queries/{name}`).
+    pub fn delete_query(&self, name: &str) -> Result<JsonValue> {
+        self.rt.block_on(self.inner.delete_query(name))
+    }
+
+    /// Fetch the full status entry for `dataset`.
+    pub fn dataset_status(&self, dataset: &str) -> Result<DatasetStatusEntry> {
+        self.rt.block_on(self.inner.dataset_status(dataset))
+    }
+
+    /// Enqueue a reload of every reloadable dataset (`POST /api/v1/datasets/reload-all`).
+    pub fn reload_all(&self) -> Result<ReloadAllResponse> {
+        self.rt.block_on(self.inner.reload_all())
     }
 
     /// Run a structured query asking for Arrow IPC, returning the raw

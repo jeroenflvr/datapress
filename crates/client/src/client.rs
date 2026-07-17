@@ -3,7 +3,10 @@
 use serde_json::Value as JsonValue;
 
 use crate::error::{ClientError, Result};
-use crate::models::{QueryRequest, QueryResponse, SqlRequest, SqlResponse};
+use crate::models::{
+    CreateQueryRequest, DatasetStatusEntry, QueryRequest, QueryResponse, ReloadAllResponse,
+    SavedQueryEntry, SqlRequest, SqlResponse,
+};
 
 const ARROW_IPC_MIME: &str = "application/vnd.apache.arrow.stream";
 
@@ -253,6 +256,50 @@ impl Client {
             &serde_json::json!({}),
         )
         .await
+    }
+
+    // ------------------------------------------------------- queries API --
+
+    /// Create a runtime dataset (`POST /api/v1/queries`). Requires
+    /// `admin_token` or the `datasets:manage` scope.
+    pub async fn create_query(&self, request: &CreateQueryRequest) -> Result<SavedQueryEntry> {
+        let v = self.post_json(self.api_url("/queries"), request).await?;
+        serde_json::from_value(v).map_err(|e| ClientError::Decode(e.to_string()))
+    }
+
+    /// List runtime-created datasets (`GET /api/v1/queries`). Requires
+    /// `admin_token` or the `datasets:manage` scope.
+    pub async fn list_queries(&self) -> Result<Vec<SavedQueryEntry>> {
+        let v = self.get_json(self.api_url("/queries")).await?;
+        serde_json::from_value(v).map_err(|e| ClientError::Decode(e.to_string()))
+    }
+
+    /// Delete a runtime dataset (`DELETE /api/v1/queries/{name}`). Requires
+    /// `admin_token` or the `datasets:manage` scope. Returns `403` if the
+    /// dataset was not created via the API.
+    pub async fn delete_query(&self, name: &str) -> Result<JsonValue> {
+        let url = self.api_url(&format!("/queries/{name}"));
+        let req = self.apply_headers(self.http.delete(&url).header("Accept", "application/json"));
+        Self::json_response(req.send().await?).await
+    }
+
+    /// Fetch the full status entry for `dataset`
+    /// (`GET /api/v1/datasets/{name}/status`).
+    pub async fn dataset_status(&self, dataset: &str) -> Result<DatasetStatusEntry> {
+        let v = self
+            .get_json(self.api_url(&format!("/datasets/{dataset}/status")))
+            .await?;
+        serde_json::from_value(v).map_err(|e| ClientError::Decode(e.to_string()))
+    }
+
+    /// Enqueue a reload of every reloadable dataset
+    /// (`POST /api/v1/datasets/reload-all`). Requires `admin_token` or
+    /// the `datasets:manage` scope. Returns `202` with `enqueued`/`skipped` lists.
+    pub async fn reload_all(&self) -> Result<ReloadAllResponse> {
+        let v = self
+            .post_json(self.api_url("/datasets/reload-all"), &serde_json::json!({}))
+            .await?;
+        serde_json::from_value(v).map_err(|e| ClientError::Decode(e.to_string()))
     }
 
     // ----------------------------------------------------------- arrow --

@@ -20,7 +20,11 @@ before every path shown here.
 | GET    | `/api/v1/datasets/{name}/parquet`                 | —               | Whole dataset as a Parquet file (HTTP range + `HEAD`).               |
 | GET    | `/api/v1/datasets/{name}/all.parquet`             | —               | Alias of `/parquet` whose URL ends in `.parquet` (bare `FROM '…'`).  |
 | POST   | `/api/v1/datasets/{name}/reload`                  | —               | Atomic dataset reload. Requires `X-Admin-Token`.                     |
+| POST   | `/api/v1/datasets/reload-all`                     | —               | Enqueue every reloadable dataset in topological order. `202` with `{"enqueued":[...],"skipped":[...]}`. Requires `X-Admin-Token`. |
 | POST   | `/api/v1/config/reload`                           | —               | Re-read `datasets.toml`; register newly-added datasets. Requires `X-Admin-Token`. |
+| POST   | `/api/v1/queries`                                 | [Create query body](../operations/saved-queries.md) | Create a runtime dataset (`temp` or persisted `query`). Requires `datasets:manage` / `X-Admin-Token`. |
+| GET    | `/api/v1/queries`                                 | —               | List all runtime-created datasets with their definitions and state. Requires `datasets:manage` / `X-Admin-Token`. |
+| DELETE | `/api/v1/queries/{name}`                          | —               | Unregister a runtime-created dataset and wipe its storage. `403` for config-file datasets; `409` if dependents exist. Requires `datasets:manage` / `X-Admin-Token`. |
 | GET    | `{prefix}/health`                                 | —               | Liveness, prefix-aware.                                              |
 
 ## Observability headers
@@ -61,7 +65,7 @@ include the following response header when a publish timestamp is available:
 | Method | Path                 | Code           | Purpose                                       |
 |--------|----------------------|----------------|-----------------------------------------------|
 | GET    | `{prefix}/healthz`   | `200`          | Liveness; always OK.                          |
-| GET    | `{prefix}/readyz`    | `200` / `503`  | Ready once at least one dataset is loaded.    |
+| GET    | `{prefix}/readyz`   | `200` / `503`  | Ready once eager datasets have published (configurable via `[server.startup] readiness`). Returns `503` while datasets are still building after a non-blocking boot. |
 | GET    | `{prefix}/version`   | `200`          | Build/version metadata.                       |
 
 Full descriptions: [Operations › Probes](../operations/probes.md).

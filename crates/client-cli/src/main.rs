@@ -10,7 +10,9 @@ use std::io::Write;
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use datapress_client::blocking::Client;
-use datapress_client::{Aggregation, OrderBy, Predicate, QueryRequest};
+use datapress_client::{
+    Aggregation, CreateQueryRequest, OrderBy, Predicate, QueryRequest, SavedQueryKind,
+};
 use serde_json::Value as JsonValue;
 
 /// Command-line client for a DataPress dataset server.
@@ -131,6 +133,19 @@ enum Command {
 
     /// Readiness probe (`GET /readyz`).
     Ready,
+
+    /// Fetch the full status of a dataset (`GET /datasets/{name}/status`).
+    Status {
+        /// Dataset name.
+        dataset: String,
+    },
+
+    /// Enqueue a reload of all reloadable datasets (`POST /datasets/reload-all`).
+    ReloadAll,
+
+    /// Manage runtime-created (saved) query datasets.
+    #[command(subcommand)]
+    Queries(QueriesCommand),
 }
 
 /// Arguments for the `query` subcommand.
@@ -188,6 +203,34 @@ struct QueryArgs {
     table: bool,
 }
 
+/// Sub-commands for `queries`.
+#[derive(Debug, Subcommand)]
+enum QueriesCommand {
+    /// Create a runtime query dataset (`POST /api/v1/queries`).
+    Create {
+        /// Dataset name (must be unique).
+        name: String,
+        /// Read-only SQL to materialise.
+        sql: String,
+        /// Kind of saved query.
+        #[arg(long, value_name = "temp|query", default_value = "temp")]
+        kind: String,
+        /// TTL for temp datasets, e.g. `"2h"`, `"30m"`.
+        #[arg(long)]
+        ttl: Option<String>,
+        /// Refresh interval (kind=query only), e.g. `"15m"`.
+        #[arg(long)]
+        interval: Option<String>,
+    },
+    /// List runtime-created datasets (`GET /api/v1/queries`).
+    List,
+    /// Delete a runtime dataset (`DELETE /api/v1/queries/{name}`).
+    Delete {
+        /// Dataset name.
+        name: String,
+    },
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let client = cli.conn.build()?;
@@ -219,6 +262,51 @@ fn main() -> Result<()> {
         }
         Command::Health => print_json(&client.healthz()?, pretty)?,
         Command::Ready => print_json(&client.readyz()?, pretty)?,
+        Command::Status { dataset } => {
+            let entry = client.dataset_status(&dataset)?;
+            print_json(&serde_json::to_value(entry)?, pretty)?;
+        }
+        Command::ReloadAll => {
+            let resp = client.reload_all()?;
+            print_json(&serde_json::to_value(resp)?, pretty)?;
+        }
+        Command::Queries(sub) => match sub {
+            QueriesCommand::Create {
+                name,
+                sql,
+                kind,
+                ttl,
+                interval,
+            } => {
+                let query_kind = match kind.as_str() {
+                    "temp" => SavedQueryKind::Temp,
+                    "query" => SavedQueryKind::Query,
+                    other => bail!("--kind must be 'temp' or 'query' (got '{other}')"),
+                };
+                let refresh = interval
+                    .as_deref()
+                    .map(|iv| serde_json::json!({ "interval": iv }));
+                let request = CreateQueryRequest {
+                    name,
+                    sql,
+                    kind: query_kind,
+                    refresh,
+                    ttl,
+                    materialize: None,
+                    index: None,
+                };
+                let entry = client.create_query(&request)?;
+                print_json(&serde_json::to_value(entry)?, pretty)?;
+            }
+            QueriesCommand::List => {
+                let entries = client.list_queries()?;
+                print_json(&serde_json::to_value(entries)?, pretty)?;
+            }
+            QueriesCommand::Delete { name } => {
+                let v = client.delete_query(&name)?;
+                print_json(&v, pretty)?;
+            }
+        },
     }
 
     Ok(())

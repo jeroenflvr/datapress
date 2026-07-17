@@ -64,6 +64,150 @@ impl OrderBy {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 7 — Saved Queries + Status models
+// ---------------------------------------------------------------------------
+
+/// Whether a runtime-created dataset survives a server restart.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SavedQueryKind {
+    /// Ephemeral — lost on restart.
+    Temp,
+    /// Persisted to `datasets.d/` and rebuilt on next startup.
+    Query,
+}
+
+impl std::fmt::Display for SavedQueryKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SavedQueryKind::Temp => f.write_str("temp"),
+            SavedQueryKind::Query => f.write_str("query"),
+        }
+    }
+}
+
+/// Request body for `POST /api/v1/queries`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CreateQueryRequest {
+    /// Dataset name.
+    pub name: String,
+    /// Read-only SQL statement to materialise.
+    pub sql: String,
+    /// `"temp"` (default) or `"query"`.
+    #[serde(default = "default_query_kind")]
+    pub kind: SavedQueryKind,
+    /// Optional refresh schedule (only meaningful for `kind = "query"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh: Option<JsonValue>,
+    /// TTL for temp datasets (e.g. `"2h"`, `"30m"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttl: Option<String>,
+    /// Materialization options.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub materialize: Option<JsonValue>,
+    /// Index options (DataFusion-only; ignored on DuckDB).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<JsonValue>,
+}
+
+fn default_query_kind() -> SavedQueryKind {
+    SavedQueryKind::Temp
+}
+
+impl CreateQueryRequest {
+    /// Build a minimal `temp` query request.
+    pub fn temp(name: impl Into<String>, sql: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            sql: sql.into(),
+            kind: SavedQueryKind::Temp,
+            refresh: None,
+            ttl: None,
+            materialize: None,
+            index: None,
+        }
+    }
+
+    /// Build a minimal persisted `query` request.
+    pub fn persisted(name: impl Into<String>, sql: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            sql: sql.into(),
+            kind: SavedQueryKind::Query,
+            refresh: None,
+            ttl: None,
+            materialize: None,
+            index: None,
+        }
+    }
+}
+
+/// One entry in `GET /api/v1/queries` and the response for `POST /api/v1/queries`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SavedQueryEntry {
+    pub name: String,
+    pub kind: SavedQueryKind,
+    /// Inferred `depends_on` list returned by the server.
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+    /// Current lifecycle state (e.g. `"published"`, `"building"`).
+    pub state: String,
+}
+
+/// Response for `POST /api/v1/datasets/reload-all`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReloadAllResponse {
+    pub enqueued: Vec<String>,
+    pub skipped: Vec<String>,
+}
+
+/// Full status entry returned by `GET /api/v1/datasets/{name}/status`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DatasetStatusEntry {
+    pub name: String,
+    /// Lifecycle state: `"pending"`, `"building"`, `"published"`, `"failed"`.
+    #[serde(rename = "state")]
+    pub state: String,
+    /// Source kind: `"parquet"`, `"delta"`, `"query"`.
+    pub kind: String,
+    /// Effective residency: `"memory"` or `"lazy"`.
+    pub residency: String,
+    /// Storage generation size in bytes (null for memory-resident).
+    #[serde(default)]
+    pub storage_bytes: Option<u64>,
+    /// Generation identifier (ULID, null for memory-resident).
+    #[serde(default)]
+    pub generation_id: Option<String>,
+    /// RFC-3339 timestamp of last successful publish.
+    #[serde(default)]
+    pub last_refresh_at: Option<String>,
+    /// Build duration in ms for the last successful publish.
+    #[serde(default)]
+    pub last_refresh_duration_ms: Option<u128>,
+    /// RFC-3339 of the next scheduled fire.
+    #[serde(default)]
+    pub next_refresh_at: Option<String>,
+    /// What triggered the last successful publish.
+    #[serde(default)]
+    pub refresh_source: Option<String>,
+    /// Consecutive scheduler failures since last success.
+    #[serde(default)]
+    pub consecutive_failures: u32,
+    /// Last error message (truncated to 500 chars).
+    #[serde(default)]
+    pub last_error: Option<String>,
+    /// Number of columns (0 when not yet published).
+    pub columns: usize,
+    /// Number of rows (0 when not yet published).
+    pub rows: usize,
+    /// Whether current generation is lazy.
+    pub lazy: bool,
+    /// Upstream dataset names this dataset depends on.
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+}
+
 /// One aggregation in a `group_by` query.
 ///
 /// `op` is `count | sum | avg | min | max`. `col` is required for every op

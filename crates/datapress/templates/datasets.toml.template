@@ -86,3 +86,28 @@ name = "example"
 #   #   4. The engine's default chain (~/.aws/credentials, IMDS).
 #   # access_key_id     = "..."
 #   # secret_access_key = "..."
+
+# -- Query (materialized SQL) dataset ---------------------------------------
+# A query dataset runs SQL over other registered datasets, materializes the
+# result, and serves it like a parquet dataset.  `depends_on` must list every
+# table the SQL references, exact both ways.
+#
+# [[dataset]]
+# name    = "state_summary"
+# on_start = "eager"    # "eager" (default) | "lazy" | "skip"
+#
+#   [dataset.source]
+#   kind       = "query"
+#   sql        = "SELECT state, COUNT(*) AS n FROM example GROUP BY state"
+#   depends_on = ["example"]
+#
+#   # Scheduled refresh: re-run the SQL every 15 minutes.
+#   # [dataset.refresh]
+#   # interval           = "15m"
+#   # on_upstream_reload = true    # also refresh when "example" reloads
+#   # timeout            = "10m"   # build timeout; default 10 minutes
+#
+#   # Residency: keep in memory unless result exceeds force_lazy_above_mb.
+#   # [dataset.materialize]
+#   # residency = "auto"           # "auto" | "memory" | "lazy"
+#   # sort_by   = ["state"]        # ORDER BY for parquet row-group pruning

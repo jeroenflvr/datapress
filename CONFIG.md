@@ -507,3 +507,103 @@ cfg = dp.AppConfig(
     ],
 )
 ```
+
+---
+
+## Materialized query datasets
+
+A dataset with `kind = "query"` is built by running SQL against other
+registered datasets, and then served exactly like a file-backed dataset.
+
+```toml
+[[dataset]]
+name    = "state_summary"
+on_start = "eager"   # "eager" (default) | "lazy" | "skip"
+
+  [dataset.source]
+  kind       = "query"
+  sql        = "SELECT state, COUNT(*) AS n, AVG(severity) AS avg_sev FROM accidents GROUP BY state"
+  depends_on = ["accidents"]   # required; must match every table in sql, exact both ways
+
+  [dataset.refresh]
+  interval           = "15m"   # humantime; absent = no schedule
+  on_upstream_reload = true    # re-build when any dependency publishes
+  timeout            = "10m"   # build timeout; default "10m"
+  jitter             = true    # ±10% jitter; default true
+  debounce           = "5s"    # cascade coalesce window; default "5s"
+
+  [dataset.materialize]
+  residency      = "auto"   # "auto" | "memory" | "lazy"; default "auto"
+  sort_by        = ["state"] # ORDER BY at write time for row-group pruning
+  reuse_on_start = false     # reuse a matching generation on restart; default false
+```
+
+### `on_start` policy (all dataset kinds)
+
+| Value   | Behaviour |
+|---------|-----------|
+| `eager` | *(default)* Built in the background at boot; `/readyz` waits. |
+| `lazy`  | Built on first query; triggering request waits. |
+| `skip`  | Built only via explicit `POST .../reload`; queries return `503`. |
+
+### `[server.startup]`
+
+```toml
+[server.startup]
+max_concurrent = 4     # parallel background builds at boot; default 4
+readiness      = "all" # "all" | "any"; default "all"
+```
+
+`readiness = "all"`: `/readyz` returns `200` only when every `eager` dataset
+is published. `readiness = "any"`: `200` as soon as one `eager` dataset publishes.
+
+### `[server.refresh]`
+
+```toml
+[server.refresh]
+max_concurrent = 1   # global semaphore for scheduled refreshes; default 1
+```
+
+### `[server.storage]` — materialization storage
+
+When absent, query-dataset results always live in memory. When present, `lazy`
+residency and auto-demotion write parquet files here.
+
+```toml
+[server.storage]
+backend             = "local"   # "local" | "s3"
+root                = "/var/lib/datapress/materialized"
+force_lazy_above_mb = 512       # auto-demotion threshold in MiB; default 512
+
+  [server.storage.s3]           # required iff backend = "s3"
+  region                = "eu-west-1"
+  endpoint              = ""   # omit for AWS; http://host:9000 for MinIO
+  access_key_id_env     = "DATAPRESS_STORAGE_KEY_ID"   # env-var NAME only
+  secret_access_key_env = "DATAPRESS_STORAGE_SECRET"   # env-var NAME only
+  addressing_style      = "virtual"   # "virtual" | "path"
+  allow_http            = false       # required for http:// endpoints
+```
+
+| Field                       | Default   | Notes |
+|-----------------------------|-----------|-------|
+| `backend`                   | `"local"` | `"local"` or `"s3"`. |
+| `root`                      | *(req.)*  | Local filesystem path or `s3://bucket/prefix`. |
+| `force_lazy_above_mb`       | `512`     | Auto-demotion threshold. `0` disables auto-demotion. |
+| `s3.access_key_id_env`      | *(unset)* | Name of the env var for the key ID. Inline values are rejected. |
+| `s3.secret_access_key_env`  | *(unset)* | Name of the env var for the secret. |
+| `s3.addressing_style`       | `"virtual"` | `"virtual"` or `"path"` (MinIO). |
+| `s3.allow_http`             | `false`   | Required for `http://` endpoints. |
+
+### `[server] saved_queries_dir`
+
+Directory from which persisted saved queries (`kind = "query"`, created via
+`POST /api/v1/queries`) are loaded at startup and written on creation.
+
+```toml
+[server]
+saved_queries_dir = "/var/lib/datapress/saved"   # default: <config_dir>/datasets.d/
+```
+
+For the full saved-queries API reference see the
+[Saved queries](docs/src/operations/saved-queries.md) documentation page.
+

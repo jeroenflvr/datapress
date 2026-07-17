@@ -8,7 +8,7 @@
 //! Python over the native `datapress` module.
 
 use datapress_client::blocking::Client as BlockingClient;
-use datapress_client::{ClientError, Predicate, QueryRequest};
+use datapress_client::{ClientError, CreateQueryRequest, Predicate, QueryRequest, SavedQueryKind};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
@@ -152,6 +152,85 @@ impl Client {
             .detach(|| self.inner.reload(dataset))
             .map_err(to_py_err)?;
         dump(&v)
+    }
+
+    /// Create a runtime query dataset (`POST /api/v1/queries`).
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// sql : str
+    /// kind : str
+    ///     ``"temp"`` (default) or ``"query"``.
+    /// ttl : str | None
+    ///     TTL string for temp datasets, e.g. ``"2h"``.
+    /// interval : str | None
+    ///     Refresh interval for persisted queries, e.g. ``"15m"``.
+    ///
+    /// Returns the server response as a JSON string.
+    #[pyo3(signature = (name, sql, kind = "temp".to_string(), ttl = None, interval = None))]
+    fn create_query(
+        &self,
+        py: Python<'_>,
+        name: &str,
+        sql: &str,
+        kind: String,
+        ttl: Option<String>,
+        interval: Option<String>,
+    ) -> PyResult<String> {
+        let query_kind = match kind.as_str() {
+            "temp" => SavedQueryKind::Temp,
+            "query" => SavedQueryKind::Query,
+            other => {
+                return Err(DataPressError::new_err(format!(
+                    "kind must be 'temp' or 'query' (got '{other}')"
+                )));
+            }
+        };
+        let refresh = interval
+            .as_deref()
+            .map(|iv| serde_json::json!({ "interval": iv }));
+        let request = CreateQueryRequest {
+            name: name.to_owned(),
+            sql: sql.to_owned(),
+            kind: query_kind,
+            refresh,
+            ttl,
+            materialize: None,
+            index: None,
+        };
+        let entry = py
+            .detach(|| self.inner.create_query(&request))
+            .map_err(to_py_err)?;
+        dump(&entry)
+    }
+
+    /// List runtime-created datasets; returns a JSON array string.
+    fn list_queries(&self, py: Python<'_>) -> PyResult<String> {
+        let entries = py.detach(|| self.inner.list_queries()).map_err(to_py_err)?;
+        dump(&entries)
+    }
+
+    /// Delete a runtime dataset; returns the JSON body.
+    fn delete_query(&self, py: Python<'_>, name: &str) -> PyResult<String> {
+        let v = py
+            .detach(|| self.inner.delete_query(name))
+            .map_err(to_py_err)?;
+        dump(&v)
+    }
+
+    /// Fetch full status for a dataset; returns a JSON string.
+    fn dataset_status(&self, py: Python<'_>, dataset: &str) -> PyResult<String> {
+        let entry = py
+            .detach(|| self.inner.dataset_status(dataset))
+            .map_err(to_py_err)?;
+        dump(&entry)
+    }
+
+    /// Enqueue reload of all reloadable datasets; returns a JSON string.
+    fn reload_all(&self, py: Python<'_>) -> PyResult<String> {
+        let resp = py.detach(|| self.inner.reload_all()).map_err(to_py_err)?;
+        dump(&resp)
     }
 }
 

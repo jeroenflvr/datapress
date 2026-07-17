@@ -101,7 +101,7 @@ markdown_extensions:
 
 extra:
   # Shown as a badge next to the repository link in the header.
-  datapress_version: 0.6.3
+  datapress_version: 0.7.0
   # Used by the `extrahead` override (overrides/main.html) for Open Graph,
   # Twitter cards, and JSON-LD structured data.
   og_image: assets/images/datapress-card.png
@@ -135,6 +135,7 @@ nav:
       - configuration/index.md
       - Server: configuration/server.md
       - Datasets: configuration/datasets.md
+      - Materialized datasets: configuration/materialized.md
       - S3 / object storage: configuration/s3.md
       - Indexing: configuration/indexing.md
       - Explorer UI: configuration/explorer.md
@@ -177,6 +178,7 @@ nav:
       - Probes (healthz / readyz / version): operations/probes.md
       - Dataset reload: operations/reload.md
       - Register datasets at runtime: operations/register.md
+      - Saved queries: operations/saved-queries.md
       - Graceful shutdown: operations/graceful-shutdown.md
       - Logging: operations/logging.md
       - Prometheus metrics: operations/metrics.md
@@ -193,3 +195,4 @@ nav:
   - Resources:
       - resources/index.md
       - Roadmap: resources/roadmap.md
+      - Release checklist: resources/release-checklist.md

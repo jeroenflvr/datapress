@@ -145,6 +145,28 @@ tasks:
       - task: publish:client-cli
       - task: publish:client-py
 
+  # ---------------------------------------------------------------------------
+  # Materialized datasets demo (Phase 7 T9.5 / definition-of-done smoke test)
+  # ---------------------------------------------------------------------------
+  demo:materialized:setup:
+    desc: Generate sample parquet data for the materialized datasets demo
+    cmds:
+      - bash examples/materialized/scripts/generate_demo_data.sh
+
+  demo:materialized:server:
+    desc: Start a DuckDB server against the materialized datasets demo config
+    deps: [demo:materialized:setup]
+    cmds:
+      - cargo build --release -p datapress-duckdb --bin datapress-duckdb
+      - ADMIN_TOKEN=demo-secret RUST_LOG=info ./target/release/datapress-duckdb
+          --config examples/materialized/datasets.toml
+
+  demo:materialized:
+    desc: "Smoke test the materialized datasets feature (server must be running: task demo:materialized:server)"
+    cmds:
+      - BASE_URL=http://127.0.0.1:8090 ADMIN_TOKEN=demo-secret
+          bash examples/materialized/scripts/smoke_test.sh
+
   build:
     desc: Build both Rust binaries
     deps: [build:duckdb, build:datafusion]
