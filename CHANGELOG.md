@@ -3,48 +3,26 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
-
 ## [0.7.0] - 2026-07-17
 
-### Breaking Changes
+### Bug Fixes
 
-- **BREAKING** Removed the un-versioned `/api/...` route alias. All API routes now live exclusively under `/api/v1/...`. Replace `/api/` with `/api/v1/` in any existing client URLs.
-- **BREAKING** Non-blocking startup: the HTTP listener now binds and serves immediately. A request sent immediately after process start may receive `503 Service Unavailable` while `eager` datasets are still building. Gate traffic on `/readyz` rather than a single query.
+- Moved save as dataset for query in explorer next to run buttons ([6d5dbe6](https://github.com/jeroenflvr/datapress/commit/6d5dbe67202c6a3911043635d1e58fa6a9980e36))
+- Explorer shows schema etc also for saved queries ([222cfed](https://github.com/jeroenflvr/datapress/commit/222cfedca616980fc4b55de91f94affd8a7a744d))
+- Explorer ([ca0cd6a](https://github.com/jeroenflvr/datapress/commit/ca0cd6aa75c46a4d3712f95c40389c0bebb0959a))
+- Explorer ui updates ([1a63da5](https://github.com/jeroenflvr/datapress/commit/1a63da599153745fb67fb83e2d99d3efed19feb7))
+- Bug on swagger ([b28319a](https://github.com/jeroenflvr/datapress/commit/b28319ac59c3d9439c7fb3f653fec2360975fa59))
 
 ### Features
 
-- `kind = "query"` dataset source: materialize SQL over other registered datasets; supports cross-dataset joins and chains.
-- `depends_on` validation: exact-match both ways between SQL table references and the declared dependency list; cycles are rejected at startup.
-- Topological startup ordering: dependencies are built before dependents; independent datasets build concurrently up to `[server.startup] max_concurrent` (default 4).
-- `on_start` policy per dataset: `eager` (default), `lazy` (build on first query), `skip` (build only on explicit reload).
-- `[server.startup] readiness`: `"all"` (default) gates `/readyz` on every eager dataset; `"any"` opens traffic after the first publish.
-- Interval-based refresh scheduler (`[dataset.refresh] interval`): single min-heap task, global semaphore, per-dataset mutex coalescing, jitter, exponential backoff.
-- `on_upstream_reload` cascade with debounce window (`[dataset.refresh] debounce`, default `5s`); diamond DAGs refresh dependents exactly once per wave.
-- `[server.storage]` backend: `local` filesystem or `s3` for query-dataset materialized parquet generations; `[dataset.materialize] residency = "auto" | "memory" | "lazy"`.
-- Auto-demotion (DataFusion streaming spill, DuckDB COPY): results exceeding `force_lazy_above_mb` (default 512 MiB) are spilled to storage.
-- Generation layout with manifest.json atomicity, N-2 retention GC, boot GC of incomplete generations, and opt-in `reuse_on_start`.
-- `sort_by` for ordered parquet row-groups (row-group min/max predicate pruning).
-- `/api/v1/datasets/{name}/status`: full observability entry with `state`, `kind`, `residency`, `storage_bytes`, `generation_id`, `last_refresh_at`, `next_refresh_at`, `refresh_source`, `consecutive_failures`, `last_error`, `depends_on`.
-- `X-Dataset-Refreshed-At` response header on `/query` and `/count`.
-- Prometheus metrics (`metrics` feature): `datapress_refresh_total`, `datapress_refresh_duration_seconds`, `datapress_dataset_generation`, `datapress_refresh_queue_depth`, `datapress_dataset_rows`, `datapress_materialize_spill_total`, `datapress_memory_override_exceeded_total`, `datapress_dataset_storage_bytes`.
-- Saved-queries API: `POST /api/v1/queries`, `GET /api/v1/queries`, `DELETE /api/v1/queries/{name}` — admin-gated (`X-Admin-Token` or `datasets:manage` OIDC scope).
-- `kind = "temp"` ephemeral datasets with optional `ttl`.
-- `kind = "query"` persisted saved queries, written to `[server] saved_queries_dir` (default `datasets.d/`).
-- `POST /api/v1/datasets/reload-all` bulk-reload endpoint (admin-gated, topological wave, debounce).
-- Explorer UI (`explorer` feature): Save-as-dataset, per-dataset state badges, per-dataset reload button, Reload-all with confirmation dialog, delete action for managed datasets.
-- `[server] saved_queries_dir` config key.
-- `datapress init` template gains a commented-out `query` dataset example.
+- Feat(stye) update explorer, mkdocs ([44973b0](https://github.com/jeroenflvr/datapress/commit/44973b00213d2cfa1af3053903700e3279aefdbd))
+- Add reload ([2b966a0](https://github.com/jeroenflvr/datapress/commit/2b966a0f2dc9148e03ac1fd7ea690d1876688ff1))
+- Phase2B ([387d451](https://github.com/jeroenflvr/datapress/commit/387d451f1ed3d84508c92db2a31ec402e50be718))
+- Materialize ad-hoc queries ([f1c78be](https://github.com/jeroenflvr/datapress/commit/f1c78be2dc334cc3ad4014f9d3e355735891642f))
 
-### Documentation
+### Miscellaneous
 
-- New MkDocs page: Configuration › Materialized datasets.
-- New MkDocs page: Operations › Saved queries.
-- Updated CONFIG.md with all new config keys and defaults.
-- Updated API versioning section in README to reflect the 0.7.0 alias removal.
-- Updated `[dataset.source]` table in README with the `query` kind.
-- Updated `/readyz` description to reflect non-blocking startup semantics.
-
-## [Unreleased]
+- Update org ([a92cb80](https://github.com/jeroenflvr/datapress/commit/a92cb80ed8fd9620a0cc8944786efcc0e7aff748))
 
 ## [0.6.3] - 2026-07-09
 
