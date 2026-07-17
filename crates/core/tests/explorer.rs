@@ -387,3 +387,82 @@ async fn explorer_shows_config_dataset_not_managed() {
         "config dataset must NOT have data-managed=\"true\"; got:\n{html}"
     );
 }
+
+/// The detail partial for a runtime-created dataset must return 200 and
+/// contain the schema table markup (the column `x`).
+#[actix_web::test]
+async fn explorer_detail_returns_200_for_runtime_dataset() {
+    datapress_core::admin::init(Some(ADMIN_TOKEN));
+    let backend = ExplorerMockBackend::new();
+    let app = test::init_service(make_app(backend)).await;
+
+    // Create a runtime dataset via the saved-queries API.
+    let create = with_admin(test::TestRequest::post().uri("/api/v1/queries"))
+        .set_json(serde_json::json!({
+            "name": "detail_ds",
+            "sql": "SELECT x FROM base",
+            "kind": "temp"
+        }))
+        .to_request();
+    let cr = test::call_service(&app, create).await;
+    assert_eq!(cr.status(), StatusCode::OK, "create should succeed");
+
+    // Fetch the detail partial.
+    let detail_req = test::TestRequest::get()
+        .uri("/explore/datasets/detail_ds")
+        .to_request();
+    let detail_resp = test::call_service(&app, detail_req).await;
+    assert_eq!(
+        detail_resp.status(),
+        StatusCode::OK,
+        "detail route must return 200 for a runtime dataset"
+    );
+    let body = test::read_body(detail_resp).await;
+    let html = std::str::from_utf8(&body).expect("UTF-8 body");
+
+    // Schema table must be present (the column name `x`).
+    assert!(
+        html.contains(">x<"),
+        "detail partial must include column name 'x' in schema table; got:\n{html}"
+    );
+    // The delete button must be present (is_managed = true).
+    assert!(
+        html.contains("dpDeleteDataset"),
+        "detail partial must include delete button for managed dataset; got:\n{html}"
+    );
+}
+
+/// After DELETE the detail route must return 404 (the dataset no longer
+/// exists in the backend).
+#[actix_web::test]
+async fn explorer_detail_returns_404_after_delete() {
+    datapress_core::admin::init(Some(ADMIN_TOKEN));
+    let backend = ExplorerMockBackend::new();
+    let app = test::init_service(make_app(backend)).await;
+
+    // Create then delete.
+    let create = with_admin(test::TestRequest::post().uri("/api/v1/queries"))
+        .set_json(serde_json::json!({
+            "name": "gone_ds",
+            "sql": "SELECT x FROM base",
+            "kind": "temp"
+        }))
+        .to_request();
+    test::call_service(&app, create).await;
+
+    let delete =
+        with_admin(test::TestRequest::delete().uri("/api/v1/queries/gone_ds")).to_request();
+    let dr = test::call_service(&app, delete).await;
+    assert_eq!(dr.status(), StatusCode::OK);
+
+    // Detail must now 404.
+    let detail_req = test::TestRequest::get()
+        .uri("/explore/datasets/gone_ds")
+        .to_request();
+    let detail_resp = test::call_service(&app, detail_req).await;
+    assert_eq!(
+        detail_resp.status(),
+        StatusCode::NOT_FOUND,
+        "detail route must return 404 after dataset is deleted"
+    );
+}

@@ -482,27 +482,29 @@ async fn asset_arrow_vendor(req: HttpRequest) -> HttpResponse {
 
 async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>) -> HttpResponse {
     let name = path.into_inner();
-    // Clone the config out of the lock so we don't hold the guard across the
-    // `await` below (the guard isn't `Send`).
-    let Some(ds) = state
-        .datasets
-        .read()
-        .unwrap()
-        .iter()
-        .find(|d| d.name == name)
-        .cloned()
-    else {
-        // Dataset names are validated to `[A-Za-z0-9_.-]` at config load,
-        // so the echoed name is safe to inline without HTML escaping.
+
+    // Check existence via the backend (authoritative — includes runtime datasets
+    // created via POST /api/v1/queries that are absent from state.datasets).
+    let summary = state.backend.summary(&name).ok();
+    if summary.is_none() && state.backend.schema(&name).is_err() {
         return HttpResponse::NotFound()
             .content_type("text/html; charset=utf-8")
             .body(format!(
                 "<div class=\"alert alert-warning\">Unknown dataset: {name}</div>"
             ));
-    };
-    let ds = &ds;
+    }
 
-    let summary = state.backend.summary(&name).ok();
+    // Optionally enrich from the config snapshot when a config entry exists.
+    // Runtime datasets have no config entry — all config-derived fields fall
+    // back to safe defaults.
+    let ds_cfg = state
+        .datasets
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .find(|d| d.name == name)
+        .cloned();
+
     let rows = summary.as_ref().map(|s| s.rows).unwrap_or(0);
 
     let schema = state.backend.schema(&name).ok();
@@ -532,6 +534,9 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
     }
     let column_count = summary.as_ref().map(|s| s.columns).unwrap_or(columns.len());
 
+    // For pending/building datasets the sample may legitimately be unavailable.
+    // Lazy-residency query datasets serve via the normal query path so
+    // backend.sample() works fine — errors map to "—" for both cases.
     let sample_pretty = match state.backend.sample(&name).await {
         Ok(s) if s.trim() == "null" => "—".to_string(),
         Ok(s) => serde_json::from_str::<serde_json::Value>(&s)
@@ -541,14 +546,42 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
         Err(_) => "—".to_string(),
     };
 
-    let projection = if ds.columns.is_empty() {
-        "all columns".to_string()
-    } else {
-        ds.columns.join(", ")
-    };
+    // Fields derived from config (defaults used for runtime datasets).
+    let source_kind = ds_cfg
+        .as_ref()
+        .map(|d| d.source.kind.as_str().to_string())
+        .unwrap_or_else(|| "query".to_string());
+    let source_location = ds_cfg
+        .as_ref()
+        .map(|d| d.source.location.clone())
+        .unwrap_or_else(|| "— (runtime saved query)".to_string());
+    let index_mode = ds_cfg
+        .as_ref()
+        .map(|d| format!("{:?}", d.index.mode).to_lowercase())
+        .unwrap_or_else(|| "auto".to_string());
+    let index_columns = ds_cfg
+        .as_ref()
+        .map(|d| d.index.columns.join(", "))
+        .unwrap_or_default();
+    let projection = ds_cfg
+        .as_ref()
+        .map(|d| {
+            if d.columns.is_empty() {
+                "all columns".to_string()
+            } else {
+                d.columns.join(", ")
+            }
+        })
+        .unwrap_or_else(|| "all columns".to_string());
+    let dict_encode = ds_cfg.as_ref().map(|d| d.dict_encode).unwrap_or(false);
+    let lazy = summary
+        .as_ref()
+        .map(|s| s.lazy)
+        .or_else(|| ds_cfg.as_ref().map(|d| d.lazy))
+        .unwrap_or(false);
 
     let (has_s3, s3_region, s3_endpoint, s3_addressing, s3_partitioning, s3_creds) =
-        match ds.s3.as_ref() {
+        match ds_cfg.as_ref().and_then(|d| d.s3.as_ref()) {
             Some(s3) => (
                 true,
                 s3.region.clone().unwrap_or_else(|| "—".into()),
@@ -574,20 +607,20 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
         };
 
     let tpl = DatasetTemplate {
-        name: ds.name.clone(),
+        name: name.clone(),
         rows,
         column_count,
         indexed_count: indexed.len(),
         nullable_count,
-        source_kind: ds.source.kind.as_str().to_string(),
-        source_location: ds.source.location.clone(),
-        index_mode: format!("{:?}", ds.index.mode).to_lowercase(),
-        index_columns: ds.index.columns.join(", "),
+        source_kind,
+        source_location,
+        index_mode,
+        index_columns,
         projection,
-        dict_encode: ds.dict_encode,
-        lazy: summary.as_ref().map(|s| s.lazy).unwrap_or(ds.lazy),
-        parquet_url: format!("{}/datasets/{}/all.parquet", state.api_base, ds.name),
-        schema_url: format!("{}/datasets/{}/schema", state.api_base, ds.name),
+        dict_encode,
+        lazy,
+        parquet_url: format!("{}/datasets/{}/all.parquet", state.api_base, name),
+        schema_url: format!("{}/datasets/{}/schema", state.api_base, name),
         datasets_url: format!("{}/datasets", state.api_base),
         columns,
         sample_pretty,
@@ -598,7 +631,7 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
         s3_partitioning,
         s3_creds,
         api_base: state.api_base.clone(),
-        is_managed: state.backend.is_managed(&ds.name),
+        is_managed: state.backend.is_managed(&name),
     };
     render(&tpl)
 }
