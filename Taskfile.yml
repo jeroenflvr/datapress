@@ -190,6 +190,20 @@ tasks:
     cmds:
       - cargo check --workspace --all-targets
 
+  test:
+    desc: Run the full test suite (all workspace crates, excludes Python wheels)
+    cmds:
+      - cargo test --workspace --exclude datapress-client-py --exclude datapress-py
+
+  test:explorer:
+    desc: Run explorer integration tests (requires the `explorer` feature)
+    cmds:
+      - cargo test -p datapress-core --features explorer
+
+  test:all:
+    desc: Run all tests including explorer feature tests
+    deps: [test, test:explorer]
+
   check:no-legacy-api:
     desc: Fail if any source file outside docs/docs/site still references the removed /api unversioned alias
     cmds:
