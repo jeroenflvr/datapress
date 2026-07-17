@@ -167,8 +167,20 @@
         alert("Delete failed: " + resp.status);
         return;
       }
-      // Reload the page to reflect the removal.
-      window.location.reload();
+      // Remove the list row live (no full-page reload needed — the row is the
+      // only DOM node that references this dataset in the discovery list).
+      const list = document.querySelector(".dataset-list");
+      const row = list && list.querySelector(
+        '.list-group-item[data-name="' + CSS.escape(name) + '"]'
+      );
+      if (row) {
+        row.remove();
+      }
+      // If the detail pane was showing this dataset, clear it.
+      const detail = document.getElementById("dataset-detail");
+      if (detail && detail.querySelector('[id="reload-btn-' + name + '"]')) {
+        detail.innerHTML = '<div class="text-secondary p-4">Dataset deleted.</div>';
+      }
     } catch (e) {
       alert("Delete error: " + e.message);
     } finally {
@@ -397,7 +409,91 @@
   function pollUntilPublished(name, el) {
     pollUntilTerminal(name, function (entry) {
       if (el) el.textContent = entry ? ("State: " + (entry.state || "?") + ".") : "(timed out)";
+      // After the dataset reaches a terminal state, insert/update its row
+      // in the discovery list so the user can navigate to it without reloading.
+      insertDatasetListRow(name, entry);
     });
+  }
+
+  // -----------------------------------------------------------------------
+  // Insert (or update) a dataset list row after a successful save.
+  //
+  // Row markup mirrors the Askama template in
+  //   crates/core/templates/explorer/index.html  (the {% for d in datasets %}
+  //   block).  Keep the two in sync: data-* attributes, badge classes, and
+  //   dp-meta format must match so applyStatusToListItem works on both.
+  // -----------------------------------------------------------------------
+  function insertDatasetListRow(name, entry) {
+    const list = document.querySelector(".dataset-list");
+    if (!list) return;
+
+    // If a row already exists (e.g. from a previous save), just update it.
+    const existing = list.querySelector(
+      '.list-group-item[data-name="' + CSS.escape(name) + '"]'
+    );
+    if (existing) {
+      if (entry) applyStatusToListItem(existing, entry);
+      return;
+    }
+
+    const state  = entry ? (entry.state  || "pending").toLowerCase() : "building";
+    const rows   = entry ? (entry.rows   || 0)                       : 0;
+    const cols   = entry ? (entry.columns || 0)                      : 0;
+    const kind   = entry ? (entry.kind   || "query")                 : "query";
+
+    // Build the badge HTML — same logic as the template's state conditional.
+    let badgeHtml;
+    if (state === "published") {
+      badgeHtml = '<span class="badge text-bg-secondary flex-shrink-0 dp-rows-badge">' + rows + ' rows</span>';
+    } else if (state === "building") {
+      badgeHtml = '<span class="badge text-bg-warning flex-shrink-0 dp-rows-badge">' +
+        '<span class="spinner-border spinner-border-sm" style="width:.6em;height:.6em;border-width:.15em"></span>' +
+        ' building</span>';
+    } else if (state === "failed") {
+      badgeHtml = '<span class="badge text-bg-danger flex-shrink-0 dp-rows-badge">failed</span>';
+    } else {
+      badgeHtml = '<span class="badge text-bg-light text-dark border flex-shrink-0 dp-rows-badge">pending</span>';
+    }
+
+    let metaHtml;
+    if (state === "published") {
+      metaHtml = kind + " &middot; " + cols + " cols";
+    } else if (state === "failed") {
+      const err = (entry && entry.last_error) ? entry.last_error.replace(/"/g, "&quot;") : "";
+      metaHtml = kind + ' &middot; <span class="text-danger" title="' + err + '">error</span>';
+    } else {
+      metaHtml = kind + " &middot; loading\u2026";
+    }
+
+    const el = document.createElement("a");
+    el.className = "list-group-item list-group-item-action";
+    el.setAttribute("href", "#");
+    el.setAttribute("role", "button");
+    el.dataset.name    = name;
+    el.dataset.rows    = rows;
+    el.dataset.cols    = cols;
+    el.dataset.state   = state;
+    el.dataset.managed = "true";  // saved via POST /queries → always managed
+    // htmx attributes — processed by htmx.process() below.
+    el.setAttribute("hx-get",     (CFG.explorerBase || "/explore") + "/datasets/" + encodeURIComponent(name));
+    el.setAttribute("hx-target",  "#dataset-detail");
+    el.setAttribute("hx-swap",    "innerHTML");
+    el.setAttribute("hx-trigger", "click");
+    el.setAttribute("onclick",
+      "document.querySelectorAll('.dataset-list .list-group-item').forEach(e=>e.classList.remove('active'));" +
+      "this.classList.add('active');"
+    );
+    el.innerHTML =
+      '<div class="d-flex justify-content-between align-items-center gap-2">' +
+      '  <strong class="text-truncate" style="min-width:0" title="' + name + '">' + name + '</strong>' +
+      '  ' + badgeHtml +
+      '</div>' +
+      '<small class="text-secondary dp-meta">' + metaHtml + '</small>';
+
+    list.appendChild(el);
+
+    // Let htmx process the new element so hx-get fires on click.
+    if (typeof htmx !== "undefined") htmx.process(el);
   }
 
   // -----------------------------------------------------------------------

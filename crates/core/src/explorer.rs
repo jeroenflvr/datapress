@@ -121,6 +121,10 @@ struct DatasetListItem {
     state: String,
     /// Last error, if any (truncated).  Non-empty only when state == `failed`.
     last_error: String,
+    /// Whether this dataset was created via the saved-queries API.
+    /// When true the list row carries `data-managed="true"` so JS can render
+    /// a delete button after a live insert and `dpDeleteDataset` can target it.
+    is_managed: bool,
 }
 
 #[derive(Template)]
@@ -257,41 +261,54 @@ fn env_badge_class(env: &str, color_override: Option<&str>) -> String {
 
 /// Build the `[{name, rows, parquet}]` payload consumed by the DuckDB-WASM
 /// console and shell terminal, alongside the discovery list items.
+///
+/// Uses `backend.dataset_statuses()` as the **authoritative** dataset list so
+/// runtime datasets created via `POST /api/v1/queries` appear here even when
+/// they were never added to `state.datasets` (the config-file snapshot).
+/// Config entries enrich display fields (kind) where available.
 fn collect_datasets(state: &ExplorerState) -> (Vec<DatasetListItem>, String) {
-    let datasets = state.datasets.read().unwrap();
-    // Fetch full statuses once so we have lifecycle state + rows in one call.
-    let statuses: std::collections::HashMap<String, crate::backend::DatasetStatusEntry> = state
-        .backend
-        .dataset_statuses()
-        .into_iter()
-        .map(|s| (s.name.clone(), s))
-        .collect();
-    let mut items = Vec::with_capacity(datasets.len());
-    let mut json_items = Vec::with_capacity(datasets.len());
-    for ds in datasets.iter() {
-        let (rows, columns, ds_state, last_error) = match statuses.get(&ds.name) {
-            Some(s) => (
-                s.rows,
-                s.columns,
-                format!("{:?}", s.status).to_lowercase(),
-                s.last_error.clone().unwrap_or_default(),
-            ),
-            None => (0, 0, "pending".to_string(), String::new()),
-        };
+    // Fetch full statuses once — this is the single authoritative list.
+    let statuses = state.backend.dataset_statuses();
+    // Build a name→kind index from the config snapshot for kind enrichment.
+    let config_kinds: std::collections::HashMap<String, String> = {
+        let guard = state.datasets.read().unwrap_or_else(|e| e.into_inner());
+        guard
+            .iter()
+            .map(|d| (d.name.clone(), d.source.kind.as_str().to_string()))
+            .collect()
+    };
+
+    let mut items = Vec::with_capacity(statuses.len());
+    let mut json_items = Vec::with_capacity(statuses.len());
+
+    for s in &statuses {
+        let state_str = format!("{:?}", s.status).to_lowercase();
+        let last_error = s.last_error.clone().unwrap_or_default();
+        // Use the config-reported kind (parquet/delta/query) when available;
+        // fall back to the backend-reported kind for runtime datasets that have
+        // no config entry.
+        let kind = config_kinds
+            .get(&s.name)
+            .cloned()
+            .unwrap_or_else(|| s.kind.clone());
+        let is_managed = state.backend.is_managed(&s.name);
+
         items.push(DatasetListItem {
-            name: ds.name.clone(),
-            rows,
-            columns,
-            kind: ds.source.kind.as_str().to_string(),
-            state: ds_state,
+            name: s.name.clone(),
+            rows: s.rows,
+            columns: s.columns,
+            kind,
+            state: state_str,
             last_error,
+            is_managed,
         });
         json_items.push(serde_json::json!({
-            "name": ds.name,
-            "rows": rows,
-            "parquet": format!("{}/datasets/{}/all.parquet", state.api_base, ds.name),
+            "name": s.name,
+            "rows": s.rows,
+            "parquet": format!("{}/datasets/{}/all.parquet", state.api_base, s.name),
         }));
     }
+
     let datasets_json = serde_json::to_string(&json_items).unwrap_or_else(|_| "[]".into());
     (items, datasets_json)
 }

@@ -63,6 +63,7 @@
              href="#" role="button"
              data-name="{{ d.name }}" data-rows="{{ d.rows }}" data-cols="{{ d.columns }}"
              data-state="{{ d.state }}"
+             data-managed="{{ d.is_managed }}"
              hx-get="{{ explorer_base }}/datasets/{{ d.name }}"
              hx-target="#dataset-detail"
              hx-swap="innerHTML"
