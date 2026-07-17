@@ -273,9 +273,11 @@
   function initSaveAsDataset() {
     if (!QUERIES_ENABLED) return;
 
-    // Show the save-as-dataset toggle button in the API Query tab.
-    const wrap = document.getElementById("save-as-dataset-wrap");
-    if (wrap) wrap.classList.remove("d-none");
+    // Show the save-as-dataset toggle buttons next to both Run buttons.
+    // Buttons carry class "save-as-dataset-btn-wrap" (one per mode toolbar).
+    document.querySelectorAll(".save-as-dataset-btn-wrap").forEach(function (wrap) {
+      wrap.classList.remove("d-none");
+    });
 
     // Show storage residency/sort_by fields if storage is configured.
     const storageFields = document.getElementById("save-storage-fields");

@@ -172,9 +172,19 @@
                 <i class="bi bi-magic"></i> Check / prettify JSON
               </button>
               <button id="api-json-sample" class="btn btn-sm btn-outline-secondary" type="button">sample body</button>
-              <button id="api-json-run" class="btn btn-sm btn-success ms-auto" type="button">
+              <button id="api-json-run" class="btn btn-sm btn-success" type="button">
                 <i class="bi bi-play-fill"></i> Run
               </button>
+              <!-- Save as dataset — shown only when queriesEnabled = true;
+                   initSaveAsDataset() in manage.js reveals .save-as-dataset-btn-wrap -->
+              <div class="save-as-dataset-btn-wrap d-none">
+                <button class="btn btn-sm btn-outline-success" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#save-dataset-form"
+                        aria-expanded="false" aria-controls="save-dataset-form"
+                        title="Save the current SQL as a dataset">
+                  <i class="bi bi-floppy"></i> Save as dataset…
+                </button>
+              </div>
             </div>
           </div>
           <textarea id="api-json-body" class="form-control mono" rows="9" spellcheck="false"
@@ -204,10 +214,7 @@
               <button id="api-sql-run" class="btn btn-sm btn-success" type="button">
                 <i class="bi bi-play-fill"></i> Run
               </button>
-              <!-- Save as dataset (R8.7) — placed next to Run; shown only when
-                   queriesEnabled = true.  initSaveAsDataset() in manage.js
-                   reveals #save-as-dataset-wrap. -->
-              <div id="save-as-dataset-wrap" class="d-none">
+              <div class="save-as-dataset-btn-wrap d-none">
                 <button class="btn btn-sm btn-outline-success" type="button"
                         data-bs-toggle="collapse" data-bs-target="#save-dataset-form"
                         aria-expanded="false" aria-controls="save-dataset-form"
@@ -230,8 +237,11 @@
             <strong>To JSON query</strong> to convert simple SQL into a structured
             request that runs without the raw-SQL endpoint.
           </div>
-          <!-- Save-as-dataset collapse panel; toggle button lives in the toolbar above -->
-          <div class="collapse mt-2" id="save-dataset-form">
+        </div>
+
+        <!-- Save-as-dataset collapse panel — shared between JSON and SQL modes.
+             The toggle buttons live inside each mode toolbar above. -->
+        <div class="collapse mt-2" id="save-dataset-form">
             <div class="card card-body bg-body-secondary">
               <div class="row g-2">
                 <div class="col-12 col-md-5">
