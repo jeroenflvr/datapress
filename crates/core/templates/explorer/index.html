@@ -51,11 +51,19 @@
             Cols <i class="bi bi-caret-down-fill sort-caret"></i>
           </button>
         </div>
+        <div class="mb-2 d-flex gap-2">
+          <button id="reload-all-btn" class="btn btn-sm btn-outline-warning flex-fill d-none"
+                  title="Rebuild all datasets in topological order">
+            <i class="bi bi-arrow-repeat"></i> Reload all
+          </button>
+        </div>
         <div class="list-group dataset-list">
           {% for d in datasets %}
           <a class="list-group-item list-group-item-action{% if loop.first %} active{% endif %}"
              href="#" role="button"
              data-name="{{ d.name }}" data-rows="{{ d.rows }}" data-cols="{{ d.columns }}"
+             data-state="{{ d.state }}"
+             data-managed="{{ d.is_managed }}"
              hx-get="{{ explorer_base }}/datasets/{{ d.name }}"
              hx-target="#dataset-detail"
              hx-swap="innerHTML"
@@ -63,9 +71,17 @@
              onclick="document.querySelectorAll('.dataset-list .list-group-item').forEach(e=>e.classList.remove('active'));this.classList.add('active');">
             <div class="d-flex justify-content-between align-items-center gap-2">
               <strong class="text-truncate" style="min-width:0" title="{{ d.name }}" data-bs-toggle="tooltip" data-bs-placement="top">{{ d.name }}</strong>
-              <span class="badge text-bg-secondary flex-shrink-0">{{ d.rows }} rows</span>
+              {% if d.state == "published" %}
+              <span class="badge text-bg-secondary flex-shrink-0 dp-rows-badge">{{ d.rows }} rows</span>
+              {% else if d.state == "building" %}
+              <span class="badge text-bg-warning flex-shrink-0 dp-rows-badge"><span class="spinner-border spinner-border-sm" style="width:.6em;height:.6em;border-width:.15em"></span> building</span>
+              {% else if d.state == "failed" %}
+              <span class="badge text-bg-danger flex-shrink-0 dp-rows-badge" title="{{ d.last_error }}">failed</span>
+              {% else %}
+              <span class="badge text-bg-light text-dark border flex-shrink-0 dp-rows-badge">pending</span>
+              {% endif %}
             </div>
-            <small class="text-secondary">{{ d.kind }} · {{ d.columns }} cols</small>
+            <small class="text-secondary dp-meta">{{ d.kind }}{% if d.state == "published" %} · {{ d.columns }} cols{% else if d.state == "failed" %} · <span class="text-danger" title="{{ d.last_error }}">error</span>{% else %} · loading…{% endif %}</small>
           </a>
           {% endfor %}
         </div>
@@ -156,9 +172,19 @@
                 <i class="bi bi-magic"></i> Check / prettify JSON
               </button>
               <button id="api-json-sample" class="btn btn-sm btn-outline-secondary" type="button">sample body</button>
-              <button id="api-json-run" class="btn btn-sm btn-success ms-auto" type="button">
+              <button id="api-json-run" class="btn btn-sm btn-success" type="button">
                 <i class="bi bi-play-fill"></i> Run
               </button>
+              <!-- Save as dataset — shown only when queriesEnabled = true;
+                   initSaveAsDataset() in manage.js reveals .save-as-dataset-btn-wrap -->
+              <div class="save-as-dataset-btn-wrap d-none">
+                <button class="btn btn-sm btn-outline-success" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#save-dataset-form"
+                        aria-expanded="false" aria-controls="save-dataset-form"
+                        title="Save the current SQL as a dataset">
+                  <i class="bi bi-floppy"></i> Save as dataset…
+                </button>
+              </div>
             </div>
           </div>
           <textarea id="api-json-body" class="form-control mono" rows="9" spellcheck="false"
@@ -185,22 +211,106 @@
                 <span class="input-group-text">max rows</span>
                 <input id="api-sql-maxrows" class="form-control" type="number" min="1" value="1000">
               </div>
-              <button id="api-sql-run" class="btn btn-sm btn-success ms-auto" type="button">
+              <button id="api-sql-run" class="btn btn-sm btn-success" type="button">
                 <i class="bi bi-play-fill"></i> Run
               </button>
+              <div class="save-as-dataset-btn-wrap d-none">
+                <button class="btn btn-sm btn-outline-success" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#save-dataset-form"
+                        aria-expanded="false" aria-controls="save-dataset-form"
+                        title="Save the current SQL as a dataset">
+                  <i class="bi bi-floppy"></i> Save as dataset…
+                </button>
+              </div>
             </div>
           </div>
           <textarea id="api-sql-body" class="form-control mono" rows="9" spellcheck="false"
                     placeholder="SELECT * FROM dataset LIMIT 100"></textarea>
           <div class="form-text">
-            POSTed to <code>{{ api_base }}/sql</code>. Read-only single-dataset
-            <code>SELECT</code>/<code>WITH</code>, capped server-side.
+            POSTed to <code>{{ api_base }}/sql</code>. Read-only
+            <code>SELECT</code>/<code>WITH</code> over one or more registered datasets,
+            capped server-side.
           </div>
           <div id="api-sql-disabled" class="alert alert-warning mt-2 mb-0 d-none" role="alert">
             The raw-SQL endpoint is disabled on this server (<code>[sql].enabled = false</code>).
             You can still check syntax, but queries will return <code>404</code>. Use
             <strong>To JSON query</strong> to convert simple SQL into a structured
             request that runs without the raw-SQL endpoint.
+          </div>
+        </div>
+
+        <!-- Save-as-dataset collapse panel — shared between JSON and SQL modes.
+             The toggle buttons live inside each mode toolbar above. -->
+        <div class="collapse mt-2" id="save-dataset-form">
+            <div class="card card-body bg-body-secondary">
+              <div class="row g-2">
+                <div class="col-12 col-md-5">
+                  <label class="form-label small mb-1">Dataset name</label>
+                  <input id="save-name" class="form-control form-control-sm" required
+                         pattern="[A-Za-z0-9_.\-]+" placeholder="my_query"
+                         title="Letters, digits, dot, underscore and hyphen only">
+                  <div id="save-name-error" class="invalid-feedback"></div>
+                </div>
+                <div class="col-12 col-md-3">
+                  <label class="form-label small mb-1">Kind</label>
+                  <select id="save-kind" class="form-select form-select-sm">
+                    <option value="temp" selected>Temp (ephemeral)</option>
+                    <option value="query">Query (persisted)</option>
+                  </select>
+                </div>
+                <div class="col-12 col-md-4" id="save-ttl-wrap">
+                  <label class="form-label small mb-1">TTL <span class="text-secondary">(optional, e.g. 2h)</span></label>
+                  <input id="save-ttl" class="form-control form-control-sm" placeholder="2h">
+                </div>
+                <div class="col-12 col-md-6">
+                  <label class="form-label small mb-1">Refresh interval <span class="text-secondary">(optional)</span></label>
+                  <input id="save-interval" class="form-control form-control-sm" placeholder="15m">
+                </div>
+                <div class="col-12 col-md-6 d-flex align-items-end pb-1">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="save-on-upstream">
+                    <label class="form-check-label small" for="save-on-upstream">Cascade on upstream reload</label>
+                  </div>
+                </div>
+                <!-- Residency/sort_by: shown only when storage backend is configured -->
+                <div id="save-storage-fields" class="col-12 d-none">
+                  <div class="row g-2">
+                    <div class="col-12 col-md-5">
+                      <label class="form-label small mb-1">Residency</label>
+                      <select id="save-residency" class="form-select form-select-sm">
+                        <option value="auto" selected>Auto</option>
+                        <option value="memory">Memory</option>
+                        <option value="lazy">Lazy (storage)</option>
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-7">
+                      <label class="form-label small mb-1">Sort by <span class="text-secondary">(optional)</span></label>
+                      <input id="save-sort-by" class="form-control form-control-sm mono" placeholder="col1, col2">
+                    </div>
+                  </div>
+                </div>
+                <!-- Admin token (held in tab memory only, never persisted) -->
+                <div class="col-12" id="save-token-wrap">
+                  <label class="form-label small mb-1"><i class="bi bi-shield-lock"></i> Admin token</label>
+                  <input id="save-admin-token" type="password" class="form-control form-control-sm mono" autocomplete="off" placeholder="X-Admin-Token">
+                  <div class="form-text">Held in tab memory only — never stored.</div>
+                </div>
+              </div>
+              <div class="mt-2 d-flex gap-2 align-items-center flex-wrap">
+                <button id="save-submit" class="btn btn-sm btn-success" type="button">
+                  <i class="bi bi-floppy"></i> Save
+                </button>
+                <span id="save-status" class="small text-secondary"></span>
+              </div>
+              <div id="save-result" class="mt-2 d-none">
+                <div class="alert alert-success mb-0 small">
+                  <strong>Saved as <span id="save-result-name"></span>.</strong>
+                  Inferred depends_on: <span id="save-result-deps" class="mono"></span>.
+                  <span id="save-result-building" class="d-none">Building… </span>
+                </div>
+              </div>
+              <div id="save-error" class="alert alert-danger mt-2 d-none small"></div>
+            </div>
           </div>
         </div>
 
@@ -429,7 +539,7 @@
   </div>
 </div>
 
-<script id="explorer-config" type="application/json">{ "explorerBase": "{{ explorer_base }}", "apiBase": "{{ api_base }}", "sqlEnabled": {% if sql_enabled %}true{% else %}false{% endif %}, "oauth2": {{ oauth2_json|safe }} }</script>
+<script id="explorer-config" type="application/json">{ "explorerBase": "{{ explorer_base }}", "apiBase": "{{ api_base }}", "sqlEnabled": {% if sql_enabled %}true{% else %}false{% endif %}, "queriesEnabled": {% if queries_enabled %}true{% else %}false{% endif %}, "storageBackend": "{{ storage_backend }}", "oauth2": {{ oauth2_json|safe }} }</script>
 <script id="datasets-data" type="application/json">{{ datasets_json|safe }}</script>
 <script>
   // Lazily load the embedded DuckDB-WASM shell the first time its tab is shown.
@@ -551,10 +661,9 @@
   // (from the Register form's field, as X-Admin-Token) or the OAuth2 bearer
   // token (if the user signed in via the Authorize button). Neither is placed
   // in the request body.
-  // Init Bootstrap tooltips on dataset name labels
-  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
-    new bootstrap.Tooltip(el);
-  });
+  // Bootstrap Tooltip init is handled in manage.js DOMContentLoaded so that
+  // bootstrap.bundle.min.js (loaded after this block) is guaranteed to be
+  // available. Do not call new bootstrap.Tooltip() here.
 
   (function () {
     document.body.addEventListener("htmx:configRequest", function (evt) {
@@ -578,4 +687,5 @@
 
 {% block scripts %}
 <script type="module" src="{{ explorer_base }}/assets/query-api.js?v={{ asset_version }}"></script>
+<script type="module" src="{{ explorer_base }}/assets/manage.js?v={{ asset_version }}"></script>
 {% endblock %}

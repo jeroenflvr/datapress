@@ -26,9 +26,10 @@ use datapress_core::config::{
     AddressingStyle, AppConfig, AuthConfig as CoreAuthConfig, Backend, BucketInHost, ColumnFilter,
     DataFusionConfig as CoreDataFusionConfig, DatasetConfig as CoreDatasetConfig,
     ExplorerConfig as CoreExplorerConfig, IndexConfig, IndexMode,
-    MetricsConfig as CoreMetricsConfig, Partitioning, PgwireConfig as CorePgwireConfig,
-    S3Config as CoreS3Config, ServerConfig, SourceConfig, SourceKind, SqlConfig as CoreSqlConfig,
-    SwaggerConfig as CoreSwaggerConfig, SwaggerOAuth2Config as CoreSwaggerOAuth2Config,
+    MetricsConfig as CoreMetricsConfig, OnStart, Partitioning, PgwireConfig as CorePgwireConfig,
+    RefreshConfig as CoreRefreshConfig, S3Config as CoreS3Config, ServerConfig, SourceConfig,
+    SourceKind, SqlConfig as CoreSqlConfig, SwaggerConfig as CoreSwaggerConfig,
+    SwaggerOAuth2Config as CoreSwaggerOAuth2Config,
 };
 
 // ---------------------------------------------------------------------------
@@ -401,6 +402,30 @@ pub struct PyDatasetConfig {
     /// ``projection_include``.
     #[pyo3(get, set)]
     pub projection_exclude: Option<Vec<String>>,
+    // --- query-source additions ---
+    /// When ``"query"``, the dataset is materialised from SQL instead of
+    /// a file. Requires ``sql`` and leaves ``source`` unused (pass ``""``).
+    #[pyo3(get, set)]
+    pub kind: String,
+    /// SQL statement for ``kind="query"`` datasets.
+    #[pyo3(get, set)]
+    pub sql: Option<String>,
+    /// Explicit upstream dependency names (validated against ``sql``
+    /// references; inferred at runtime, but required here for parity
+    /// with the TOML config).
+    #[pyo3(get, set)]
+    pub depends_on: Vec<String>,
+    /// Startup behaviour: ``"eager"`` (default), ``"lazy"``, or ``"skip"``.
+    #[pyo3(get, set)]
+    pub on_start: String,
+    /// Refresh interval string, e.g. ``"15m"``, ``"1h"``. Only valid for
+    /// ``kind="query"`` datasets.
+    #[pyo3(get, set)]
+    pub refresh_interval: Option<String>,
+    /// Whether to refresh this dataset whenever any of its dependencies
+    /// are reloaded. Only valid for ``kind="query"`` datasets.
+    #[pyo3(get, set)]
+    pub on_upstream_reload: bool,
 }
 
 #[pymethods]
@@ -431,6 +456,16 @@ impl PyDatasetConfig {
     ///         exclusive with ``projection_exclude``.
     ///     projection_exclude (list[str] | None): These columns are hidden.
     ///         Mutually exclusive with ``projection_include``.
+    ///     kind (str): ``"parquet"`` / ``"delta"`` (file-backed, default
+    ///         ``"parquet"``) or ``"query"`` (SQL-materialised dataset).
+    ///     sql (str | None): SQL for ``kind="query"`` datasets.
+    ///     depends_on (list[str]): Upstream dataset names referenced in the
+    ///         SQL (required when ``kind="query"``).
+    ///     on_start (str): ``"eager"`` (default), ``"lazy"``, or ``"skip"``.
+    ///     refresh_interval (str | None): Periodic refresh interval, e.g.
+    ///         ``"15m"``. Only for ``kind="query"``.
+    ///     on_upstream_reload (bool): Cascade refresh when any dependency
+    ///         publishes. Only for ``kind="query"``. Default ``False``.
     #[new]
     #[pyo3(signature = (
         name,
@@ -448,6 +483,12 @@ impl PyDatasetConfig {
         predicate_exclude     = None,
         projection_include    = None,
         projection_exclude    = None,
+        kind                  = "parquet".to_string(),
+        sql                   = None,
+        depends_on            = vec![],
+        on_start              = "eager".to_string(),
+        refresh_interval      = None,
+        on_upstream_reload    = false,
     ))]
     #[allow(clippy::too_many_arguments)] // mirrors the user-facing Python kwargs surface
     fn new(
@@ -466,6 +507,12 @@ impl PyDatasetConfig {
         predicate_exclude: Option<Vec<String>>,
         projection_include: Option<Vec<String>>,
         projection_exclude: Option<Vec<String>>,
+        kind: String,
+        sql: Option<String>,
+        depends_on: Vec<String>,
+        on_start: String,
+        refresh_interval: Option<String>,
+        on_upstream_reload: bool,
     ) -> Self {
         Self {
             name,
@@ -483,20 +530,42 @@ impl PyDatasetConfig {
             predicate_exclude,
             projection_include,
             projection_exclude,
+            kind,
+            sql,
+            depends_on,
+            on_start,
+            refresh_interval,
+            on_upstream_reload,
         }
     }
 }
 
 impl PyDatasetConfig {
     fn into_core(self, py: Python<'_>) -> PyResult<CoreDatasetConfig> {
-        let kind = match self.format.as_str() {
+        // `kind` overrides `format` when set to "query"
+        let source_kind = match self.kind.as_str() {
+            "query" => SourceKind::Query,
             "parquet" => SourceKind::Parquet,
             "delta" => SourceKind::Delta,
             other => {
                 return Err(PyValueError::new_err(format!(
-                    "DatasetConfig.format must be 'parquet' or 'delta' (got '{other}')"
+                    "DatasetConfig.kind must be 'parquet', 'delta', or 'query' (got '{other}')"
                 )));
             }
+        };
+        // `format` is still respected for the non-query path for backwards compat
+        let source_kind = if self.kind == "parquet" || self.kind == "delta" {
+            match self.format.as_str() {
+                "parquet" => SourceKind::Parquet,
+                "delta" => SourceKind::Delta,
+                other => {
+                    return Err(PyValueError::new_err(format!(
+                        "DatasetConfig.format must be 'parquet' or 'delta' (got '{other}')"
+                    )));
+                }
+            }
+        } else {
+            source_kind
         };
         let mode = match self.mode.as_str() {
             "auto" => IndexMode::Auto,
@@ -505,6 +574,16 @@ impl PyDatasetConfig {
             other => {
                 return Err(PyValueError::new_err(format!(
                     "DatasetConfig.mode must be 'auto', 'none', or 'list' (got '{other}')"
+                )));
+            }
+        };
+        let on_start = match self.on_start.as_str() {
+            "eager" => OnStart::Eager,
+            "lazy" => OnStart::Lazy,
+            "skip" => OnStart::Skip,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "DatasetConfig.on_start must be 'eager', 'lazy', or 'skip' (got '{other}')"
                 )));
             }
         };
@@ -537,11 +616,34 @@ impl PyDatasetConfig {
             .validate(&self.name, "projection_filter")
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
 
+        // Build an optional refresh config from the refresh_interval /
+        // on_upstream_reload kwargs.
+        let refresh = if self.refresh_interval.is_some() || self.on_upstream_reload {
+            let interval = self
+                .refresh_interval
+                .as_deref()
+                .map(|s| {
+                    datapress_core::config::parse_duration(s).map_err(|e| {
+                        PyValueError::new_err(format!("DatasetConfig.refresh_interval: {e}"))
+                    })
+                })
+                .transpose()?;
+            Some(CoreRefreshConfig {
+                interval,
+                on_upstream_reload: self.on_upstream_reload,
+                ..CoreRefreshConfig::default()
+            })
+        } else {
+            None
+        };
+
         Ok(CoreDatasetConfig {
             name: self.name,
             source: SourceConfig {
-                kind,
+                kind: source_kind,
                 location: self.source,
+                sql: self.sql,
+                depends_on: self.depends_on,
             },
             s3,
             index,
@@ -550,6 +652,11 @@ impl PyDatasetConfig {
             lazy: self.lazy,
             predicate_filter,
             projection_filter,
+            on_start,
+            refresh,
+            materialize: None,
+            managed: false,
+            temp: false,
         })
     }
 }
@@ -1127,6 +1234,10 @@ impl PyDataPressConfig {
             pgwire,
             environment: self.server_environment,
             environment_color: self.server_environment_color,
+            startup: datapress_core::config::StartupConfig::default(),
+            refresh: datapress_core::config::ServerRefreshConfig::default(),
+            saved_queries_dir: None,
+            storage: None,
         })
     }
 
@@ -1449,6 +1560,7 @@ impl PyAuthConfig {
             audience: self.audience,
             read_scopes: self.read_scopes,
             reload_scopes: self.reload_scopes,
+            manage_scopes: vec![],
             anonymous_read: self.anonymous_read,
             algorithms: self.algorithms,
             leeway_secs: self.leeway_secs,
@@ -1627,6 +1739,10 @@ fn clone_app_config(cfg: &AppConfig) -> AppConfig {
             pgwire: cfg.server.pgwire.clone(),
             environment: cfg.server.environment.clone(),
             environment_color: cfg.server.environment_color.clone(),
+            startup: cfg.server.startup.clone(),
+            refresh: cfg.server.refresh.clone(),
+            saved_queries_dir: cfg.server.saved_queries_dir.clone(),
+            storage: cfg.server.storage.clone(),
         },
         docs: cfg.docs.clone(),
         swagger: cfg.swagger.clone(),

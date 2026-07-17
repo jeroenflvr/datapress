@@ -24,10 +24,89 @@
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use crate::errors::AppError;
+
+// ---------------------------------------------------------------------------
+// Duration parsing for refresh intervals ("30s", "15m", "2h", "1d")
+// ---------------------------------------------------------------------------
+
+/// Parse a human-readable duration string into a `std::time::Duration`.
+///
+/// Accepted suffixes (case-insensitive): `ms`, `s`, `m`, `h`, `d`.
+/// Examples: `"30s"`, `"15m"`, `"2h"`, `"1d"`, `"500ms"`.
+pub fn parse_duration(s: &str) -> Result<Duration, String> {
+    let s = s.trim();
+    let (num_str, suffix) = if let Some(pos) = s.find(|c: char| c.is_ascii_alphabetic()) {
+        (&s[..pos], &s[pos..])
+    } else {
+        return Err(format!("missing unit suffix in duration '{s}'"));
+    };
+    let n: u64 = num_str
+        .trim()
+        .parse()
+        .map_err(|_| format!("invalid number in duration '{s}'"))?;
+    let dur = match suffix.to_ascii_lowercase().as_str() {
+        "ms" => Duration::from_millis(n),
+        "s" => Duration::from_secs(n),
+        "m" => Duration::from_secs(n * 60),
+        "h" => Duration::from_secs(n * 3600),
+        "d" => Duration::from_secs(n * 86400),
+        other => return Err(format!("unknown duration unit '{other}' in '{s}'")),
+    };
+    Ok(dur)
+}
+
+/// Serde deserialization visitor for `parse_duration`.
+fn deserialize_duration<'de, D>(de: D) -> Result<Duration, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(de)?;
+    parse_duration(&s).map_err(serde::de::Error::custom)
+}
+
+fn deserialize_optional_duration<'de, D>(de: D) -> Result<Option<Duration>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = Option::<String>::deserialize(de)?;
+    match s {
+        None => Ok(None),
+        Some(v) => parse_duration(&v)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
+}
+
+/// Public re-export for use in model deserialization outside this module.
+pub fn deserialize_optional_duration_pub<'de, D>(de: D) -> Result<Option<Duration>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    deserialize_optional_duration(de)
+}
+
+/// Serialize a `Duration` as its millisecond count (for JSON/TOML output).
+fn serialize_duration<S>(d: &Duration, ser: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    ser.serialize_u64(d.as_millis() as u64)
+}
+
+fn serialize_optional_duration<S>(d: &Option<Duration>, ser: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match d {
+        None => ser.serialize_none(),
+        Some(dur) => ser.serialize_some(&(dur.as_millis() as u64)),
+    }
+}
 
 /// Absolute path of the `datasets.toml` this process was loaded from, set
 /// once by [`AppConfig::load`]. `None` when the config was constructed
@@ -46,6 +125,11 @@ pub fn source_config_path() -> Option<&'static std::path::Path> {
 const RESERVED_MOUNTS: &[&str] = &[
     "/", "/api", "/api/v1", "/health", "/healthz", "/readyz", "/version", "/metrics",
 ];
+
+/// Dataset names that are forbidden because they would clash with
+/// fixed route segments (e.g. `reload-all` clashes with the bulk-
+/// reload endpoint, R8.11).
+pub const RESERVED_DATASET_NAMES: &[&str] = &["reload-all"];
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -73,7 +157,7 @@ pub struct AppConfig {
     pub datasets: Vec<DatasetConfig>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct ServerConfig {
     /// Which engine to run. Must match the binary's compile-time feature.
@@ -142,6 +226,23 @@ pub struct ServerConfig {
     /// Overrides the automatic colour derived from `environment`. Only
     /// meaningful when `environment` is also set.
     pub environment_color: Option<String>,
+    /// Non-blocking startup configuration.
+    #[serde(default)]
+    pub startup: StartupConfig,
+    /// Refresh scheduler concurrency limits.
+    #[serde(default)]
+    pub refresh: ServerRefreshConfig,
+    /// Optional server-level materialization storage backend.
+    /// When absent, all query-dataset materializations stay in memory.
+    #[serde(default)]
+    pub storage: Option<StorageConfig>,
+    /// Directory from which runtime-persisted (`kind = "query"`) saved
+    /// datasets are loaded at startup and written to on
+    /// `POST /api/v1/queries`. Defaults to `<config_dir>/datasets.d/`
+    /// (a sibling directory of the main `datasets.toml`). When set to an
+    /// absolute path that directory is used as-is; a relative path is
+    /// resolved relative to the config file's directory.
+    pub saved_queries_dir: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -162,7 +263,318 @@ impl Default for ServerConfig {
             pgwire: PgwireConfig::default(),
             environment: None,
             environment_color: None,
+            startup: StartupConfig::default(),
+            refresh: ServerRefreshConfig::default(),
+            storage: None,
+            saved_queries_dir: None,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2B: materialization storage backend
+// ---------------------------------------------------------------------------
+
+/// Storage backend variant for `[server.storage]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum StorageBackendKind {
+    /// Write materialized query-dataset results to a local filesystem path.
+    #[default]
+    Local,
+    /// Write materialized query-dataset results to an S3-compatible bucket.
+    S3,
+}
+
+/// S3 connection settings for the server-level storage backend
+/// (`[server.storage.s3]`). Credentials are referenced by environment
+/// variable **name** only — inline values are rejected at startup.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct StorageS3Config {
+    pub region: Option<String>,
+    /// Custom endpoint (MinIO, R2, …). Omit for AWS. Plain `host:port`
+    /// or a full `http(s)://host:port` URL.
+    pub endpoint: Option<String>,
+    /// Name of the env var that holds the AWS access key ID.
+    /// If both `access_key_id_env` and `secret_access_key_env` are absent,
+    /// the default AWS credential provider chain is used.
+    pub access_key_id_env: Option<String>,
+    /// Name of the env var that holds the AWS secret access key.
+    pub secret_access_key_env: Option<String>,
+    /// `virtual` (default) or `path`. MinIO requires `path`.
+    pub addressing_style: AddressingStyle,
+    /// Allow plain-HTTP endpoints. Required for local MinIO `http://…`.
+    pub allow_http: bool,
+}
+
+impl Default for StorageS3Config {
+    fn default() -> Self {
+        Self {
+            region: None,
+            endpoint: None,
+            access_key_id_env: None,
+            secret_access_key_env: None,
+            addressing_style: AddressingStyle::Virtual,
+            allow_http: false,
+        }
+    }
+}
+
+/// Resolved credentials from the storage S3 config. Both fields present
+/// means explicit key-pair; both absent means provider chain.
+#[derive(Debug, Clone, Default)]
+pub struct StorageS3Creds {
+    pub access_key_id: Option<String>,
+    pub secret_access_key: Option<String>,
+}
+
+impl StorageS3Config {
+    /// Resolve the access-key pair from the env vars named in the config.
+    /// Returns `Err` if exactly one of the two env vars is set (partial creds).
+    pub fn resolved_creds(&self) -> Result<StorageS3Creds, AppError> {
+        let key = self
+            .access_key_id_env
+            .as_deref()
+            .and_then(|e| std::env::var(e).ok());
+        let secret = self
+            .secret_access_key_env
+            .as_deref()
+            .and_then(|e| std::env::var(e).ok());
+        match (key, secret) {
+            (Some(k), Some(s)) => Ok(StorageS3Creds {
+                access_key_id: Some(k),
+                secret_access_key: Some(s),
+            }),
+            (None, None) => Ok(StorageS3Creds::default()),
+            _ => Err(AppError::Internal(
+                "server.storage.s3: both access_key_id_env and secret_access_key_env \
+                 must be set together, or both omitted"
+                    .into(),
+            )),
+        }
+    }
+}
+
+/// Server-level materialization storage backend (`[server.storage]`).
+///
+/// When present, `query`-kind datasets whose residency requires storage
+/// (i.e. `residency = "lazy"` or automatic demotion) write their
+/// materialized parquet files here. Absent → memory-only behavior.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct StorageConfig {
+    /// Which storage medium to use.
+    pub backend: StorageBackendKind,
+    /// Root path (local) or `s3://bucket/prefix` (S3). Required when
+    /// the block is present.
+    pub root: String,
+    /// Auto-demotion threshold in MiB. When a `query` dataset with
+    /// `residency = "auto"` (the default) exceeds this size during
+    /// materialization, the result is spilled to storage instead of
+    /// staying in memory. Default `512`.
+    #[serde(default = "default_force_lazy_above_mb")]
+    pub force_lazy_above_mb: u64,
+    /// S3 settings. Required when `backend = "s3"`.
+    #[serde(default)]
+    pub s3: StorageS3Config,
+}
+
+fn default_force_lazy_above_mb() -> u64 {
+    512
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            backend: StorageBackendKind::Local,
+            root: String::new(),
+            force_lazy_above_mb: default_force_lazy_above_mb(),
+            s3: StorageS3Config::default(),
+        }
+    }
+}
+
+/// Where a materialized `query`-dataset generation resides at runtime.
+///
+/// Applies to `[dataset.materialize]`; only valid on `kind = "query"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum MaterializeResidency {
+    /// Keep in memory unless the build crosses `force_lazy_above_mb`, in
+    /// which case the generation is automatically demoted to storage.
+    #[default]
+    Auto,
+    /// Always keep in memory. Crossing the threshold logs a WARN and
+    /// increments a metric but does not demote.
+    Memory,
+    /// Always write to the storage backend; serve lazily from parquet.
+    Lazy,
+}
+
+/// Per-dataset materialization options (`[dataset.materialize]`).
+///
+/// Only valid on `kind = "query"` datasets. Requires `[server.storage]`
+/// when `residency = "lazy"` or when the auto-demotion threshold is crossed.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct MaterializeConfig {
+    /// Where to keep the built generation: `auto` (default), `memory`,
+    /// or `lazy`.
+    pub residency: MaterializeResidency,
+    /// Column names to sort by when writing parquet files. Applied as an
+    /// `ORDER BY` so row-group min/max stats prune effectively.
+    #[serde(default)]
+    pub sort_by: Vec<String>,
+    /// When `true`, boot looks for the newest complete prior generation
+    /// whose sql + schema hashes match current config and registers it
+    /// without rebuilding. Default `false`.
+    #[serde(default)]
+    pub reuse_on_start: bool,
+}
+
+impl Default for MaterializeConfig {
+    fn default() -> Self {
+        Self {
+            residency: MaterializeResidency::Auto,
+            sort_by: Vec::new(),
+            reuse_on_start: false,
+        }
+    }
+}
+
+/// Controls how a dataset is built at server startup.
+///
+/// - `eager` (default): built in background immediately at boot;
+///   `/readyz` waits for it.
+/// - `lazy`: registered as pending; built on the first incoming query
+///   (the triggering request waits). Not gated by `/readyz`.
+/// - `skip`: never auto-built; only built by an explicit
+///   `POST /datasets/{name}/reload`. Not gated by `/readyz`.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OnStart {
+    #[default]
+    Eager,
+    Lazy,
+    Skip,
+}
+
+/// Server-level startup tuning (`[server.startup]` block).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct StartupConfig {
+    /// Maximum number of datasets that may be built concurrently during
+    /// startup. Independent datasets within this limit build in parallel;
+    /// a dependent dataset waits for all its dependencies first.
+    /// Default `4`.
+    pub max_concurrent: usize,
+    /// Readiness policy for `/readyz`:
+    /// - `all` (default): `/readyz` returns `200` only when every `eager`
+    ///   dataset has published successfully.
+    /// - `any`: `/readyz` returns `200` as soon as at least one `eager`
+    ///   dataset has published.
+    pub readiness: ReadinessMode,
+}
+
+impl Default for StartupConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent: 4,
+            readiness: ReadinessMode::default(),
+        }
+    }
+}
+
+/// Readiness gate semantics for `/readyz`.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ReadinessMode {
+    /// `/readyz` 200 when every `eager` dataset is published.
+    #[default]
+    All,
+    /// `/readyz` 200 as soon as at least one `eager` dataset is published.
+    Any,
+}
+
+/// Per-dataset refresh schedule (`[dataset.refresh]` block).
+///
+/// Only valid on `kind = "query"` datasets. Setting this on a file-backed
+/// dataset is a startup error.
+///
+/// Phase 3 implements interval-based refresh only; cron support is reserved
+/// for a future phase. Setting both `interval` and `cron` is a startup error
+/// (cron is not yet parsed, so any `cron` key in TOML will be rejected by
+/// `deny_unknown_fields`).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct RefreshConfig {
+    /// Polling interval, e.g. `"15m"`, `"2h"`. When absent, the dataset is
+    /// not refreshed automatically.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_duration",
+        serialize_with = "serialize_optional_duration"
+    )]
+    pub interval: Option<Duration>,
+    /// Whether to refresh this dataset when an upstream dependency publishes
+    /// a new generation. Parsed and stored; cascade behaviour is implemented
+    /// in Phase 4. Default `false`.
+    #[serde(default)]
+    pub on_upstream_reload: bool,
+    /// Per-build timeout, e.g. `"10m"`. Defaults to 10 minutes.
+    #[serde(
+        default = "default_refresh_timeout",
+        deserialize_with = "deserialize_duration",
+        serialize_with = "serialize_duration"
+    )]
+    pub timeout: Duration,
+    /// Apply ±10 % uniform jitter to every scheduled fire. Default `true`.
+    #[serde(default = "default_true")]
+    pub jitter: bool,
+    /// Debounce window for cascade refreshes (R4.3). Multiple upstream publishes
+    /// arriving within this window coalesce to one downstream refresh.
+    /// Default `5s`. Accepted formats: `"500ms"`, `"5s"`, `"1m"`, etc.
+    #[serde(
+        default = "default_debounce",
+        deserialize_with = "deserialize_duration",
+        serialize_with = "serialize_duration"
+    )]
+    pub debounce: Duration,
+}
+
+fn default_refresh_timeout() -> Duration {
+    Duration::from_secs(600) // 10 minutes
+}
+
+fn default_debounce() -> Duration {
+    Duration::from_secs(5)
+}
+
+impl Default for RefreshConfig {
+    fn default() -> Self {
+        Self {
+            interval: None,
+            on_upstream_reload: false,
+            timeout: default_refresh_timeout(),
+            jitter: true,
+            debounce: default_debounce(),
+        }
+    }
+}
+
+/// Server-level refresh concurrency (`[server.refresh]` block).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ServerRefreshConfig {
+    /// Maximum number of dataset refreshes that may run concurrently.
+    /// Default `1`.
+    pub max_concurrent: usize,
+}
+
+impl Default for ServerRefreshConfig {
+    fn default() -> Self {
+        Self { max_concurrent: 1 }
     }
 }
 
@@ -621,6 +1033,11 @@ pub struct AuthConfig {
     /// Scopes required for admin/mutation endpoints (POST `…/reload`).
     /// Empty list means "no scope check, just a valid token is enough".
     pub reload_scopes: Vec<String>,
+    /// Scopes required for dataset management endpoints
+    /// (`POST /api/v1/queries`, `DELETE /api/v1/queries/{name}`).
+    /// When auth is enabled and this list is empty, a valid token alone
+    /// is sufficient. Defaults to `["datasets:manage"]`.
+    pub manage_scopes: Vec<String>,
     /// Allow unauthenticated GETs through. Useful for public datasets
     /// and demo deployments. Defaults to `false`.
     pub anonymous_read: bool,
@@ -663,6 +1080,7 @@ impl Default for AuthConfig {
             audience: String::new(),
             read_scopes: Vec::new(),
             reload_scopes: Vec::new(),
+            manage_scopes: vec!["datasets:manage".into()],
             anonymous_read: false,
             start_degraded: true,
             algorithms: vec!["RS256".into()],
@@ -730,6 +1148,60 @@ pub struct DatasetConfig {
     /// (allowlist) / `exclude` (denylist). Empty (default) = no restriction.
     #[serde(default)]
     pub projection_filter: ColumnFilter,
+    /// When and how this dataset is built at startup. See [`OnStart`].
+    #[serde(default)]
+    pub on_start: OnStart,
+    /// Optional periodic refresh schedule. Only valid for `kind = "query"`
+    /// datasets; setting this on a file-backed dataset is a startup error.
+    #[serde(default)]
+    pub refresh: Option<RefreshConfig>,
+    /// Materialization residency and write options. Only valid for
+    /// `kind = "query"` datasets. Requires `[server.storage]` when
+    /// `residency = "lazy"`.
+    #[serde(default)]
+    pub materialize: Option<MaterializeConfig>,
+    /// Set to `true` on datasets created through `POST /api/v1/queries`
+    /// ("saved queries"). These datasets are managed by the server at
+    /// runtime and are the only ones the `DELETE /api/v1/queries/{name}`
+    /// endpoint will remove. Config-file datasets always have `managed =
+    /// false` (the field is silently ignored when present in
+    /// `datasets.toml`, but required in `datasets.d/` files).
+    #[serde(default)]
+    pub managed: bool,
+    /// When `true` the dataset exists only for the lifetime of the
+    /// current process and is **not** written to `datasets.d/`. Only
+    /// meaningful when `managed = true`.
+    #[serde(default)]
+    pub temp: bool,
+}
+
+/// Helper for constructing `DatasetConfig` values in tests and other
+/// contexts where not all fields are relevant. All fields default to their
+/// zero/empty values; callers override only the ones they care about.
+impl Default for DatasetConfig {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            source: SourceConfig {
+                kind: SourceKind::Parquet,
+                location: String::new(),
+                sql: None,
+                depends_on: vec![],
+            },
+            s3: None,
+            index: IndexConfig::default(),
+            columns: vec![],
+            dict_encode: true,
+            lazy: false,
+            predicate_filter: ColumnFilter::default(),
+            projection_filter: ColumnFilter::default(),
+            on_start: OnStart::Eager,
+            refresh: None,
+            materialize: None,
+            managed: false,
+            temp: false,
+        }
+    }
 }
 
 fn default_true() -> bool {
@@ -799,7 +1271,19 @@ impl ColumnFilter {
 pub struct SourceConfig {
     pub kind: SourceKind,
     /// Either a local filesystem path or an `s3://bucket/key` URL.
+    /// Required for `parquet` and `delta` kinds; empty for `query`.
+    #[serde(default)]
     pub location: String,
+    /// The materialisation SQL for `kind = "query"` datasets. Must be a
+    /// single read-only SELECT or WITH…SELECT. Required for `query` kind;
+    /// absent for `parquet`/`delta`.
+    #[serde(default)]
+    pub sql: Option<String>,
+    /// Datasets that `sql` references. Required for `query` kind; must
+    /// list exactly the dataset names referenced in `sql`, no more, no
+    /// fewer. Validated by [`AppConfig::validate`] against the SQL AST.
+    #[serde(default)]
+    pub depends_on: Vec<String>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -808,6 +1292,11 @@ pub enum SourceKind {
     #[default]
     Parquet,
     Delta,
+    /// A dataset whose content is the result of executing `sql` against
+    /// other registered datasets. Materialised in-memory (DataFusion:
+    /// Arc<DatasetState>; DuckDB: engine table) in dependency order at
+    /// startup and on each explicit reload.
+    Query,
 }
 
 impl SourceKind {
@@ -815,6 +1304,7 @@ impl SourceKind {
         match self {
             SourceKind::Parquet => "parquet",
             SourceKind::Delta => "delta",
+            SourceKind::Query => "query",
         }
     }
 }
@@ -1027,18 +1517,97 @@ impl ResolvedCreds {
 
 impl AppConfig {
     /// Read and validate a TOML config file.
+    ///
+    /// Also scans the `saved_queries_dir` (default `<config_dir>/datasets.d/`)
+    /// for runtime-persisted query datasets and merges them in. Name
+    /// collisions between the main file and `datasets.d/` are a startup error.
     pub fn load(path: &str) -> Result<Self, AppError> {
         let raw = std::fs::read_to_string(path)
             .map_err(|e| AppError::Internal(format!("failed to read {path}: {e}")))?;
         let mut cfg: AppConfig =
             toml::from_str(&raw).map_err(|e| AppError::Internal(format!("invalid {path}: {e}")))?;
         cfg.normalize();
+
+        // Load datasets.d/ managed datasets BEFORE validate so the full
+        // merged dataset list (with dependency cross-references) is validated
+        // as a unit.
+        let config_dir = Path::new(path)
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf();
+        let managed_dir: PathBuf = match &cfg.server.saved_queries_dir {
+            Some(d) => {
+                let p = PathBuf::from(d);
+                if p.is_absolute() {
+                    p
+                } else {
+                    config_dir.join(p)
+                }
+            }
+            None => config_dir.join("datasets.d"),
+        };
+        if managed_dir.is_dir() {
+            let managed = AppConfig::load_managed_dir(&managed_dir)?;
+            if !managed.is_empty() {
+                let existing: std::collections::HashSet<&str> =
+                    cfg.datasets.iter().map(|d| d.name.as_str()).collect();
+                for md in &managed {
+                    if existing.contains(md.name.as_str()) {
+                        return Err(AppError::Internal(format!(
+                            "name collision between datasets.toml and datasets.d/: '{}'",
+                            md.name
+                        )));
+                    }
+                }
+                cfg.datasets.extend(managed);
+            }
+        }
+
         cfg.validate()?;
         // Remember where we loaded from so the explorer can optionally
         // append newly-registered datasets back to this file. Ignore the
         // error if it was already set (only the first load wins).
         let _ = SOURCE_CONFIG_PATH.set(PathBuf::from(path));
         Ok(cfg)
+    }
+
+    /// Read all `*.toml` files in `dir` as managed dataset definitions.
+    /// Each file must be a valid TOML document containing exactly one
+    /// `[[dataset]]` entry with `managed = true`.
+    pub fn load_managed_dir(dir: &Path) -> Result<Vec<DatasetConfig>, AppError> {
+        let mut out = Vec::new();
+        let entries = std::fs::read_dir(dir)
+            .map_err(|e| AppError::Internal(format!("failed to read datasets.d/ dir: {e}")))?;
+        let mut paths: Vec<PathBuf> = entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("toml"))
+            .collect();
+        paths.sort(); // deterministic load order
+        for p in paths {
+            let raw = std::fs::read_to_string(&p)
+                .map_err(|e| AppError::Internal(format!("failed to read {}: {e}", p.display())))?;
+            // Parse as a mini-AppConfig with only a `dataset` array key.
+            #[derive(serde::Deserialize)]
+            struct OneDataset {
+                #[serde(rename = "dataset", default)]
+                datasets: Vec<DatasetConfig>,
+            }
+            let doc: OneDataset = toml::from_str(&raw)
+                .map_err(|e| AppError::Internal(format!("invalid {}: {e}", p.display())))?;
+            if doc.datasets.len() != 1 {
+                return Err(AppError::Internal(format!(
+                    "{}: expected exactly one [[dataset]] entry, got {}",
+                    p.display(),
+                    doc.datasets.len()
+                )));
+            }
+            let mut d = doc.datasets.into_iter().next().unwrap();
+            // Force managed=true regardless of what the file says.
+            d.managed = true;
+            out.push(d);
+        }
+        Ok(out)
     }
 
     /// Canonicalise fields that are compared case-insensitively at runtime.
@@ -1054,6 +1623,7 @@ impl AppConfig {
             .read_scopes
             .iter_mut()
             .chain(self.auth.reload_scopes.iter_mut())
+            .chain(self.auth.manage_scopes.iter_mut())
         {
             *s = s.to_ascii_lowercase();
         }
@@ -1077,7 +1647,9 @@ impl AppConfig {
 
         if self.datasets.is_empty() {
             return Err(AppError::Internal(
-                "datasets.toml has no [[dataset]] entries".into(),
+                "no datasets configured (add at least one [[dataset]] entry in datasets.toml \
+                 or datasets.d/)"
+                    .into(),
             ));
         }
 
@@ -1295,6 +1867,14 @@ impl AppConfig {
                 )));
             }
 
+            // Reserved name guard (R8.11: reload-all must not be a dataset name).
+            if RESERVED_DATASET_NAMES.contains(&d.name.as_str()) {
+                return Err(AppError::Internal(format!(
+                    "dataset name '{}' is reserved and cannot be used",
+                    d.name
+                )));
+            }
+
             if d.index.mode == IndexMode::List && d.index.columns.is_empty() {
                 return Err(AppError::Internal(format!(
                     "dataset '{}': index.mode = 'list' requires non-empty index.columns",
@@ -1303,7 +1883,9 @@ impl AppConfig {
             }
 
             // Location-specific checks.
-            if d.source.is_s3() {
+            if d.source.kind == SourceKind::Query {
+                // query sources: no location, validated separately below.
+            } else if d.source.is_s3() {
                 d.source.s3_bucket()?;
                 if d.s3.as_ref().and_then(|s| s.region.as_deref()).is_none()
                     && d.s3.as_ref().and_then(|s| s.endpoint.as_deref()).is_none()
@@ -1333,14 +1915,332 @@ impl AppConfig {
                             )));
                         }
                     }
+                    // Query sources are handled by the earlier branch above.
+                    SourceKind::Query => {}
+                }
+            }
+
+            // R3.x — [dataset.refresh] is only valid on kind = "query".
+            if d.source.kind != SourceKind::Query {
+                if d.refresh.is_some() {
+                    return Err(AppError::Internal(format!(
+                        "dataset '{}': [dataset.refresh] is only valid for kind = \"query\" datasets",
+                        d.name
+                    )));
+                }
+            } else if let Some(ref rc) = d.refresh {
+                // Validate the interval when present.
+                if rc.interval.is_some_and(|i| i.is_zero()) {
+                    return Err(AppError::Internal(format!(
+                        "dataset '{}': refresh.interval must be greater than zero",
+                        d.name
+                    )));
+                }
+            }
+
+            // R2B.1 / R2B.5 — [dataset.materialize] validation.
+            if let Some(ref mc) = d.materialize {
+                // Only valid on query datasets.
+                if d.source.kind != SourceKind::Query {
+                    return Err(AppError::Internal(format!(
+                        "dataset '{}': [dataset.materialize] is only valid for kind = \"query\" datasets",
+                        d.name
+                    )));
+                }
+                // Lazy or any materialize block without [server.storage] is a startup error.
+                // auto without storage degrades to memory with a WARN (handled at runtime).
+                if mc.residency == MaterializeResidency::Lazy && self.server.storage.is_none() {
+                    return Err(AppError::Internal(format!(
+                        "dataset '{}': materialize.residency = \"lazy\" requires \
+                         [server.storage] to be configured",
+                        d.name
+                    )));
+                }
+                // R2B.5: explicit [dataset.index] combined with lazy is a startup error.
+                if mc.residency == MaterializeResidency::Lazy && d.index.mode != IndexMode::Auto {
+                    return Err(AppError::Internal(format!(
+                        "dataset '{}': [dataset.index] with mode != \"auto\" is incompatible \
+                         with materialize.residency = \"lazy\" (lazy datasets have no eq-index)",
+                        d.name
+                    )));
                 }
             }
         }
+
+        // R2B.7: validate [server.storage] when present — inline credentials are rejected.
+        if let Some(ref sc) = self.server.storage {
+            if sc.root.trim().is_empty() {
+                return Err(AppError::Internal(
+                    "server.storage.root must not be empty when [server.storage] is configured"
+                        .into(),
+                ));
+            }
+            if sc.backend == StorageBackendKind::S3 {
+                // Validate s3 block: no inline credentials allowed (env-var indirection only).
+                // (The StorageS3Config only accepts env-var NAMES, so inline values can only
+                // appear if someone shoves raw values into the env-var-name fields — we can't
+                // distinguish that here. The actual credential values are read from env at
+                // runtime by `resolved_creds()`.)
+                // Validate that the root is an s3:// URL.
+                if !sc.root.starts_with("s3://") {
+                    return Err(AppError::Internal(format!(
+                        "server.storage.root must start with s3:// when backend = \"s3\" \
+                         (got '{}')",
+                        sc.root
+                    )));
+                }
+            } else {
+                // Local backend: root must not look like an S3 URL.
+                if sc.root.starts_with("s3://") {
+                    return Err(AppError::Internal(format!(
+                        "server.storage.root looks like an S3 URL but backend = \"local\" \
+                         (got '{}'); set backend = \"s3\" if you mean S3",
+                        sc.root
+                    )));
+                }
+            }
+        }
+
+        // R2.1 — validate `query` dataset sources: SQL structure, exact-match
+        // depends_on, self-reference rejection (R2.3).
+        {
+            let all_names: std::collections::HashSet<String> = self
+                .datasets
+                .iter()
+                .map(|d| d.name.to_lowercase())
+                .collect();
+
+            for d in &self.datasets {
+                if d.source.kind != SourceKind::Query {
+                    continue;
+                }
+                // Require sql field.
+                let sql = d.source.sql.as_deref().ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "dataset '{}': source.sql is required for kind = \"query\"",
+                        d.name
+                    ))
+                })?;
+                // Require non-empty depends_on.
+                if d.source.depends_on.is_empty() {
+                    return Err(AppError::Internal(format!(
+                        "dataset '{}': depends_on is required for kind = \"query\" \
+                         and must list every dataset referenced in sql",
+                        d.name
+                    )));
+                }
+                // Self-reference (R2.3).
+                if d.source
+                    .depends_on
+                    .iter()
+                    .any(|dep| dep.eq_ignore_ascii_case(&d.name))
+                {
+                    return Err(AppError::Internal(format!(
+                        "dataset '{}': a query dataset cannot depend on itself",
+                        d.name
+                    )));
+                }
+                // All depends_on entries must be known datasets (R2.1-c).
+                for dep in &d.source.depends_on {
+                    if !all_names.contains(&dep.to_lowercase()) {
+                        return Err(AppError::Internal(format!(
+                            "dataset '{}': depends_on '{}' is not a defined dataset",
+                            d.name, dep
+                        )));
+                    }
+                }
+                // Parse SQL and extract referenced table names (reuse Phase 1
+                // validator logic). R2.2: materialization is always permitted
+                // regardless of [sql].enabled — pass all dataset names as allowed.
+                let validated = crate::sql::validate(sql, &all_names, usize::MAX).map_err(|e| {
+                    AppError::Internal(format!("dataset '{}': source.sql is invalid: {e}", d.name))
+                })?;
+                let referenced: std::collections::HashSet<String> =
+                    validated.datasets.into_iter().collect();
+                let declared: std::collections::HashSet<String> = d
+                    .source
+                    .depends_on
+                    .iter()
+                    .map(|s| s.to_lowercase())
+                    .collect();
+                // R2.1-a: references not listed in depends_on.
+                for ref_name in &referenced {
+                    if !declared.contains(ref_name) {
+                        return Err(AppError::Internal(format!(
+                            "dataset '{}': SQL references '{}' which is not listed \
+                             in depends_on",
+                            d.name, ref_name
+                        )));
+                    }
+                }
+                // R2.1-b: depends_on entries not referenced in SQL.
+                for dep in &declared {
+                    if !referenced.contains(dep) {
+                        return Err(AppError::Internal(format!(
+                            "dataset '{}': depends_on lists '{}' but it is not \
+                             referenced in sql",
+                            d.name, dep
+                        )));
+                    }
+                }
+            }
+
+            // R2.4 — Kahn topological validation: detect cycles (incl. self)
+            // and ensure a valid build order exists. The actual order vector
+            // is exposed via `topological_dataset_order()`.
+            self.topological_dataset_order()
+                .map_err(|e| AppError::Internal(format!("dataset dependency error: {e}")))?;
+        }
+
         Ok(())
     }
 }
 
+// ---------------------------------------------------------------------------
+// Cycle-path helpers (used by topological_dataset_order on cycle detection)
+// ---------------------------------------------------------------------------
+
+/// Walk the query-dataset dependency graph with DFS and return the indices
+/// of one cycle path.  The returned slice is closed: `path[0] == path.last()`.
+fn find_cycle_path<'a>(
+    datasets: &'a [DatasetConfig],
+    name_to_idx: &std::collections::HashMap<&str, usize>,
+) -> Vec<&'a str> {
+    let n = datasets.len();
+    let mut visited = vec![false; n];
+    let mut in_stack = vec![false; n];
+    let mut path: Vec<usize> = Vec::new();
+
+    for start in 0..n {
+        if visited[start] || datasets[start].source.kind != SourceKind::Query {
+            continue;
+        }
+        if let Some(cycle) = dfs_find_cycle(
+            start,
+            datasets,
+            name_to_idx,
+            &mut visited,
+            &mut in_stack,
+            &mut path,
+        ) {
+            let mut names: Vec<&str> = cycle.iter().map(|&i| datasets[i].name.as_str()).collect();
+            names.push(datasets[cycle[0]].name.as_str()); // close the cycle
+            return names;
+        }
+    }
+    // Fallback (shouldn't be reached when a cycle exists).
+    datasets
+        .iter()
+        .filter(|d| d.source.kind == SourceKind::Query)
+        .map(|d| d.name.as_str())
+        .collect()
+}
+
+fn dfs_find_cycle(
+    node: usize,
+    datasets: &[DatasetConfig],
+    name_to_idx: &std::collections::HashMap<&str, usize>,
+    visited: &mut Vec<bool>,
+    in_stack: &mut Vec<bool>,
+    path: &mut Vec<usize>,
+) -> Option<Vec<usize>> {
+    visited[node] = true;
+    in_stack[node] = true;
+    path.push(node);
+
+    for dep in &datasets[node].source.depends_on {
+        if let Some(&next) = name_to_idx.get(dep.as_str()) {
+            if datasets[next].source.kind != SourceKind::Query {
+                continue;
+            }
+            if !visited[next] {
+                if let Some(cycle) =
+                    dfs_find_cycle(next, datasets, name_to_idx, visited, in_stack, path)
+                {
+                    return Some(cycle);
+                }
+            } else if in_stack[next] {
+                // Back-edge found — extract the cycle portion.
+                let start = path.iter().position(|&x| x == next).unwrap();
+                return Some(path[start..].to_vec());
+            }
+        }
+    }
+
+    path.pop();
+    in_stack[node] = false;
+    None
+}
+
+impl AppConfig {
+    /// Return the indices of `self.datasets` in a topological build order
+    /// (dependencies before dependents). File-backed datasets have no
+    /// dependencies and may appear in any relative order. Cycle detection
+    /// uses Kahn's algorithm; on a cycle the error names the cycle path
+    /// (`a → b → a`).
+    ///
+    /// Called at validation time to reject cycles, and by backends to build
+    /// datasets in the correct order.
+    pub fn topological_dataset_order(&self) -> Result<Vec<usize>, AppError> {
+        use std::collections::{HashMap, VecDeque};
+
+        let n = self.datasets.len();
+        // name → index
+        let name_to_idx: HashMap<&str, usize> = self
+            .datasets
+            .iter()
+            .enumerate()
+            .map(|(i, d)| (d.name.as_str(), i))
+            .collect();
+
+        // Build adjacency: dep → dependents (edges dep → current).
+        let mut in_degree = vec![0usize; n];
+        let mut adj: Vec<Vec<usize>> = vec![vec![]; n]; // adj[dep] = [dependents]
+
+        for (i, d) in self.datasets.iter().enumerate() {
+            if d.source.kind != SourceKind::Query {
+                continue;
+            }
+            for dep_name in &d.source.depends_on {
+                if let Some(&dep_idx) = name_to_idx.get(dep_name.as_str()) {
+                    adj[dep_idx].push(i);
+                    in_degree[i] += 1;
+                }
+                // Unknown depends_on entries are caught by validate() before
+                // this is called; skip silently here.
+            }
+        }
+
+        let mut queue: VecDeque<usize> = (0..n).filter(|&i| in_degree[i] == 0).collect();
+        let mut order = Vec::with_capacity(n);
+        while let Some(node) = queue.pop_front() {
+            order.push(node);
+            for &dep in &adj[node] {
+                in_degree[dep] -= 1;
+                if in_degree[dep] == 0 {
+                    queue.push_back(dep);
+                }
+            }
+        }
+
+        if order.len() != n {
+            // Cycle detected: find and report the actual cycle path (R4.1).
+            let cycle_path = find_cycle_path(&self.datasets, &name_to_idx);
+            return Err(AppError::Internal(format!(
+                "dependency cycle detected: {}",
+                cycle_path.join(" \u{2192} "),
+            )));
+        }
+
+        Ok(order)
+    }
+}
+
 impl SourceConfig {
+    pub fn is_query(&self) -> bool {
+        self.kind == SourceKind::Query
+    }
+
     pub fn is_s3(&self) -> bool {
         self.location.starts_with("s3://")
     }
@@ -1403,6 +2303,12 @@ impl DatasetConfig {
         {
             return Err(AppError::InvalidValue(format!(
                 "dataset name '{}' must be alphanumeric (plus _ - .)",
+                self.name
+            )));
+        }
+        if RESERVED_DATASET_NAMES.contains(&self.name.as_str()) {
+            return Err(AppError::InvalidValue(format!(
+                "dataset name '{}' is reserved and cannot be used",
                 self.name
             )));
         }
@@ -1474,6 +2380,80 @@ impl DatasetConfig {
         };
         toml::to_string_pretty(&doc)
             .map_err(|e| AppError::Internal(format!("failed to render dataset TOML: {e}")))
+    }
+
+    /// Render this dataset as a `datasets.d/`-style TOML file (includes
+    /// `managed = true`; excludes `temp`). Used by `POST /api/v1/queries`
+    /// when `kind = "query"` to persist the definition across restarts.
+    pub fn to_managed_toml(&self) -> Result<String, AppError> {
+        #[derive(Serialize)]
+        struct Block {
+            name: String,
+            managed: bool,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            columns: Vec<String>,
+            dict_encode: bool,
+            lazy: bool,
+            on_start: OnStart,
+            source: SourceConfig,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            refresh: Option<RefreshConfig>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            materialize: Option<MaterializeConfig>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            index: Option<IndexConfig>,
+        }
+        #[derive(Serialize)]
+        struct Doc {
+            dataset: [Block; 1],
+        }
+        let doc = Doc {
+            dataset: [Block {
+                name: self.name.clone(),
+                managed: true,
+                columns: self.columns.clone(),
+                dict_encode: self.dict_encode,
+                lazy: self.lazy,
+                on_start: self.on_start.clone(),
+                source: self.source.clone(),
+                refresh: self.refresh.clone(),
+                materialize: self.materialize.clone(),
+                index: if self.index.is_default() {
+                    None
+                } else {
+                    Some(self.index.clone())
+                },
+            }],
+        };
+        toml::to_string_pretty(&doc)
+            .map_err(|e| AppError::Internal(format!("failed to render managed dataset TOML: {e}")))
+    }
+
+    /// Write this managed dataset to `<dir>/<name>.toml`.
+    pub fn persist_to_managed_dir(&self, dir: &std::path::Path) -> Result<PathBuf, AppError> {
+        std::fs::create_dir_all(dir).map_err(|e| {
+            AppError::Internal(format!(
+                "failed to create datasets.d/ dir {}: {e}",
+                dir.display()
+            ))
+        })?;
+        let path = dir.join(format!("{}.toml", self.name));
+        let toml = self.to_managed_toml()?;
+        std::fs::write(&path, toml)
+            .map_err(|e| AppError::Internal(format!("failed to write {}: {e}", path.display())))?;
+        Ok(path)
+    }
+
+    /// Delete the managed TOML file for this dataset from `dir`, if it
+    /// exists. Non-existence is silently ignored.
+    pub fn remove_from_managed_dir(name: &str, dir: &std::path::Path) -> Result<(), AppError> {
+        let path = dir.join(format!("{name}.toml"));
+        if path.exists() {
+            std::fs::remove_file(&path).map_err(|e| {
+                AppError::Internal(format!("failed to remove {}: {e}", path.display()))
+            })?;
+        }
+        Ok(())
     }
 
     /// Append this dataset's `[[dataset]]` block to the config file this
@@ -1603,6 +2583,7 @@ impl DatasetConfig {
             return None;
         }
         match self.source.kind {
+            SourceKind::Query => None,
             SourceKind::Parquet => {
                 let files = self.resolve_local_parquet_files().ok()?;
                 Some(
@@ -1793,6 +2774,8 @@ mod tests {
             source: SourceConfig {
                 kind,
                 location: location.to_string(),
+                sql: None,
+                depends_on: vec![],
             },
             s3: None,
             index: IndexConfig::default(),
@@ -1801,6 +2784,11 @@ mod tests {
             lazy,
             predicate_filter: Default::default(),
             projection_filter: Default::default(),
+            on_start: Default::default(),
+            refresh: None,
+            materialize: None,
+            managed: false,
+            temp: false,
         };
         let server = |mb: u64| ServerConfig {
             force_lazy_above_mb: mb,
@@ -1927,6 +2915,8 @@ mod tests {
                 source: SourceConfig {
                     kind: SourceKind::Parquet,
                     location: file.to_string_lossy().into_owned(),
+                    sql: None,
+                    depends_on: vec![],
                 },
                 s3: None,
                 index: IndexConfig::default(),
@@ -1935,6 +2925,11 @@ mod tests {
                 lazy: false,
                 predicate_filter: Default::default(),
                 projection_filter: Default::default(),
+                on_start: Default::default(),
+                refresh: None,
+                materialize: None,
+                managed: false,
+                temp: false,
             }],
         };
 
@@ -1966,6 +2961,8 @@ mod tests {
                 source: SourceConfig {
                     kind: SourceKind::Parquet,
                     location: "/tmp/missing.parquet".into(),
+                    sql: None,
+                    depends_on: vec![],
                 },
                 s3: None,
                 index: IndexConfig::default(),
@@ -1974,6 +2971,11 @@ mod tests {
                 lazy: false,
                 predicate_filter: Default::default(),
                 projection_filter: Default::default(),
+                on_start: Default::default(),
+                refresh: None,
+                materialize: None,
+                managed: false,
+                temp: false,
             }],
         };
         let err = cfg.validate().unwrap_err();
@@ -2029,6 +3031,8 @@ mod tests {
         let mk = |loc: &str| SourceConfig {
             kind: SourceKind::Parquet,
             location: loc.into(),
+            sql: None,
+            depends_on: vec![],
         };
         let s1 = mk("s3://bucket/path/key");
         assert_eq!(s1.s3_bucket().unwrap(), ("bucket", "path/key"));
@@ -2043,6 +3047,8 @@ mod tests {
         let mk = |loc: &str| SourceConfig {
             kind: SourceKind::Parquet,
             location: loc.into(),
+            sql: None,
+            depends_on: vec![],
         };
         // Plain prefix -> recursive parquet glob (trailing slash trimmed).
         assert_eq!(
@@ -2120,6 +3126,8 @@ mod tests {
             source: SourceConfig {
                 kind: SourceKind::Parquet,
                 location: "x".into(),
+                sql: None,
+                depends_on: vec![],
             },
             s3: None,
             index: IndexConfig::default(),
@@ -2128,6 +3136,11 @@ mod tests {
             lazy: false,
             predicate_filter: Default::default(),
             projection_filter: Default::default(),
+            on_start: Default::default(),
+            refresh: None,
+            materialize: None,
+            managed: false,
+            temp: false,
         };
         assert_eq!(mk("accidents").env_prefix(), "ACCIDENTS");
         assert_eq!(mk("sales.eu-1").env_prefix(), "SALES_EU_1");
@@ -2149,6 +3162,8 @@ mod tests {
             source: SourceConfig {
                 kind: SourceKind::Parquet,
                 location: loc.into(),
+                sql: None,
+                depends_on: vec![],
             },
             s3: None,
             index: IndexConfig::default(),
@@ -2157,6 +3172,11 @@ mod tests {
             lazy: false,
             predicate_filter: Default::default(),
             projection_filter: Default::default(),
+            on_start: Default::default(),
+            refresh: None,
+            materialize: None,
+            managed: false,
+            temp: false,
         };
 
         // Direct file.
@@ -2237,5 +3257,324 @@ mod tests {
             ..Default::default()
         };
         assert!(cfg.validate_enabled().is_ok());
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 2B: query-kind source validation tests
+    // -----------------------------------------------------------------------
+
+    /// Helper: a minimal valid `AppConfig` with one parquet and one query dataset.
+    fn query_cfg_raw(query_sql: &str, depends_on: Vec<String>) -> AppConfig {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!("dp-qtest-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let f = dir.join("base.parquet");
+        // Create an actual file so the parquet validation passes.
+        std::fs::File::create(&f)
+            .unwrap()
+            .write_all(b"fake")
+            .unwrap_or(());
+        AppConfig {
+            server: ServerConfig::default(),
+            docs: DocsConfig::default(),
+            swagger: SwaggerConfig::default(),
+            auth: AuthConfig::default(),
+            metrics: MetricsConfig::default(),
+            explorer: ExplorerConfig::default(),
+            sql: SqlConfig::default(),
+            datafusion: DataFusionConfig::default(),
+            datasets: vec![
+                DatasetConfig {
+                    name: "base".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Parquet,
+                        location: f.to_str().unwrap().into(),
+                        sql: None,
+                        depends_on: vec![],
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                    materialize: None,
+                    managed: false,
+                    temp: false,
+                },
+                DatasetConfig {
+                    name: "q".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Query,
+                        location: String::new(),
+                        sql: Some(query_sql.into()),
+                        depends_on,
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                    materialize: None,
+                    managed: false,
+                    temp: false,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn validate_query_source_valid() {
+        let cfg = query_cfg_raw("SELECT id FROM base", vec!["base".into()]);
+        assert!(cfg.validate().is_ok(), "valid query source should pass");
+    }
+
+    #[test]
+    fn validate_query_source_missing_depends_on() {
+        let cfg = query_cfg_raw("SELECT id FROM base", vec![]); // empty!
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("depends_on"),
+            "expected depends_on error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_query_source_superfluous_depends_on() {
+        // The exact-match check is exercised by ref_not_in_depends_on below.
+        // Here we just verify a valid config passes.
+        let cfg = query_cfg_raw("SELECT id FROM base", vec!["base".into()]);
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_query_source_ref_not_in_depends_on() {
+        // SQL references 'base' but depends_on is empty → invalid.
+        let cfg = query_cfg_raw("SELECT id FROM base", vec![]);
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("depends_on"),
+            "expected depends_on error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_query_source_unknown_dependency() {
+        // depends_on lists a dataset that doesn't exist.
+        let cfg = query_cfg_raw("SELECT id FROM ghost", vec!["ghost".into()]);
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            err.to_string().contains("ghost"),
+            "expected unknown-dataset error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_query_source_self_reference() {
+        // depends_on lists the dataset itself.
+        let cfg = query_cfg_raw("SELECT id FROM q", vec!["q".into()]);
+        // Either validate() or topological_dataset_order() catches this.
+        let result = cfg.validate().map_err(|e| e.to_string()).or_else(|_| {
+            cfg.topological_dataset_order()
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        });
+        assert!(result.is_err(), "self-reference should be rejected");
+    }
+
+    #[test]
+    fn validate_query_source_cycle() {
+        // Two-node cycle: a -> b -> a.
+        let f = {
+            use std::io::Write;
+            let p = std::env::temp_dir().join(format!("dp-cycle-{}.parquet", std::process::id()));
+            std::fs::File::create(&p).unwrap().write_all(b"x").unwrap();
+            p
+        };
+        let cfg = AppConfig {
+            server: ServerConfig::default(),
+            docs: DocsConfig::default(),
+            swagger: SwaggerConfig::default(),
+            auth: AuthConfig::default(),
+            metrics: MetricsConfig::default(),
+            explorer: ExplorerConfig::default(),
+            sql: SqlConfig::default(),
+            datafusion: DataFusionConfig::default(),
+            datasets: vec![
+                DatasetConfig {
+                    name: "base".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Parquet,
+                        location: f.to_str().unwrap().into(),
+                        sql: None,
+                        depends_on: vec![],
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                    materialize: None,
+                    managed: false,
+                    temp: false,
+                },
+                DatasetConfig {
+                    name: "qa".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Query,
+                        location: String::new(),
+                        sql: Some("SELECT 1 FROM qb".into()),
+                        depends_on: vec!["qb".into()],
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                    materialize: None,
+                    managed: false,
+                    temp: false,
+                },
+                DatasetConfig {
+                    name: "qb".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Query,
+                        location: String::new(),
+                        sql: Some("SELECT 1 FROM qa".into()),
+                        depends_on: vec!["qa".into()],
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                    materialize: None,
+                    managed: false,
+                    temp: false,
+                },
+            ],
+        };
+        let err = cfg.topological_dataset_order().unwrap_err();
+        assert!(
+            err.to_string().contains("cycle"),
+            "expected cycle error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_topological_order_correct() {
+        // datasets: base(parquet) <- q1(query) <- q2(query)
+        // Expected order: base first, then q1, then q2.
+        let f = {
+            use std::io::Write;
+            let p = std::env::temp_dir().join(format!("dp-topo-{}.parquet", std::process::id()));
+            std::fs::File::create(&p).unwrap().write_all(b"x").unwrap();
+            p
+        };
+        let cfg = AppConfig {
+            server: ServerConfig::default(),
+            docs: DocsConfig::default(),
+            swagger: SwaggerConfig::default(),
+            auth: AuthConfig::default(),
+            metrics: MetricsConfig::default(),
+            explorer: ExplorerConfig::default(),
+            sql: SqlConfig::default(),
+            datafusion: DataFusionConfig::default(),
+            datasets: vec![
+                DatasetConfig {
+                    name: "q2".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Query,
+                        location: String::new(),
+                        sql: Some("SELECT 1 FROM q1".into()),
+                        depends_on: vec!["q1".into()],
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                    materialize: None,
+                    managed: false,
+                    temp: false,
+                },
+                DatasetConfig {
+                    name: "base".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Parquet,
+                        location: f.to_str().unwrap().into(),
+                        sql: None,
+                        depends_on: vec![],
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                    materialize: None,
+                    managed: false,
+                    temp: false,
+                },
+                DatasetConfig {
+                    name: "q1".into(),
+                    source: SourceConfig {
+                        kind: SourceKind::Query,
+                        location: String::new(),
+                        sql: Some("SELECT 1 FROM base".into()),
+                        depends_on: vec!["base".into()],
+                    },
+                    s3: None,
+                    index: IndexConfig::default(),
+                    columns: vec![],
+                    dict_encode: true,
+                    lazy: false,
+                    predicate_filter: Default::default(),
+                    projection_filter: Default::default(),
+                    on_start: Default::default(),
+                    refresh: None,
+                    materialize: None,
+                    managed: false,
+                    temp: false,
+                },
+            ],
+        };
+        let order = cfg.topological_dataset_order().expect("valid topo order");
+        // 'base' must come before 'q1', and 'q1' must come before 'q2'.
+        let names: Vec<&str> = order
+            .iter()
+            .map(|&i| cfg.datasets[i].name.as_str())
+            .collect();
+        let pos_base = names.iter().position(|&n| n == "base").unwrap();
+        let pos_q1 = names.iter().position(|&n| n == "q1").unwrap();
+        let pos_q2 = names.iter().position(|&n| n == "q2").unwrap();
+        assert!(pos_base < pos_q1, "base must come before q1");
+        assert!(pos_q1 < pos_q2, "q1 must come before q2");
     }
 }

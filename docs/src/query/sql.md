@@ -22,11 +22,9 @@ It is **disabled by default**. Raw SQL is a much larger attack surface
 than the structured query API, so you opt in explicitly and the server
 parses and validates every statement before any engine sees it.
 
-!!! info "Phase 1: one dataset per query"
-    Today a statement may reference **exactly one** registered dataset —
-    no cross-dataset joins yet. The validation gate is built so that
-    raising this limit is the only change needed to allow joins later;
-    see [Roadmap](#roadmap).
+A statement may reference **one or more** registered datasets — cross-dataset
+joins are fully supported. CTE names defined within the statement are exempt
+from the dataset-name check.
 
 ## Enabling the endpoint
 
@@ -72,7 +70,7 @@ an unmounted route — so probing for it leaks nothing.
 
 | Field      | Type            | Required | Notes                                                                         |
 |------------|-----------------|----------|-------------------------------------------------------------------------------|
-| `sql`      | string          | yes      | A single read-only `SELECT` / `WITH … SELECT`, or a `DESCRIBE`/`DESC <table>`, referencing one dataset. |
+| `sql`      | string          | yes      | A single read-only `SELECT` / `WITH … SELECT`, or a `DESCRIBE`/`DESC <table>`, referencing one or more registered datasets. Cross-dataset joins are allowed. |
 | `max_rows` | integer         | no       | Client row cap. **Clamped** into `[1, [sql].max_rows]`; it can never raise the server cap. Omit to use the server cap. |
 
 The dataset is named directly in the SQL `FROM` clause using its
@@ -312,9 +310,6 @@ table.
 - **Read scopes apply.** When [authentication](../operations/auth.md) is
   enabled, the endpoint enforces the same `read` scopes as the structured
   query API.
-
-The legacy un-versioned alias `POST /api/sql` is also mounted and behaves
-identically.
 
 ## Roadmap
 

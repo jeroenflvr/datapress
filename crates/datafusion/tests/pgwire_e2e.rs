@@ -75,6 +75,8 @@ async fn make_people_store(location: &str) -> Store {
             source: SourceConfig {
                 kind: SourceKind::Parquet,
                 location: location.to_string(),
+                sql: None,
+                depends_on: vec![],
             },
             s3: None,
             index: IndexConfig::default(),
@@ -125,7 +127,9 @@ fn register_types_fixture(store: &Store) {
             Arc::new(Int64Array::from(vec![99_i64])),
             Arc::new(Float32Array::from(vec![1.5_f32])),
             Arc::new(Float64Array::from(vec![2.5_f64])),
-            Arc::new(TimestampMicrosecondArray::from(vec![1_700_000_000_000_000_i64])),
+            Arc::new(TimestampMicrosecondArray::from(vec![
+                1_700_000_000_000_000_i64,
+            ])),
             Arc::new(Date32Array::from(vec![19_000_i32])),
         ],
     )
@@ -860,10 +864,7 @@ async fn pgwire_binary_encoding_sweep() {
     // extended protocol (proves the server binary-encodes the type at all).
     for col in ["s", "t", "b", "i2", "i4", "i8", "f4", "f8", "ts", "d"] {
         let rows = client
-            .query(
-                &format!("SELECT {col} FROM types_fixture LIMIT 1"),
-                &[],
-            )
+            .query(&format!("SELECT {col} FROM types_fixture LIMIT 1"), &[])
             .await
             .unwrap_or_else(|e| panic!("binary SELECT of column {col} failed: {e}"));
         assert_eq!(rows.len(), 1, "column {col}: expected one row");
@@ -872,7 +873,10 @@ async fn pgwire_binary_encoding_sweep() {
     // Decode the scalar types to their natural Rust type — proves the binary
     // bytes decode, not just that a DataRow was sent.
     let r = client
-        .query_one("SELECT s, t, b, i2, i4, i8, f4, f8 FROM types_fixture LIMIT 1", &[])
+        .query_one(
+            "SELECT s, t, b, i2, i4, i8, f4, f8 FROM types_fixture LIMIT 1",
+            &[],
+        )
         .await
         .expect("typed binary row");
     assert_eq!(r.get::<_, &str>("s"), "CA");
@@ -888,4 +892,3 @@ async fn pgwire_binary_encoding_sweep() {
     drop(server);
     drop(store);
 }
-

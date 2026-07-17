@@ -15,7 +15,12 @@ use datapress_core::config::AppConfig;
 /// process receives SIGINT.
 pub async fn serve(cfg: AppConfig) -> std::io::Result<()> {
     datapress_core::banner::print();
-    let store = Arc::new(Store::load(&cfg).await.expect("failed to load datasets"));
+    // Create the store with all datasets Pending — no builds yet.
+    let store = Arc::new(
+        Store::new_nonblocking(&cfg)
+            .await
+            .expect("failed to initialise dataset store"),
+    );
 
     #[cfg(feature = "pgwire")]
     let _pgwire = if cfg.server.pgwire.enabled {
@@ -32,6 +37,12 @@ pub async fn serve(cfg: AppConfig) -> std::io::Result<()> {
         );
     }
 
+    // Spawn background startup builds (non-blocking — returns immediately).
+    // The HTTP listener below binds and starts serving while these run.
+    store
+        .clone()
+        .spawn_startup_builds(cfg.server.startup.max_concurrent, &cfg.server);
+
     let store: Arc<dyn Backend> = store;
     datapress_core::server::serve(cfg, store, "DataFusion").await
 }
@@ -45,7 +56,11 @@ pub async fn serve_with_shutdown(
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
     datapress_core::banner::print();
-    let store = Arc::new(Store::load(&cfg).await.expect("failed to load datasets"));
+    let store = Arc::new(
+        Store::new_nonblocking(&cfg)
+            .await
+            .expect("failed to initialise dataset store"),
+    );
 
     #[cfg(feature = "pgwire")]
     let pgwire_server = if cfg.server.pgwire.enabled {
@@ -62,13 +77,14 @@ pub async fn serve_with_shutdown(
         );
     }
 
+    store
+        .clone()
+        .spawn_startup_builds(cfg.server.startup.max_concurrent, &cfg.server);
+
     let store: Arc<dyn Backend> = store;
     let result =
         datapress_core::server::serve_with_shutdown(cfg, store, "DataFusion", shutdown).await;
 
-    // The core server has returned (the `shutdown` future fired), so tear the
-    // pgwire listener down with it rather than leaving it orphaned. Dropping the
-    // handle signals its runtime to stop and joins the thread.
     #[cfg(feature = "pgwire")]
     drop(pgwire_server);
 

@@ -258,7 +258,7 @@ don't need to know how the service is exposed. `/health` lives under
 | Route      | Status                                                                 | Body                                                                       |
 |------------|------------------------------------------------------------------------|----------------------------------------------------------------------------|
 | `/healthz` | Liveness — always `200` while the process is running.                  | `{"status":"ok"}`                                                          |
-| `/readyz`  | Readiness — `200` once at least one dataset is registered, `503` otherwise. | `{"status":"ready","datasets":N}` / `{"status":"not ready","reason":"no datasets registered"}` |
+| `/readyz`  | Readiness — `200` once eager datasets are published (configurable via `[server.startup] readiness`), `503` otherwise. The HTTP listener binds immediately; `/readyz` is the traffic gate. | `{"status":"ready","datasets":N}` / `{"status":"not ready","reason":"..." }` |
 | `/version` | Build / version metadata — always `200`.                              | `{"name":"datapress-core","version":"x.y.z","backend":"DuckDB\|DataFusion","profile":"debug\|release", ...}` |
 | `{prefix}/health` | App-level liveness — always `200`.                             | `{"status":"ok"}`                                                          |
 
@@ -364,13 +364,14 @@ block — it gets rendered as an `OpenIdConnect` security scheme with PKCE.
 
 `[dataset.source]` is a tagged enum.
 
-| `kind`    | `location`                                          | Notes                                                                                  |
+| `kind`    | `location` / `sql`                                  | Notes                                                                                  |
 |-----------|-----------------------------------------------------|----------------------------------------------------------------------------------------|
 | `parquet` | a `.parquet` file                                   | Read as-is.                                                                            |
 | `parquet` | a directory                                         | Every `*.parquet` inside (sorted, non-recursive). No glob patterns.                    |
 | `parquet` | `s3://bucket/key.parquet` or `s3://bucket/prefix/`  | Requires a `[dataset.s3]` block. DuckDB autoloads `httpfs`.                            |
 | `delta`   | a local directory                                   | Pointed at the table root (the dir containing `_delta_log/`).                          |
 | `delta`   | `s3://bucket/path/to/table`                         | Requires `[dataset.s3]`. DuckDB autoloads `delta`; DataFusion uses the `deltalake` crate. |
+| `query`   | SQL (`sql` field) + `depends_on` array              | Materialized from a `SELECT` over other registered datasets. Scheduled refresh, cascade, and optional storage-backed lazy residency. See [Materialized datasets](https://docs.datap-rs.org/configuration/materialized/). |
 
 #### S3 / S3-compatible storage
 
@@ -466,15 +467,9 @@ plus an opt-in raw-SQL endpoint (see below):
 
 ### API versioning
 
-The canonical paths live under `/api/v1/...`. The un-versioned
-`/api/...` paths continue to work as a **legacy alias** for v1, so
-existing clients keep running. To upgrade, replace `/api/` with
-`/api/v1/` in your URLs — nothing else changes.
-
-```text
-POST /api/v1/datasets/accidents/query      # canonical (recommended)
-POST /api/datasets/accidents/query         # legacy alias, still v1
-```
+All routes live under `/api/v1/...`. The un-versioned `/api/...` alias
+was removed in **v0.7.0** — update any existing URLs by replacing `/api/`
+with `/api/v1/`.
 
 When a breaking schema change is introduced, it will ship as `/api/v2`
 in a sibling module ([crates/core/src/handlers/v1.rs](crates/core/src/handlers/v1.rs))

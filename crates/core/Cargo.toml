@@ -33,7 +33,7 @@ swagger    = ["dep:utoipa", "dep:utoipa-swagger-ui", "dep:reqwest"]
 # (counts + latency histograms) via middleware. Served from
 # `[metrics].path` (default `/metrics`). Off by default at compile time;
 # can be toggled at runtime via `[metrics].enabled`.
-metrics    = ["dep:actix-web-prom"]
+metrics    = ["dep:actix-web-prom", "dep:prometheus"]
 # OIDC bearer-token authentication + scope enforcement. Off by default;
 # when enabled, `[auth]` config block must be provided. The Swagger UI's
 # SSO support (`[swagger.oauth2]`) is independent of this and only
@@ -60,6 +60,7 @@ log.workspace         = true
 toml.workspace        = true
 glob.workspace        = true
 tokio.workspace       = true
+tokio-util.workspace  = true
 sqlparser.workspace   = true
 
 # Optional, feature-gated (see [features] above).
@@ -72,10 +73,13 @@ mime_guess  = { version = "2",   optional = true }
 utoipa            = { workspace = true, optional = true }
 utoipa-swagger-ui = { workspace = true, optional = true }
 actix-web-prom    = { workspace = true, optional = true }
+prometheus        = { workspace = true, optional = true }
 jsonwebtoken      = { workspace = true, optional = true }
 reqwest           = { workspace = true, optional = true }
 arc-swap          = { workspace = true, optional = true }
 askama            = { workspace = true, optional = true }
+# Used by the materialization storage backend (Phase 2B).
+object_store = { workspace = true }
 
 [build-dependencies]
 # Used only by build.rs to pre-gzip the embedded DuckDB-WASM assets (explorer
@@ -85,3 +89,5 @@ flate2 = "1"
 [dev-dependencies]
 arrow = { workspace = true }
 actix-rt = "2"
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = "3"

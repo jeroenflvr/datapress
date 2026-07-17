@@ -6,7 +6,7 @@
 //! query (JSON + Arrow IPC content negotiation), count, and the
 //! admin-guarded reload endpoint.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use actix_web::{App, http::StatusCode, test, web};
 use arrow::array::{Array, Int32Array, RecordBatch, StringArray};
@@ -16,7 +16,11 @@ use arrow::ipc::writer::StreamWriter;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use datapress_core::backend::{Backend, DatasetSummary, ReloadStats};
+use datapress_core::backend::{
+    Backend, DatasetStatus, DatasetStatusEntry, DatasetSummary, RefreshRecord, RefreshSource,
+    ReloadStats,
+};
+use datapress_core::config::OnStart;
 use datapress_core::errors::AppError;
 use datapress_core::handlers;
 use datapress_core::models::{CountRequest, QueryRequest};
@@ -33,19 +37,35 @@ struct MockBackend {
     /// Empty registry simulates "no datasets loaded yet".
     empty: bool,
     calls: Mutex<Calls>,
+    /// Per-dataset refresh records (T5.1 / T5.2).
+    refresh_records: RwLock<std::collections::HashMap<String, RefreshRecord>>,
 }
 
 impl MockBackend {
     fn new() -> Self {
+        let mut records = std::collections::HashMap::new();
+        records.insert(
+            "people".into(),
+            RefreshRecord {
+                last_refresh_at: Some("2024-01-01T00:00:00Z".into()),
+                last_refresh_duration_ms: Some(5),
+                refresh_source: Some(RefreshSource::Startup),
+                consecutive_failures: 0,
+                last_error: None,
+                ..Default::default()
+            },
+        );
         Self {
             empty: false,
             calls: Mutex::default(),
+            refresh_records: RwLock::new(records),
         }
     }
     fn empty() -> Self {
         Self {
             empty: true,
             calls: Mutex::default(),
+            refresh_records: RwLock::new(std::collections::HashMap::new()),
         }
     }
 
@@ -143,10 +163,44 @@ impl Backend for MockBackend {
             return Err(AppError::NotFound(name.into()));
         }
         self.calls.lock().unwrap().reload += 1;
+        // Update the refresh record so tests can verify the header changes.
+        {
+            let mut recs = self.refresh_records.write().unwrap();
+            let rec = recs.entry("people".into()).or_default();
+            rec.last_refresh_at = Some("2024-06-01T12:00:00Z".into());
+            rec.last_refresh_duration_ms = Some(1);
+            rec.refresh_source = Some(RefreshSource::Manual);
+        }
         Ok(ReloadStats {
             rows: 5,
             elapsed_ms: 1,
+            ..Default::default()
         })
+    }
+
+    fn refresh_record(&self, name: &str) -> Option<RefreshRecord> {
+        self.refresh_records.read().unwrap().get(name).cloned()
+    }
+
+    fn record_refresh(&self, name: &str, record: RefreshRecord) {
+        let mut map = self.refresh_records.write().unwrap();
+        let existing = map.entry(name.to_string()).or_default();
+        existing.consecutive_failures = record.consecutive_failures;
+        if record.last_error.is_some() {
+            existing.last_error = record.last_error;
+        }
+        if record.next_refresh_at.is_some() {
+            existing.next_refresh_at = record.next_refresh_at;
+        }
+        if record.refresh_source.is_some() {
+            existing.refresh_source = record.refresh_source;
+        }
+        if record.last_refresh_at.is_some() {
+            existing.last_refresh_at = record.last_refresh_at;
+        }
+        if record.last_refresh_duration_ms.is_some() {
+            existing.last_refresh_duration_ms = record.last_refresh_duration_ms;
+        }
     }
 }
 
@@ -172,10 +226,8 @@ fn mount(
                 .service(handlers::readyz)
                 .service(handlers::version)
                 .service(handlers::health)
-                // Canonical versioned scope.
-                .service(web::scope("/api/v1").configure(handlers::v1::configure))
-                // Legacy alias kept for back-compat (tested below).
-                .service(web::scope("/api").configure(handlers::v1::configure)),
+                // Canonical versioned scope — the only API mount.
+                .service(web::scope("/api/v1").configure(handlers::v1::configure)),
         )
 }
 
@@ -199,8 +251,7 @@ fn mount_prefixed(
                 .service(handlers::readyz)
                 .service(handlers::version)
                 .service(handlers::health)
-                .service(web::scope("/api/v1").configure(handlers::v1::configure))
-                .service(web::scope("/api").configure(handlers::v1::configure)),
+                .service(web::scope("/api/v1").configure(handlers::v1::configure)),
         )
 }
 
@@ -288,7 +339,9 @@ async fn prefixed_api_accessible_under_prefix() {
 #[actix_web::test]
 async fn list_datasets_returns_summaries() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-    let req = test::TestRequest::get().uri("/api/datasets").to_request();
+    let req = test::TestRequest::get()
+        .uri("/api/v1/datasets")
+        .to_request();
     let body: Value = test::call_and_read_body_json(&app, req).await;
     let ds = &body["datasets"];
     assert_eq!(ds[0]["name"], "people");
@@ -300,7 +353,7 @@ async fn list_datasets_returns_summaries() {
 async fn schema_returns_columns_and_sample() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::get()
-        .uri("/api/datasets/people/schema")
+        .uri("/api/v1/datasets/people/schema")
         .to_request();
     let body: Value = test::call_and_read_body_json(&app, req).await;
     assert_eq!(body["name"], "people");
@@ -316,7 +369,7 @@ async fn schema_returns_columns_and_sample() {
 async fn schema_unknown_dataset_returns_404() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::get()
-        .uri("/api/datasets/nope/schema")
+        .uri("/api/v1/datasets/nope/schema")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
@@ -326,7 +379,7 @@ async fn schema_unknown_dataset_returns_404() {
 async fn query_json_envelope() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/query")
+        .uri("/api/v1/datasets/people/query")
         .set_json(serde_json::json!({}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -348,7 +401,7 @@ async fn query_json_envelope() {
 async fn query_arrow_via_accept_header() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/query")
+        .uri("/api/v1/datasets/people/query")
         .insert_header(("Accept", "application/vnd.apache.arrow.stream"))
         .set_json(serde_json::json!({}))
         .to_request();
@@ -374,7 +427,7 @@ async fn query_arrow_via_accept_header() {
 async fn query_arrow_via_format_query_param() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/query?format=arrow")
+        .uri("/api/v1/datasets/people/query?format=arrow")
         .set_json(serde_json::json!({}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -388,7 +441,7 @@ async fn query_arrow_via_format_query_param() {
 async fn query_stream_returns_arrow_without_paging_envelope() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/query/stream")
+        .uri("/api/v1/datasets/people/query/stream")
         .set_json(serde_json::json!({"columns": ["id", "name"]}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -411,14 +464,14 @@ async fn count_with_and_without_predicates() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
 
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/count")
+        .uri("/api/v1/datasets/people/count")
         .set_json(serde_json::json!({}))
         .to_request();
     let body: Value = test::call_and_read_body_json(&app, req).await;
     assert_eq!(body["count"], 5);
 
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/count")
+        .uri("/api/v1/datasets/people/count")
         .set_json(serde_json::json!({
             "predicates": [{"col": "name", "op": "eq", "value": "Anna"}],
         }))
@@ -433,7 +486,7 @@ async fn reload_requires_admin_token() {
     // disabled and return 403 regardless of headers.
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/reload")
+        .uri("/api/v1/datasets/people/reload")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
@@ -444,7 +497,7 @@ async fn arbitrary_accept_does_not_force_arrow() {
     // `*/*` should still go through the JSON path.
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::post()
-        .uri("/api/datasets/people/query")
+        .uri("/api/v1/datasets/people/query")
         .insert_header(("Accept", "*/*"))
         .set_json(serde_json::json!({}))
         .to_request();
@@ -458,70 +511,390 @@ async fn arbitrary_accept_does_not_force_arrow() {
     assert!(ct.starts_with("application/json"));
 }
 
-// ------------------------------------------------------------- v1 routing --
-//
-// Every route above is also reachable under the canonical `/api/v1/...`
-// scope. The existing tests target the legacy `/api/...` alias so we
-// keep regression coverage on both mount points.
+// --------------------------------------------------------- 404 on removed legacy paths --
 
 #[actix_web::test]
-async fn v1_list_datasets() {
+async fn legacy_api_datasets_returns_404() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-    let req = test::TestRequest::get()
-        .uri("/api/v1/datasets")
-        .to_request();
-    let body: Value = test::call_and_read_body_json(&app, req).await;
-    assert_eq!(body["datasets"][0]["name"], "people");
+    let req = test::TestRequest::get().uri("/api/datasets").to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
 #[actix_web::test]
-async fn v1_schema() {
+async fn legacy_api_dataset_query_returns_404() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-    let req = test::TestRequest::get()
-        .uri("/api/v1/datasets/people/schema")
+    let req = test::TestRequest::post()
+        .uri("/api/datasets/people/query")
+        .set_json(serde_json::json!({}))
         .to_request();
-    let body: Value = test::call_and_read_body_json(&app, req).await;
-    assert_eq!(body["name"], "people");
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+// ----------------------------------------------------------------- Phase 5 tests --
+
+// ---------------------------------------------------------------------------
+// T5.1: GET /api/v1/datasets/{name}/status — state machine + field coverage
+// ---------------------------------------------------------------------------
+
+/// A backend whose dataset-status can be set programmatically for state-machine
+/// tests.
+struct StateMachineBackend {
+    status: Mutex<DatasetStatus>,
+    refresh_rec: Mutex<RefreshRecord>,
+}
+
+impl StateMachineBackend {
+    fn with_status(status: DatasetStatus) -> Self {
+        let rec = if status == DatasetStatus::Published {
+            RefreshRecord {
+                last_refresh_at: Some("2024-03-01T10:00:00Z".into()),
+                last_refresh_duration_ms: Some(42),
+                refresh_source: Some(RefreshSource::Startup),
+                consecutive_failures: 0,
+                last_error: None,
+                ..Default::default()
+            }
+        } else if status == DatasetStatus::Failed {
+            RefreshRecord {
+                last_refresh_at: Some("2024-03-01T09:00:00Z".into()),
+                consecutive_failures: 1,
+                last_error: Some("build error: source not found".into()),
+                ..Default::default()
+            }
+        } else {
+            RefreshRecord::default()
+        };
+        Self {
+            status: Mutex::new(status),
+            refresh_rec: Mutex::new(rec),
+        }
+    }
+}
+
+#[async_trait]
+impl Backend for StateMachineBackend {
+    fn names(&self) -> Vec<String> {
+        if *self.status.lock().unwrap() == DatasetStatus::Published {
+            vec!["state_ds".into()]
+        } else {
+            vec![]
+        }
+    }
+
+    fn dataset_statuses(&self) -> Vec<DatasetStatusEntry> {
+        let status = self.status.lock().unwrap().clone();
+        let rec = self.refresh_rec.lock().unwrap().clone();
+        vec![DatasetStatusEntry {
+            name: "state_ds".into(),
+            status: status.clone(),
+            on_start: OnStart::Eager,
+            kind: "query".into(),
+            residency: "memory".into(),
+            storage_bytes: None,
+            generation_id: rec.generation_id,
+            last_refresh_at: rec.last_refresh_at,
+            last_refresh_duration_ms: rec.last_refresh_duration_ms,
+            next_refresh_at: rec.next_refresh_at,
+            refresh_source: rec.refresh_source,
+            consecutive_failures: rec.consecutive_failures,
+            last_error: rec.last_error,
+            columns: if status == DatasetStatus::Published {
+                2
+            } else {
+                0
+            },
+            rows: if status == DatasetStatus::Published {
+                10
+            } else {
+                0
+            },
+            lazy: false,
+            depends_on: vec!["upstream".into()],
+        }]
+    }
+
+    fn summary(&self, name: &str) -> Result<DatasetSummary, AppError> {
+        if name == "state_ds" && *self.status.lock().unwrap() == DatasetStatus::Published {
+            Ok(DatasetSummary {
+                name: name.into(),
+                columns: 2,
+                rows: 10,
+                lazy: false,
+            })
+        } else {
+            Err(AppError::NotFound(name.into()))
+        }
+    }
+
+    fn schema(&self, name: &str) -> Result<Arc<datapress_core::schema::DatasetSchema>, AppError> {
+        Err(AppError::NotFound(name.into()))
+    }
+
+    async fn sample(&self, _name: &str) -> Result<String, AppError> {
+        Ok("null".into())
+    }
+
+    async fn query(&self, _name: &str, _req: &QueryRequest) -> Result<String, AppError> {
+        Ok("[]".into())
+    }
+
+    async fn count(&self, _name: &str, _req: &CountRequest) -> Result<i64, AppError> {
+        Ok(0)
+    }
+
+    async fn reload(&self, _name: &str) -> Result<ReloadStats, AppError> {
+        Err(AppError::Internal("not implemented".into()))
+    }
+
+    fn refresh_record(&self, name: &str) -> Option<RefreshRecord> {
+        if name == "state_ds" {
+            Some(self.refresh_rec.lock().unwrap().clone())
+        } else {
+            None
+        }
+    }
 }
 
 #[actix_web::test]
-async fn v1_query_json_and_arrow() {
-    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+async fn status_endpoint_published() {
+    let backend = StateMachineBackend::with_status(DatasetStatus::Published);
+    let app = test::init_service(mount(Arc::new(backend))).await;
+    let req = test::TestRequest::get()
+        .uri("/api/v1/datasets/state_ds/status")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["state"], "published");
+    assert_eq!(body["kind"], "query");
+    assert_eq!(body["residency"], "memory");
+    assert_eq!(body["consecutive_failures"], 0);
+    assert_eq!(body["rows"], 10);
+    assert_eq!(body["last_refresh_duration_ms"], 42);
+    assert_eq!(body["refresh_source"], "startup");
+    assert_eq!(body["depends_on"], serde_json::json!(["upstream"]));
+    assert!(body["last_refresh_at"].is_string());
+}
 
-    // JSON envelope.
+#[actix_web::test]
+async fn status_endpoint_pending() {
+    let backend = StateMachineBackend::with_status(DatasetStatus::Pending);
+    let app = test::init_service(mount(Arc::new(backend))).await;
+    let req = test::TestRequest::get()
+        .uri("/api/v1/datasets/state_ds/status")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["state"], "pending");
+    assert_eq!(body["rows"], 0);
+}
+
+#[actix_web::test]
+async fn status_endpoint_failed_includes_last_error() {
+    let backend = StateMachineBackend::with_status(DatasetStatus::Failed);
+    let app = test::init_service(mount(Arc::new(backend))).await;
+    let req = test::TestRequest::get()
+        .uri("/api/v1/datasets/state_ds/status")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["state"], "failed");
+    assert_eq!(body["consecutive_failures"], 1);
+    assert!(body["last_error"].is_string());
+}
+
+#[actix_web::test]
+async fn status_endpoint_not_found() {
+    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+    let req = test::TestRequest::get()
+        .uri("/api/v1/datasets/nonexistent/status")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+// ---------------------------------------------------------------------------
+// T5.2: X-Dataset-Refreshed-At header on /query and /count
+// ---------------------------------------------------------------------------
+
+#[actix_web::test]
+async fn query_includes_refreshed_at_header() {
+    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
     let req = test::TestRequest::post()
         .uri("/api/v1/datasets/people/query")
         .set_json(serde_json::json!({}))
         .to_request();
-    let body: Value = test::call_and_read_body_json(&app, req).await;
-    assert_eq!(body["data"][0]["name"], "Anna");
-
-    // Arrow IPC via query param.
-    let req = test::TestRequest::post()
-        .uri("/api/v1/datasets/people/query?format=arrow")
-        .set_json(serde_json::json!({}))
-        .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(
-        resp.headers().get("content-type").unwrap(),
-        "application/vnd.apache.arrow.stream",
-    );
+    assert_eq!(resp.status(), StatusCode::OK);
+    let header = resp.headers().get("x-dataset-refreshed-at");
+    assert!(header.is_some(), "X-Dataset-Refreshed-At header missing");
+    assert_eq!(header.unwrap().to_str().unwrap(), "2024-01-01T00:00:00Z");
 }
 
 #[actix_web::test]
-async fn v1_count_and_reload_guard() {
+async fn count_includes_refreshed_at_header() {
     let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
-
     let req = test::TestRequest::post()
         .uri("/api/v1/datasets/people/count")
         .set_json(serde_json::json!({}))
         .to_request();
-    let body: Value = test::call_and_read_body_json(&app, req).await;
-    assert_eq!(body["count"], 5);
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(resp.headers().contains_key("x-dataset-refreshed-at"));
+}
 
+#[actix_web::test]
+async fn refreshed_at_header_absent_for_dataset_without_record() {
+    // A dataset backend with no refresh records (fresh empty backend) should
+    // not emit the header even if the query succeeds.
+    struct NoRecordBackend;
+    #[async_trait::async_trait]
+    impl Backend for NoRecordBackend {
+        fn names(&self) -> Vec<String> {
+            vec!["ds".into()]
+        }
+        fn summary(&self, _: &str) -> Result<DatasetSummary, AppError> {
+            Ok(DatasetSummary {
+                name: "ds".into(),
+                columns: 1,
+                rows: 0,
+                lazy: false,
+            })
+        }
+        fn schema(
+            &self,
+            name: &str,
+        ) -> Result<Arc<datapress_core::schema::DatasetSchema>, AppError> {
+            Err(AppError::NotFound(name.into()))
+        }
+        async fn sample(&self, _: &str) -> Result<String, AppError> {
+            Ok("null".into())
+        }
+        async fn query(&self, _: &str, _: &QueryRequest) -> Result<String, AppError> {
+            Ok("[]".into())
+        }
+        async fn count(&self, _: &str, _: &CountRequest) -> Result<i64, AppError> {
+            Ok(0)
+        }
+        async fn reload(&self, _: &str) -> Result<ReloadStats, AppError> {
+            Err(AppError::Internal("no".into()))
+        }
+        // No refresh_record override → default returns None.
+    }
+
+    let app = test::init_service(mount(Arc::new(NoRecordBackend))).await;
     let req = test::TestRequest::post()
-        .uri("/api/v1/datasets/people/reload")
+        .uri("/api/v1/datasets/ds/query")
+        .set_json(serde_json::json!({}))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    assert_eq!(resp.status(), StatusCode::OK);
+    // No refresh record → header absent.
+    assert!(!resp.headers().contains_key("x-dataset-refreshed-at"));
+}
+
+// ---------------------------------------------------------------------------
+// Tests: storage_backend in BuildInfo (R8.10 — version endpoint extension)
+// ---------------------------------------------------------------------------
+
+/// The `/version` endpoint does NOT include `storage_backend` when `None`.
+#[actix_web::test]
+async fn version_no_storage_backend_absent() {
+    let app = test::init_service(mount(Arc::new(MockBackend::new()))).await;
+    let req = test::TestRequest::get().uri("/version").to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    // storage_backend is skip_serializing_if = None → absent from JSON.
+    assert!(body.get("storage_backend").is_none());
+}
+
+/// BuildInfo::with_storage_backend sets the field, which is then serialised.
+#[actix_web::test]
+async fn build_info_with_storage_backend() {
+    use datapress_core::handlers::BuildInfo;
+    let info = BuildInfo::new("Test").with_storage_backend(Some("local".into()));
+    let json = serde_json::to_value(&info).unwrap();
+    assert_eq!(json["storage_backend"], "local");
+}
+
+/// BuildInfo::with_storage_backend(None) omits the field.
+#[actix_web::test]
+async fn build_info_no_storage_backend_omitted() {
+    use datapress_core::handlers::BuildInfo;
+    let info = BuildInfo::new("Test").with_storage_backend(None);
+    let json = serde_json::to_value(&info).unwrap();
+    assert!(json.get("storage_backend").is_none());
+}
+
+// ---------------------------------------------------------------------------
+// JS syntax guard: run `node --check` on every embedded explorer asset.
+//
+// Skipped (with a warning) when `node` is not on PATH so CI in minimal
+// environments still passes. This is not an actix test — it's a plain
+// synchronous `#[test]` because there is no async work.
+// ---------------------------------------------------------------------------
+
+/// Check that every `.js` file embedded in the explorer passes `node --check`.
+///
+/// - When `node` is not on PATH the test emits a `cargo test` warning and
+///   passes (the CI smoke script re-checks unconditionally where node is
+///   guaranteed available).
+/// - A syntax error in any asset is a hard failure: it means the explorer
+///   UI will refuse to load for all users.
+#[actix_web::test]
+async fn explorer_js_assets_pass_node_syntax_check() {
+    // Walk the assets directory relative to the manifest root.
+    let assets_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/explorer");
+
+    // Find node. Accept both `node` and `nodejs`.
+    let node = ["node", "nodejs"].iter().find(|&&n| which_node(n)).copied();
+
+    let Some(node_bin) = node else {
+        eprintln!(
+            "WARNING: `node` not found on PATH — skipping explorer JS syntax check. \
+             Re-run with node installed or use the smoke script."
+        );
+        return;
+    };
+
+    let mut failures: Vec<String> = Vec::new();
+
+    for entry in std::fs::read_dir(&assets_dir)
+        .expect("assets/explorer directory must exist")
+        .flatten()
+    {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("js") {
+            continue;
+        }
+        let result = std::process::Command::new(node_bin)
+            .arg("--check")
+            .arg(&path)
+            .output()
+            .expect("failed to run node --check");
+
+        if !result.status.success() {
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            failures.push(format!("{}: {}", path.display(), stderr.trim()));
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "node --check failed for explorer JS assets:\n{}",
+        failures.join("\n")
+    );
+}
+
+fn which_node(bin: &str) -> bool {
+    std::process::Command::new(bin)
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }

@@ -54,8 +54,9 @@ pub mod blocking;
 pub use client::{Client, ClientBuilder};
 pub use error::{ClientError, Result};
 pub use models::{
-    Aggregation, OrderBy, Predicate, QueryRequest, QueryRequestBuilder, QueryResponse, SqlRequest,
-    SqlResponse,
+    Aggregation, CreateQueryRequest, DatasetStatusEntry, OrderBy, Predicate, QueryRequest,
+    QueryRequestBuilder, QueryResponse, ReloadAllResponse, SavedQueryEntry, SavedQueryKind,
+    SqlRequest, SqlResponse,
 };
 
 #[cfg(feature = "arrow")]

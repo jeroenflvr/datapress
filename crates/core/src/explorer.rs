@@ -69,6 +69,14 @@ pub struct ExplorerState {
     /// Optional explicit Bootstrap colour name (e.g. `"danger"`, `"success"`).
     /// When `None` the colour is derived automatically from `environment`.
     pub environment_color: Option<String>,
+    /// Whether the saved-queries API (`POST /api/v1/queries`) is available on
+    /// this server. Drives the "Save as dataset" action in the explorer UI.
+    /// `false` hides the action entirely (R8.7: probe once, hide on 404).
+    pub queries_enabled: bool,
+    /// Active server-level materialization storage backend, e.g. `"local"` or
+    /// `"s3"`.  `None` when `[server.storage]` is not configured — the
+    /// residency/sort_by form fields are hidden when `None` (R8.7).
+    pub storage_backend: Option<String>,
 }
 
 #[derive(Template)]
@@ -97,6 +105,11 @@ struct IndexTemplate {
     environment: Option<String>,
     /// Bootstrap badge class computed from `environment` / `environment_color`.
     environment_badge_class: String,
+    /// Whether the saved-queries API is enabled (drives "Save as dataset" UI).
+    queries_enabled: bool,
+    /// Active storage backend label for the save-dataset form residency field.
+    /// Empty string = no storage configured.
+    storage_backend: String,
 }
 
 struct DatasetListItem {
@@ -104,6 +117,14 @@ struct DatasetListItem {
     rows: usize,
     columns: usize,
     kind: String,
+    /// Lifecycle state: `published`, `pending`, `building`, or `failed`.
+    state: String,
+    /// Last error, if any (truncated).  Non-empty only when state == `failed`.
+    last_error: String,
+    /// Whether this dataset was created via the saved-queries API.
+    /// When true the list row carries `data-managed="true"` so JS can render
+    /// a delete button after a live insert and `dpDeleteDataset` can target it.
+    is_managed: bool,
 }
 
 #[derive(Template)]
@@ -140,6 +161,11 @@ struct DatasetTemplate {
     s3_addressing: String,
     s3_partitioning: String,
     s3_creds: String,
+    /// API base path (e.g. `/api/v1`). Used by JS reload buttons.
+    api_base: String,
+    /// Whether this dataset was created via the saved-queries API
+    /// (managed = true). Only managed datasets show the delete action.
+    is_managed: bool,
 }
 
 struct ColumnView {
@@ -181,9 +207,11 @@ pub fn configure(state: web::Data<ExplorerState>, cfg: &mut web::ServiceConfig) 
                 .route("/", web::get().to(index))
                 .route("/terminal", web::get().to(terminal))
                 .route("/oauth2-redirect.html", web::get().to(oauth2_redirect))
+                .route("/favicon.ico", web::get().to(asset_favicon))
                 .route("/assets/explorer.css", web::get().to(asset_explorer_css))
                 .route("/assets/explorer.js", web::get().to(asset_explorer_js))
                 .route("/assets/query-api.js", web::get().to(asset_query_api_js))
+                .route("/assets/manage.js", web::get().to(asset_manage_js))
                 .route("/assets/terminal.css", web::get().to(asset_terminal_css))
                 .route("/assets/terminal.js", web::get().to(asset_terminal_js))
                 .route("/assets/pypi.svg", web::get().to(asset_pypi_icon))
@@ -233,27 +261,54 @@ fn env_badge_class(env: &str, color_override: Option<&str>) -> String {
 
 /// Build the `[{name, rows, parquet}]` payload consumed by the DuckDB-WASM
 /// console and shell terminal, alongside the discovery list items.
+///
+/// Uses `backend.dataset_statuses()` as the **authoritative** dataset list so
+/// runtime datasets created via `POST /api/v1/queries` appear here even when
+/// they were never added to `state.datasets` (the config-file snapshot).
+/// Config entries enrich display fields (kind) where available.
 fn collect_datasets(state: &ExplorerState) -> (Vec<DatasetListItem>, String) {
-    let datasets = state.datasets.read().unwrap();
-    let mut items = Vec::with_capacity(datasets.len());
-    let mut json_items = Vec::with_capacity(datasets.len());
-    for ds in datasets.iter() {
-        let (rows, columns) = match state.backend.summary(&ds.name) {
-            Ok(s) => (s.rows, s.columns),
-            Err(_) => (0, 0),
-        };
+    // Fetch full statuses once — this is the single authoritative list.
+    let statuses = state.backend.dataset_statuses();
+    // Build a name→kind index from the config snapshot for kind enrichment.
+    let config_kinds: std::collections::HashMap<String, String> = {
+        let guard = state.datasets.read().unwrap_or_else(|e| e.into_inner());
+        guard
+            .iter()
+            .map(|d| (d.name.clone(), d.source.kind.as_str().to_string()))
+            .collect()
+    };
+
+    let mut items = Vec::with_capacity(statuses.len());
+    let mut json_items = Vec::with_capacity(statuses.len());
+
+    for s in &statuses {
+        let state_str = format!("{:?}", s.status).to_lowercase();
+        let last_error = s.last_error.clone().unwrap_or_default();
+        // Use the config-reported kind (parquet/delta/query) when available;
+        // fall back to the backend-reported kind for runtime datasets that have
+        // no config entry.
+        let kind = config_kinds
+            .get(&s.name)
+            .cloned()
+            .unwrap_or_else(|| s.kind.clone());
+        let is_managed = state.backend.is_managed(&s.name);
+
         items.push(DatasetListItem {
-            name: ds.name.clone(),
-            rows,
-            columns,
-            kind: ds.source.kind.as_str().to_string(),
+            name: s.name.clone(),
+            rows: s.rows,
+            columns: s.columns,
+            kind,
+            state: state_str,
+            last_error,
+            is_managed,
         });
         json_items.push(serde_json::json!({
-            "name": ds.name,
-            "rows": rows,
-            "parquet": format!("{}/datasets/{}/all.parquet", state.api_base, ds.name),
+            "name": s.name,
+            "rows": s.rows,
+            "parquet": format!("{}/datasets/{}/all.parquet", state.api_base, s.name),
         }));
     }
+
     let datasets_json = serde_json::to_string(&json_items).unwrap_or_else(|_| "[]".into());
     (items, datasets_json)
 }
@@ -294,6 +349,8 @@ async fn index(state: web::Data<ExplorerState>) -> HttpResponse {
         config_path,
         environment: state.environment.clone(),
         environment_badge_class,
+        queries_enabled: state.queries_enabled,
+        storage_backend: state.storage_backend.as_deref().unwrap_or("").to_string(),
     };
     render(&tpl)
 }
@@ -324,6 +381,7 @@ async fn oauth2_redirect() -> HttpResponse {
 const EXPLORER_CSS: &str = include_str!("../assets/explorer/explorer.css");
 const EXPLORER_JS: &str = include_str!("../assets/explorer/explorer.js");
 const QUERY_API_JS: &str = include_str!("../assets/explorer/query-api.js");
+const MANAGE_JS: &str = include_str!("../assets/explorer/manage.js");
 const TERMINAL_CSS: &str = include_str!("../assets/explorer/terminal.css");
 const TERMINAL_JS: &str = include_str!("../assets/explorer/terminal.js");
 const OAUTH2_REDIRECT_HTML: &str = include_str!("../assets/explorer/oauth2-redirect.html");
@@ -349,6 +407,25 @@ async fn asset_explorer_js() -> HttpResponse {
 
 async fn asset_query_api_js() -> HttpResponse {
     asset("application/javascript; charset=utf-8", QUERY_API_JS)
+}
+
+async fn asset_manage_js() -> HttpResponse {
+    asset("application/javascript; charset=utf-8", MANAGE_JS)
+}
+
+/// Minimal inline favicon so browsers don't 404 on `/favicon.ico`.
+/// A single 1×1 transparent pixel encoded as a data-URI SVG, served as
+/// `image/svg+xml`.  The `<link rel="icon">` in `base.html` points here.
+async fn asset_favicon() -> HttpResponse {
+    // Compass-needle SVG icon (matches the navbar glyph) at 16×16.
+    const FAVICON_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="#6ea8fe"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm0 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zM5.5 5.5l5 2-2 5-5-2z"/></svg>"##;
+    HttpResponse::Ok()
+        .content_type("image/svg+xml")
+        .insert_header((
+            actix_web::http::header::CACHE_CONTROL,
+            "public, max-age=86400",
+        ))
+        .body(FAVICON_SVG)
 }
 
 async fn asset_terminal_css() -> HttpResponse {
@@ -405,27 +482,29 @@ async fn asset_arrow_vendor(req: HttpRequest) -> HttpResponse {
 
 async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>) -> HttpResponse {
     let name = path.into_inner();
-    // Clone the config out of the lock so we don't hold the guard across the
-    // `await` below (the guard isn't `Send`).
-    let Some(ds) = state
-        .datasets
-        .read()
-        .unwrap()
-        .iter()
-        .find(|d| d.name == name)
-        .cloned()
-    else {
-        // Dataset names are validated to `[A-Za-z0-9_.-]` at config load,
-        // so the echoed name is safe to inline without HTML escaping.
+
+    // Check existence via the backend (authoritative — includes runtime datasets
+    // created via POST /api/v1/queries that are absent from state.datasets).
+    let summary = state.backend.summary(&name).ok();
+    if summary.is_none() && state.backend.schema(&name).is_err() {
         return HttpResponse::NotFound()
             .content_type("text/html; charset=utf-8")
             .body(format!(
                 "<div class=\"alert alert-warning\">Unknown dataset: {name}</div>"
             ));
-    };
-    let ds = &ds;
+    }
 
-    let summary = state.backend.summary(&name).ok();
+    // Optionally enrich from the config snapshot when a config entry exists.
+    // Runtime datasets have no config entry — all config-derived fields fall
+    // back to safe defaults.
+    let ds_cfg = state
+        .datasets
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .find(|d| d.name == name)
+        .cloned();
+
     let rows = summary.as_ref().map(|s| s.rows).unwrap_or(0);
 
     let schema = state.backend.schema(&name).ok();
@@ -455,6 +534,9 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
     }
     let column_count = summary.as_ref().map(|s| s.columns).unwrap_or(columns.len());
 
+    // For pending/building datasets the sample may legitimately be unavailable.
+    // Lazy-residency query datasets serve via the normal query path so
+    // backend.sample() works fine — errors map to "—" for both cases.
     let sample_pretty = match state.backend.sample(&name).await {
         Ok(s) if s.trim() == "null" => "—".to_string(),
         Ok(s) => serde_json::from_str::<serde_json::Value>(&s)
@@ -464,14 +546,42 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
         Err(_) => "—".to_string(),
     };
 
-    let projection = if ds.columns.is_empty() {
-        "all columns".to_string()
-    } else {
-        ds.columns.join(", ")
-    };
+    // Fields derived from config (defaults used for runtime datasets).
+    let source_kind = ds_cfg
+        .as_ref()
+        .map(|d| d.source.kind.as_str().to_string())
+        .unwrap_or_else(|| "query".to_string());
+    let source_location = ds_cfg
+        .as_ref()
+        .map(|d| d.source.location.clone())
+        .unwrap_or_else(|| "— (runtime saved query)".to_string());
+    let index_mode = ds_cfg
+        .as_ref()
+        .map(|d| format!("{:?}", d.index.mode).to_lowercase())
+        .unwrap_or_else(|| "auto".to_string());
+    let index_columns = ds_cfg
+        .as_ref()
+        .map(|d| d.index.columns.join(", "))
+        .unwrap_or_default();
+    let projection = ds_cfg
+        .as_ref()
+        .map(|d| {
+            if d.columns.is_empty() {
+                "all columns".to_string()
+            } else {
+                d.columns.join(", ")
+            }
+        })
+        .unwrap_or_else(|| "all columns".to_string());
+    let dict_encode = ds_cfg.as_ref().map(|d| d.dict_encode).unwrap_or(false);
+    let lazy = summary
+        .as_ref()
+        .map(|s| s.lazy)
+        .or_else(|| ds_cfg.as_ref().map(|d| d.lazy))
+        .unwrap_or(false);
 
     let (has_s3, s3_region, s3_endpoint, s3_addressing, s3_partitioning, s3_creds) =
-        match ds.s3.as_ref() {
+        match ds_cfg.as_ref().and_then(|d| d.s3.as_ref()) {
             Some(s3) => (
                 true,
                 s3.region.clone().unwrap_or_else(|| "—".into()),
@@ -497,20 +607,20 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
         };
 
     let tpl = DatasetTemplate {
-        name: ds.name.clone(),
+        name: name.clone(),
         rows,
         column_count,
         indexed_count: indexed.len(),
         nullable_count,
-        source_kind: ds.source.kind.as_str().to_string(),
-        source_location: ds.source.location.clone(),
-        index_mode: format!("{:?}", ds.index.mode).to_lowercase(),
-        index_columns: ds.index.columns.join(", "),
+        source_kind,
+        source_location,
+        index_mode,
+        index_columns,
         projection,
-        dict_encode: ds.dict_encode,
-        lazy: summary.as_ref().map(|s| s.lazy).unwrap_or(ds.lazy),
-        parquet_url: format!("{}/datasets/{}/all.parquet", state.api_base, ds.name),
-        schema_url: format!("{}/datasets/{}/schema", state.api_base, ds.name),
+        dict_encode,
+        lazy,
+        parquet_url: format!("{}/datasets/{}/all.parquet", state.api_base, name),
+        schema_url: format!("{}/datasets/{}/schema", state.api_base, name),
         datasets_url: format!("{}/datasets", state.api_base),
         columns,
         sample_pretty,
@@ -520,6 +630,8 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
         s3_addressing,
         s3_partitioning,
         s3_creds,
+        api_base: state.api_base.clone(),
+        is_managed: state.backend.is_managed(&name),
     };
     render(&tpl)
 }
@@ -681,6 +793,8 @@ fn build_register_config(f: &RegisterForm) -> Result<DatasetConfig, crate::error
         source: SourceConfig {
             kind,
             location: location.to_string(),
+            sql: None,
+            depends_on: vec![],
         },
         s3,
         index,
@@ -689,6 +803,11 @@ fn build_register_config(f: &RegisterForm) -> Result<DatasetConfig, crate::error
         lazy: f.lazy.is_some(),
         predicate_filter: crate::config::ColumnFilter::default(),
         projection_filter: crate::config::ColumnFilter::default(),
+        on_start: crate::config::OnStart::Eager,
+        refresh: None,
+        materialize: None,
+        managed: false,
+        temp: false,
     })
 }
 

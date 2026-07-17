@@ -18,7 +18,7 @@ reload), including JSON and Arrow IPC responses.
 cargo run -p datapress-duckdb --release
 
 # Talk to it.
-curl http://localhost:8080/api/datasets
+curl http://localhost:8080/api/v1/datasets
 ```
 
 Datasets are configured in `datasets.toml`; see the

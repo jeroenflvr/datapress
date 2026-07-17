@@ -11,6 +11,7 @@ use actix_web::{App, HttpServer, middleware, web};
 use crate::backend::Backend;
 use crate::config::AppConfig;
 use crate::handlers;
+use crate::refresh::{CascadeDag, CascadeDep, DatasetSchedule, RefreshScheduler, TtlHandle};
 use crate::timeout::Timeout;
 
 /// How the running server is asked to begin a graceful shutdown.
@@ -75,6 +76,28 @@ async fn run_server(
         enabled: cfg.sql.enabled,
         max_rows: cfg.sql.max_rows.max(1),
     };
+    let readiness_settings = handlers::ReadinessSettings {
+        readiness_mode: cfg.server.startup.readiness.clone(),
+    };
+
+    // Compute the saved-queries dir from the config path + optional override.
+    let saved_queries_dir: Option<std::path::PathBuf> =
+        crate::config::source_config_path().map(|p| {
+            let config_dir = p.parent().unwrap_or_else(|| std::path::Path::new("."));
+            match &cfg.server.saved_queries_dir {
+                Some(d) => {
+                    let path = std::path::PathBuf::from(d);
+                    if path.is_absolute() {
+                        path
+                    } else {
+                        config_dir.join(path)
+                    }
+                }
+                None => config_dir.join("datasets.d"),
+            }
+        });
+    // Routes are enabled when the admin token is set OR auth is configured.
+    let queries_api_enabled = crate::admin::require_admin_configured() || cfg.auth.enabled;
     let docs_cfg = cfg.docs.clone();
     let swagger_cfg = cfg.swagger.clone();
     let metrics_cfg = cfg.metrics.clone();
@@ -233,12 +256,21 @@ async fn run_server(
     #[cfg(feature = "metrics")]
     let metrics_mount = format!("{prefix}{}", metrics_cfg.path);
     #[cfg(feature = "metrics")]
-    let prometheus = {
+    let (prometheus, datapress_metrics) = {
         use actix_web_prom::PrometheusMetricsBuilder;
-        PrometheusMetricsBuilder::new("datapress")
+        use std::sync::Arc;
+        // Create a shared prometheus::Registry so our custom metrics and the
+        // actix-web-prom HTTP metrics all land in the same scrape target.
+        let reg = prometheus::Registry::new();
+        // Register our custom refresh/dataset metrics (T5.3) on this registry.
+        let dm = crate::metrics::DatapressMetrics::register(&reg)
+            .map_err(|e| std::io::Error::other(format!("metrics register failed: {e}")))?;
+        let prom = PrometheusMetricsBuilder::new("datapress")
             .endpoint(metrics_mount.as_str())
+            .registry(reg)
             .build()
-            .map_err(|e| std::io::Error::other(format!("metrics init failed: {e}")))?
+            .map_err(|e| std::io::Error::other(format!("metrics init failed: {e}")))?;
+        (prom, Arc::new(dm))
     };
     #[cfg(feature = "metrics")]
     let metrics_enabled = metrics_cfg.enabled;
@@ -259,15 +291,24 @@ async fn run_server(
     #[cfg(feature = "explorer")]
     let explorer_mount = format!("{prefix}{}", explorer_cfg.path);
 
-    let build_info = web::Data::new(handlers::BuildInfo::new(
-        // `&'static str` so it fits BuildInfo's compile-time fields.
-        // The match keeps this generic enough for future backends.
-        match label {
-            "DuckDB" => "DuckDB",
-            "DataFusion" => "DataFusion",
-            _ => "unknown",
-        },
-    ));
+    let build_info = web::Data::new(
+        handlers::BuildInfo::new(
+            // `&'static str` so it fits BuildInfo's compile-time fields.
+            // The match keeps this generic enough for future backends.
+            match label {
+                "DuckDB" => "DuckDB",
+                "DataFusion" => "DataFusion",
+                _ => "unknown",
+            },
+        )
+        .with_storage_backend(cfg.server.storage.as_ref().map(|s| {
+            use crate::config::StorageBackendKind;
+            match s.backend {
+                StorageBackendKind::Local => "local".to_string(),
+                StorageBackendKind::S3 => "s3".to_string(),
+            }
+        })),
+    );
 
     // One Parquet export cache shared across all workers (it wraps an Arc),
     // so a dataset is encoded at most once and every worker serves the same
@@ -340,10 +381,34 @@ async fn run_server(
             oauth2: explorer_oauth2,
             environment: cfg.server.environment.clone(),
             environment_color: cfg.server.environment_color.clone(),
+            queries_enabled: queries_api_enabled,
+            storage_backend: cfg.server.storage.as_ref().map(|s| {
+                use crate::config::StorageBackendKind;
+                match s.backend {
+                    StorageBackendKind::Local => "local".to_string(),
+                    StorageBackendKind::S3 => "s3".to_string(),
+                }
+            }),
         }))
     } else {
         None
     };
+
+    // Create the TTL channel before the HttpServer closure so `ttl_handle`
+    // can be cloned into app data. The receiver is consumed by the scheduler
+    // loop below.
+    let (ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel::<(tokio::time::Instant, String)>();
+    let ttl_handle = TtlHandle::new(ttl_tx);
+
+    // Clone backend for the scheduler BEFORE it is moved into HttpServer::new.
+    let scheduler_backend = backend.clone();
+    // Clone again to install the cascade handle after spawn (both need the
+    // concrete type to call set_cascade_handle via the Backend trait).
+    let scheduler_backend_for_cascade = backend.clone();
+    // Clone DatapressMetrics for the scheduler before the HttpServer closure
+    // moves the original.
+    #[cfg(feature = "metrics")]
+    let scheduler_metrics = datapress_metrics.clone();
 
     let mut server = HttpServer::new(move || {
         let backend = backend.clone();
@@ -368,14 +433,25 @@ async fn run_server(
         let auth_state = auth_state.clone();
         #[cfg(feature = "metrics")]
         let prometheus = prometheus.clone();
+        #[cfg(feature = "metrics")]
+        let datapress_metrics = datapress_metrics.clone();
         let app = App::new()
             .app_data(web::Data::new(backend))
             .app_data(build_info.clone())
             .app_data(web::Data::new(query_limits))
             .app_data(web::Data::new(sql_settings))
+            .app_data(web::Data::new(readiness_settings.clone()))
             .app_data(parquet_cache.clone())
+            .app_data(web::Data::new(ttl_handle.clone()))
+            .app_data(web::Data::new(handlers::SavedQueriesSettings {
+                dir: saved_queries_dir.clone(),
+                enabled: queries_api_enabled,
+            }))
             .app_data(json_cfg)
-            .app_data(pay_cfg)
+            .app_data(pay_cfg);
+        #[cfg(feature = "metrics")]
+        let app = app.app_data(web::Data::from(datapress_metrics));
+        let app = app
             .wrap(middleware::Condition::new(timeout_ms > 0, timeout))
             .wrap(middleware::Condition::new(
                 compress,
@@ -435,17 +511,52 @@ async fn run_server(
                 .service(handlers::readyz)
                 .service(handlers::version)
                 .service(handlers::health)
-                // Canonical, versioned API.
-                .service(web::scope("/api/v1").configure(handlers::v1::configure))
-                // Legacy un-versioned alias. Kept around so older
-                // clients (and the historical `/api/datasets/...`
-                // URLs in docs / scripts) keep working. New code
-                // should prefer `/api/v1/...`.
-                .service(web::scope("/api").configure(handlers::v1::configure)),
+                // Canonical, versioned API — the only API mount.
+                .service(web::scope("/api/v1").configure(handlers::v1::configure)),
         )
     });
     if let Some(w) = workers {
         server = server.workers(w);
+    }
+
+    // Build the refresh scheduler (R3.1) from datasets with interval schedules.
+    // Only `kind = "query"` datasets with a `refresh.interval` are scheduled
+    // (validated at config load time: non-query datasets can't have [refresh]).
+    let refresh_schedules: Vec<DatasetSchedule> = cfg
+        .datasets
+        .iter()
+        .filter_map(|d| {
+            let rc = d.refresh.as_ref()?;
+            let interval = rc.interval?;
+            Some(DatasetSchedule {
+                name: d.name.clone(),
+                interval,
+                timeout: rc.timeout,
+                jitter: rc.jitter,
+            })
+        })
+        .collect();
+    let refresh_max_concurrent = cfg.server.refresh.max_concurrent;
+
+    // Build the cascade DAG (R4.3) from datasets with on_upstream_reload = true.
+    let mut cascade_dag: CascadeDag = CascadeDag::new();
+    for d in &cfg.datasets {
+        let rc = match d.refresh.as_ref() {
+            Some(rc) if rc.on_upstream_reload => rc,
+            _ => continue,
+        };
+        let timeout = rc.timeout;
+        let debounce = rc.debounce;
+        for upstream in &d.source.depends_on {
+            cascade_dag
+                .entry(upstream.clone())
+                .or_default()
+                .push(CascadeDep {
+                    name: d.name.clone(),
+                    debounce,
+                    timeout,
+                });
+        }
     }
 
     // Disable actix's built-in signal handling so we can log which signal
@@ -457,24 +568,86 @@ async fn run_server(
         .disable_signals()
         .run();
     let handle = running.handle();
-    tokio::spawn(shutdown_listener(handle, shutdown_secs, shutdown));
+
+    // Shutdown token shared between the OS-signal listener and the scheduler.
+    let scheduler_token = tokio_util::sync::CancellationToken::new();
+
+    // Always spawn the refresh scheduler — even when there are no periodic
+    // schedules or cascade edges, the scheduler loop handles TTL deletions
+    // for `kind = "temp"` datasets from the queries API (R8.1).
+    let has_schedules_or_cascade = !refresh_schedules.is_empty() || !cascade_dag.is_empty();
+    if has_schedules_or_cascade {
+        log::info!(
+            "[refresh] starting scheduler: {} scheduled dataset(s), {} cascade upstream(s), \
+             max_concurrent={}",
+            refresh_schedules.len(),
+            cascade_dag.len(),
+            refresh_max_concurrent,
+        );
+    }
+    let sched = RefreshScheduler::new(refresh_schedules, refresh_max_concurrent);
+    #[cfg(feature = "metrics")]
+    let sched = sched.with_metrics(scheduler_metrics);
+    let result = sched.spawn(
+        scheduler_backend,
+        scheduler_token.clone(),
+        cascade_dag,
+        Some(ttl_rx),
+    );
+    // Install cascade handle on the backend so publishes trigger cascades.
+    if let Some(handle) = result.cascade_handle {
+        scheduler_backend_for_cascade.set_cascade_handle(handle);
+    }
+    let scheduler_handles = result.handles;
+
+    tokio::spawn(shutdown_listener(
+        handle,
+        shutdown_secs,
+        shutdown,
+        scheduler_token,
+        scheduler_handles,
+    ));
 
     running.await
 }
 
 /// Wait for the configured shutdown trigger (OS signal or an external
-/// future), log it, then ask the actix server handle to stop gracefully.
+/// future), log it, then ask the actix server handle to stop gracefully
+/// and drain the refresh scheduler.
+///
+/// # Second-signal force-quit
+///
+/// When the shutdown trigger is `Shutdown::Signals`, a **second** SIGINT or
+/// SIGTERM received *during* the graceful drain logs a single WARN line and
+/// calls [`std::process::exit(130)`] immediately — the same exit code that
+/// a SIGINT-killed process would have in a POSIX shell.  This matches the
+/// widely-expected Ctrl-C behaviour: one press → drain, two presses → quit
+/// now.  The external-future path (`Shutdown::External`) is intentionally
+/// not affected: the host process owns signal semantics there.
 async fn shutdown_listener(
     handle: actix_web::dev::ServerHandle,
     grace_secs: u64,
     shutdown: Shutdown,
+    scheduler_token: tokio_util::sync::CancellationToken,
+    scheduler_handles: Vec<tokio::task::JoinHandle<()>>,
 ) {
     match shutdown {
         Shutdown::Signals => {
             let which = wait_for_signal().await;
             log::info!(
-                "Received {which}, shutting down gracefully (up to {grace_secs}s for in-flight requests)..."
+                "Received {which}, shutting down gracefully \
+                 (up to {grace_secs}s for in-flight requests)..."
             );
+
+            // Spawn a background task that watches for a *second* signal
+            // during the drain window.  If one arrives, exit immediately.
+            tokio::spawn(async move {
+                let which2 = wait_for_signal().await;
+                log::warn!(
+                    "Received {which2} a second time — forcing immediate shutdown (exit 130)"
+                );
+                std::process::exit(130);
+            });
         }
         Shutdown::External(fut) => {
             fut.await;
@@ -483,7 +656,30 @@ async fn shutdown_listener(
             );
         }
     }
+
+    // Signal the scheduler (and cascade engine) to stop (R3.6).
+    scheduler_token.cancel();
+
+    // Stop the HTTP server (graceful drain).
     handle.stop(true).await;
+
+    // Wait for all scheduler / cascade engine tasks within the grace period.
+    if !scheduler_handles.is_empty() {
+        let deadline = Duration::from_secs(grace_secs);
+        for jh in scheduler_handles {
+            match tokio::time::timeout(deadline, jh).await {
+                Ok(_) => {}
+                Err(_) => {
+                    log::warn!(
+                        "[refresh] scheduler/cascade task did not finish within \
+                         {}s shutdown deadline; abandoning",
+                        grace_secs
+                    );
+                }
+            }
+        }
+    }
+
     log::info!("Shutdown complete.");
 }
 
@@ -530,12 +726,8 @@ fn log_routes(prefix: &str, backend: &dyn Backend) {
         log::info!("    {:<width$} {}", method, path, width = METHOD_W);
     }
 
-    // Each API version is mounted under its own scope; we currently
-    // also expose v1 under the un-versioned `/api` for back-compat.
-    let mounts: &[(&str, &[(&str, &str)])] = &[
-        ("/api/v1", handlers::v1::ROUTES),
-        ("/api", handlers::v1::ROUTES), // legacy alias
-    ];
+    // Only the canonical versioned API scope.
+    let mounts: &[(&str, &[(&str, &str)])] = &[("/api/v1", handlers::v1::ROUTES)];
 
     let names = backend.names();
     for (mount, routes) in mounts {

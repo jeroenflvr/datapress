@@ -24,7 +24,7 @@ the two engines under identical workloads.
 cargo run -p datapress-datafusion --release
 
 # Talk to it.
-curl http://localhost:8080/api/datasets
+curl http://localhost:8080/api/v1/datasets
 ```
 
 ## Features

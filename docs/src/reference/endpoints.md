@@ -8,48 +8,64 @@ before every path shown here.
 
 | Method | Path                                              | Body            | Purpose                                                              |
 |--------|---------------------------------------------------|-----------------|----------------------------------------------------------------------|
-| GET    | `/api/v1/datasets`                                | —               | List configured datasets and metadata.                               |
+| GET    | `/api/v1/datasets`                                | —               | List all datasets with full status entries (state, kind, refresh fields). |
 | POST   | `/api/v1/datasets`                                | [Dataset config](../configuration/datasets.md) | Register a dataset at runtime. Requires `X-Admin-Token`. |
 | POST   | `/api/v1/datasets/persist`                        | [Dataset config](../configuration/datasets.md) | Append a dataset to the on-disk config. Requires `X-Admin-Token`. |
 | GET    | `/api/v1/datasets/{name}/schema`                  | —               | Inferred schema + one sample row.                                    |
-| POST   | `/api/v1/datasets/{name}/query`                   | [Query body](../query/request-body.md) | Filter / project / sort / paginate.                |
+| GET    | `/api/v1/datasets/{name}/status`                  | —               | Full status for one dataset: state, kind, residency, refresh observability fields. |
+| POST   | `/api/v1/datasets/{name}/query`                   | [Query body](../query/request-body.md) | Filter / project / sort / paginate. Responds with `X-Dataset-Refreshed-At` header. |
 | POST   | `/api/v1/sql`                                     | [SQL body](../query/sql.md) | Raw read-only SQL over one dataset. Off unless `[sql].enabled`. |
 | POST   | `/api/v1/datasets/{name}/query/stream`            | [Arrow IPC](../query/arrow-ipc.md) | Stream all matching rows as Arrow IPC.             |
-| POST   | `/api/v1/datasets/{name}/count`                   | `{ predicates? }` | Total or filtered row count.                                       |
+| POST   | `/api/v1/datasets/{name}/count`                   | `{ predicates? }` | Total or filtered row count. Responds with `X-Dataset-Refreshed-At` header. |
 | GET    | `/api/v1/datasets/{name}/parquet`                 | —               | Whole dataset as a Parquet file (HTTP range + `HEAD`).               |
 | GET    | `/api/v1/datasets/{name}/all.parquet`             | —               | Alias of `/parquet` whose URL ends in `.parquet` (bare `FROM '…'`).  |
 | POST   | `/api/v1/datasets/{name}/reload`                  | —               | Atomic dataset reload. Requires `X-Admin-Token`.                     |
+| POST   | `/api/v1/datasets/reload-all`                     | —               | Enqueue every reloadable dataset in topological order. `202` with `{"enqueued":[...],"skipped":[...]}`. Requires `X-Admin-Token`. |
 | POST   | `/api/v1/config/reload`                           | —               | Re-read `datasets.toml`; register newly-added datasets. Requires `X-Admin-Token`. |
+| POST   | `/api/v1/queries`                                 | [Create query body](../operations/saved-queries.md) | Create a runtime dataset (`temp` or persisted `query`). Requires `datasets:manage` / `X-Admin-Token`. |
+| GET    | `/api/v1/queries`                                 | —               | List all runtime-created datasets with their definitions and state. Requires `datasets:manage` / `X-Admin-Token`. |
+| DELETE | `/api/v1/queries/{name}`                          | —               | Unregister a runtime-created dataset and wipe its storage. `403` for config-file datasets; `409` if dependents exist. Requires `datasets:manage` / `X-Admin-Token`. |
 | GET    | `{prefix}/health`                                 | —               | Liveness, prefix-aware.                                              |
 
-## Legacy aliases (`/api`)
+## Observability headers
 
-Same handlers, no `/v1`:
+`GET /api/v1/datasets/{name}/query` and `POST /api/v1/datasets/{name}/count`
+include the following response header when a publish timestamp is available:
 
-| Method | Path                                       |
-|--------|--------------------------------------------|
-| GET    | `/api/datasets`                            |
-| POST   | `/api/datasets`                            |
-| POST   | `/api/datasets/persist`                    |
-| GET    | `/api/datasets/{name}/schema`              |
-| POST   | `/api/datasets/{name}/query`               |
-| POST   | `/api/sql`                                 |
-| POST   | `/api/datasets/{name}/query/stream`        |
-| POST   | `/api/datasets/{name}/count`               |
-| GET    | `/api/datasets/{name}/parquet`             |
-| GET    | `/api/datasets/{name}/all.parquet`         |
-| POST   | `/api/datasets/{name}/reload`              |
-| POST   | `/api/config/reload`                       |
+| Header                   | Type      | Description |
+|--------------------------|-----------|-------------|
+| `X-Dataset-Refreshed-At` | RFC-3339  | Publish timestamp of the current generation. |
 
-Prefer `/api/v1/...` in new code; the unversioned routes will
-eventually be deprecated.
+## Dataset status fields
+
+`GET /api/v1/datasets` and `GET /api/v1/datasets/{name}/status` return
+`DatasetStatusEntry` objects with these fields:
+
+| Field                      | Type             | Description |
+|----------------------------|------------------|-------------|
+| `name`                     | string           | Dataset identifier. |
+| `state`                    | string enum      | `pending`, `building`, `published`, `failed`. |
+| `kind`                     | string enum      | `parquet`, `delta`, `query`. |
+| `residency`                | string enum      | `memory` or `lazy`. |
+| `storage_bytes`            | integer?         | Bytes of the storage-backed generation. `null` for in-memory. |
+| `generation_id`            | string?          | ULID of the storage generation. `null` for in-memory. |
+| `last_refresh_at`          | RFC-3339?        | Timestamp of the last successful publish. |
+| `last_refresh_duration_ms` | integer?         | Build duration of the last publish in ms. |
+| `next_refresh_at`          | RFC-3339?        | Next scheduled refresh. `null` for non-scheduled. |
+| `refresh_source`           | string enum?     | `startup`, `manual`, `schedule`, `cascade`. |
+| `consecutive_failures`     | integer          | Scheduler failures since last success. |
+| `last_error`               | string?          | Last build error, truncated to 500 characters. |
+| `rows`                     | integer          | Row count (`0` when not yet published). |
+| `columns`                  | integer          | Column count (`0` when not yet published). |
+| `lazy`                     | boolean          | Whether the current generation is lazy/storage-backed. |
+| `depends_on`               | array of strings | Upstream dataset names (`query` kind only). |
 
 ## Probes
 
 | Method | Path                 | Code           | Purpose                                       |
 |--------|----------------------|----------------|-----------------------------------------------|
 | GET    | `{prefix}/healthz`   | `200`          | Liveness; always OK.                          |
-| GET    | `{prefix}/readyz`    | `200` / `503`  | Ready once at least one dataset is loaded.    |
+| GET    | `{prefix}/readyz`   | `200` / `503`  | Ready once eager datasets have published (configurable via `[server.startup] readiness`). Returns `503` while datasets are still building after a non-blocking boot. |
 | GET    | `{prefix}/version`   | `200`          | Build/version metadata.                       |
 
 Full descriptions: [Operations › Probes](../operations/probes.md).

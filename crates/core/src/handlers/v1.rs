@@ -1,7 +1,7 @@
 //! Version 1 of the dataset HTTP API.
 //!
 //! Routes (relative to whichever scope the caller mounts this module
-//! under — typically `/api/v1`):
+//! under — always `/api/v1`):
 //!
 //! | Method | Path                              | Description                          |
 //! |--------|-----------------------------------|--------------------------------------|
@@ -16,18 +16,18 @@
 //! | POST   | `/config/reload`                  | Register newly-added datasets (admin) |
 //!
 //! Handlers are plain `async fn` (not route-macro structs) so the same
-//! version can be mounted under multiple scopes — see
-//! [`crate::server::serve`] for the canonical `/api/v1` mount and the
-//! legacy `/api` alias.
+//! version can be mounted under multiple scopes.
 
 use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
 
 use crate::admin;
 use crate::handlers::{
-    ARROW_IPC_MIME, BackendData, PARQUET_MIME, ParquetCache, QueryLimits, SqlSettings,
-    serve_bytes_with_range, wants_arrow, wants_no_compression,
+    ARROW_IPC_MIME, BackendData, PARQUET_MIME, ParquetCache, QueryLimits, SavedQueriesSettings,
+    SqlSettings, serve_bytes_with_range, wants_arrow, wants_no_compression,
 };
-use crate::models::{CountRequest, QueryRequest, SqlRequest};
+use crate::models::{
+    CountRequest, CreateQueryRequest, QueryRequest, SavedQueryEntry, SavedQueryKind, SqlRequest,
+};
 
 // -------------------------------------------------------------- auth guards --
 
@@ -79,6 +79,32 @@ pub(crate) fn require_reload(req: &HttpRequest) -> Result<(), crate::errors::App
     admin::require_admin(req)
 }
 
+/// Allow the request to manage datasets (create/delete saved queries).
+/// Requires EITHER `X-Admin-Token` OR (when auth is on) the configured
+/// `manage_scopes`. If ADMIN_TOKEN is unset AND auth is off, always `Err`
+/// so the route returns 404 (R8.6).
+pub(crate) fn require_manage(req: &HttpRequest) -> Result<(), crate::errors::AppError> {
+    #[cfg(feature = "auth")]
+    let admin_ok = admin::require_admin(req).is_ok();
+    #[cfg(feature = "auth")]
+    {
+        use std::sync::Arc;
+        if let Some(cfg) = req.app_data::<web::Data<Arc<crate::config::AuthConfig>>>()
+            && cfg.enabled
+        {
+            let scope_ok = crate::auth::require_scopes(req, &cfg.manage_scopes).is_ok();
+            if admin_ok && cfg.admin_token_fallback {
+                return Ok(());
+            }
+            if scope_ok {
+                return Ok(());
+            }
+            return crate::auth::require_scopes(req, &cfg.manage_scopes);
+        }
+    }
+    admin::require_admin(req)
+}
+
 /// Register every v1 route on the provided actix [`web::ServiceConfig`].
 ///
 /// Call this inside a [`web::scope`] — usually `/api/v1` — so paths come
@@ -88,6 +114,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/datasets", web::post().to(register_dataset))
         .route("/datasets/persist", web::post().to(persist_dataset))
         .route("/datasets/{name}/schema", web::get().to(get_schema))
+        .route("/datasets/{name}/status", web::get().to(get_dataset_status))
         .route("/datasets/{name}/query", web::post().to(query_dataset))
         .route("/sql", web::post().to(sql_query))
         .route(
@@ -97,9 +124,6 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .route("/datasets/{name}/count", web::post().to(count_dataset))
         .route("/datasets/{name}/parquet", web::get().to(parquet_dataset))
         .route("/datasets/{name}/parquet", web::head().to(parquet_dataset))
-        // `.parquet`-suffixed alias so a DuckDB client can use the bare
-        // `FROM 'http://host/.../all.parquet'` form — DuckDB sniffs the
-        // file type from the URL extension, so it must end in `.parquet`.
         .route(
             "/datasets/{name}/all.parquet",
             web::get().to(parquet_dataset),
@@ -109,7 +133,12 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             web::head().to(parquet_dataset),
         )
         .route("/datasets/{name}/reload", web::post().to(reload_dataset))
-        .route("/config/reload", web::post().to(reload_config));
+        .route("/datasets/reload-all", web::post().to(reload_all_datasets))
+        .route("/config/reload", web::post().to(reload_config))
+        // Phase 6: saved-queries API
+        .route("/queries", web::post().to(create_query))
+        .route("/queries", web::get().to(list_queries))
+        .route("/queries/{name}", web::delete().to(delete_query));
 }
 
 /// Route table for log_routes-style introspection. Each entry is
@@ -119,6 +148,7 @@ pub const ROUTES: &[(&str, &str)] = &[
     ("POST", "/datasets"),
     ("POST", "/datasets/persist"),
     ("GET", "/datasets/{name}/schema"),
+    ("GET", "/datasets/{name}/status"),
     ("POST", "/datasets/{name}/query"),
     ("POST", "/sql"),
     ("POST", "/datasets/{name}/query/stream"),
@@ -126,7 +156,11 @@ pub const ROUTES: &[(&str, &str)] = &[
     ("GET", "/datasets/{name}/parquet"),
     ("GET", "/datasets/{name}/all.parquet"),
     ("POST", "/datasets/{name}/reload"),
+    ("POST", "/datasets/reload-all"),
     ("POST", "/config/reload"),
+    ("POST", "/queries"),
+    ("GET", "/queries"),
+    ("DELETE", "/queries/{name}"),
 ];
 
 // ---------------------------------------------------------------- handlers --
@@ -135,22 +169,26 @@ pub async fn list_datasets(req: HttpRequest, backend: BackendData) -> HttpRespon
     if let Err(e) = require_read(&req) {
         return e.error_response();
     }
-    let summaries: Vec<_> = backend
-        .names()
+    // Use dataset_statuses() to include all datasets (pending/building/failed
+    // as well as published). For published datasets apply the projection-filter
+    // column-count adjustment; for others return the placeholder zeroes.
+    use crate::backend::DatasetStatus;
+    let entries: Vec<_> = backend
+        .dataset_statuses()
         .into_iter()
-        .filter_map(|n| {
-            let mut summary = backend.summary(&n).ok()?;
-            // Report only the visible column count when a projection filter
-            // hides some columns.
-            if let Ok(schema) = backend.schema(&n)
-                && schema.projection_filter.is_active()
-            {
-                summary.columns = schema.visible_columns().len();
+        .map(|mut entry| {
+            if entry.status == DatasetStatus::Published {
+                // Adjust columns for projection filter.
+                if let Ok(schema) = backend.schema(&entry.name)
+                    && schema.projection_filter.is_active()
+                {
+                    entry.columns = schema.visible_columns().len();
+                }
             }
-            Some(summary)
+            entry
         })
         .collect();
-    HttpResponse::Ok().json(serde_json::json!({ "datasets": summaries }))
+    HttpResponse::Ok().json(serde_json::json!({ "datasets": entries }))
 }
 
 pub async fn get_schema(
@@ -220,6 +258,29 @@ fn strip_hidden_sample(sample: &str, schema: &crate::schema::DatasetSchema) -> S
     }
 }
 
+/// `GET /api/v1/datasets/{name}/status` — full per-dataset status entry
+/// including refresh observability fields (T5.1).
+pub async fn get_dataset_status(
+    req: HttpRequest,
+    backend: BackendData,
+    path: web::Path<String>,
+) -> HttpResponse {
+    if let Err(e) = require_read(&req) {
+        return e.error_response();
+    }
+    let name = path.into_inner();
+    // Find the entry in the full status list (includes pending/building/failed).
+    let entry = backend
+        .dataset_statuses()
+        .into_iter()
+        .find(|e| e.name == name);
+    match entry {
+        Some(e) => HttpResponse::Ok().json(e),
+        None => crate::errors::AppError::NotFound(format!("dataset '{name}' not found"))
+            .error_response(),
+    }
+}
+
 pub async fn query_dataset(
     http: HttpRequest,
     backend: BackendData,
@@ -245,11 +306,19 @@ pub async fn query_dataset(
     // Apply the dataset's column-level access filters (hidden columns,
     // predicate restrictions) before the backend sees the request. This is
     // the single choke point for every backend and response format.
+    // For lazy/pending datasets the schema isn't available until the first
+    // build completes — skip access filtering in that case and let the
+    // backend's query() handle the lazy first-touch build.
+    use crate::errors::AppError;
     match backend.schema(&name) {
         Ok(schema) => {
             if let Err(e) = req.enforce_column_filters(&schema) {
                 return e.error_response();
             }
+        }
+        Err(AppError::NotReady { .. }) | Err(AppError::NotFound(_)) => {
+            // Dataset pending or not yet discovered — proceed; the backend
+            // will trigger a lazy build or return 503 as appropriate.
         }
         Err(e) => return e.error_response(),
     }
@@ -259,15 +328,17 @@ pub async fn query_dataset(
     // gets the historical JSON envelope.
     if wants_arrow(&http) {
         return match backend.query_arrow_stream(&name, &req).await {
-            Ok(stream) => HttpResponse::Ok()
-                .content_type(ARROW_IPC_MIME)
-                // Arrow IPC is compact binary; HTTP compression (esp. brotli
-                // while streaming) costs far more CPU than it saves and shows
-                // up as slow "content download". Opt out so Compress skips it.
-                .insert_header((actix_web::http::header::CONTENT_ENCODING, "identity"))
-                .insert_header(("X-Page", page.to_string()))
-                .insert_header(("X-Page-Size", page_size.to_string()))
-                .streaming(stream),
+            Ok(stream) => {
+                let mut resp = HttpResponse::Ok();
+                resp.content_type(ARROW_IPC_MIME)
+                    .insert_header((actix_web::http::header::CONTENT_ENCODING, "identity"))
+                    .insert_header(("X-Page", page.to_string()))
+                    .insert_header(("X-Page-Size", page_size.to_string()));
+                if let Some(ts) = backend.refreshed_at(&name) {
+                    resp.insert_header(("X-Dataset-Refreshed-At", ts));
+                }
+                resp.streaming(stream)
+            }
             Err(e) => e.error_response(),
         };
     }
@@ -279,6 +350,9 @@ pub async fn query_dataset(
             resp.content_type("application/json");
             if wants_no_compression(&http) {
                 resp.insert_header((actix_web::http::header::CONTENT_ENCODING, "identity"));
+            }
+            if let Some(ts) = backend.refreshed_at(&name) {
+                resp.insert_header(("X-Dataset-Refreshed-At", ts));
             }
             resp.body(body)
         }
@@ -293,11 +367,11 @@ pub async fn query_dataset(
 /// Disabled unless `[sql].enabled = true`; when off, returns `404` so the
 /// endpoint is invisible.
 ///
-/// Phase 1 is scoped to a single dataset per query: the statement is
-/// parsed and validated by [`crate::sql::validate`], which rejects
-/// anything that is not a single read-only query or `DESCRIBE`, references
-/// an unknown table / file function, or touches more than one registered
-/// dataset. The result is hard-capped at `[sql].max_rows` rows.
+/// The statement is parsed and validated by [`crate::sql::validate`], which
+/// rejects anything that is not a single read-only query or `DESCRIBE`,
+/// references an unknown table or file function, or touches datasets not in
+/// the registered allowlist. The result is hard-capped at `[sql].max_rows`
+/// rows.
 ///
 /// Like the dataset query endpoint, the response is content-negotiated:
 /// clients that send `Accept: application/vnd.apache.arrow.stream` (or
@@ -327,7 +401,7 @@ pub async fn sql_query(
         .map(|n| n.to_lowercase())
         .collect();
 
-    let validated = match crate::sql::validate(&body.sql, &allowed, 1) {
+    let validated = match crate::sql::validate(&body.sql, &allowed, allowed.len().max(1)) {
         Ok(v) => v,
         Err(e) => return e.error_response(),
     };
@@ -356,7 +430,7 @@ pub async fn sql_query(
     // (schema message + batches + EOS), capped at `max_rows`.
     if wants_arrow(&http) {
         return match backend
-            .query_sql_arrow_stream(&validated.sql, max_rows)
+            .query_sql_arrow_stream(&validated.sql, &validated.datasets, max_rows)
             .await
         {
             Ok(stream) => HttpResponse::Ok()
@@ -368,7 +442,10 @@ pub async fn sql_query(
         };
     }
 
-    match backend.query_sql(&validated.sql, max_rows).await {
+    match backend
+        .query_sql(&validated.sql, &validated.datasets, max_rows)
+        .await
+    {
         Ok(arr) => {
             let body = format!(r#"{{"data":{arr},"max_rows":{max_rows}}}"#);
             let mut resp = HttpResponse::Ok();
@@ -429,7 +506,13 @@ pub async fn count_dataset(
     }
 
     match backend.count(&name, &req).await {
-        Ok(n) => HttpResponse::Ok().json(serde_json::json!({ "count": n })),
+        Ok(n) => {
+            let mut resp = HttpResponse::Ok();
+            if let Some(ts) = backend.refreshed_at(&name) {
+                resp.insert_header(("X-Dataset-Refreshed-At", ts));
+            }
+            resp.json(serde_json::json!({ "count": n }))
+        }
         Err(e) => e.error_response(),
     }
 }
@@ -538,6 +621,9 @@ pub async fn reload_dataset(
     backend: BackendData,
     cache: Option<web::Data<ParquetCache>>,
     path: web::Path<String>,
+    #[cfg(feature = "metrics")] metrics: Option<
+        web::Data<std::sync::Arc<crate::metrics::DatapressMetrics>>,
+    >,
 ) -> HttpResponse {
     if let Err(e) = require_reload(&req) {
         return e.error_response();
@@ -545,6 +631,16 @@ pub async fn reload_dataset(
     let name = path.into_inner();
     match backend.reload(&name).await {
         Ok(stats) => {
+            // Increment materialization-specific metrics from the build flags.
+            #[cfg(feature = "metrics")]
+            if let Some(m) = metrics.as_ref() {
+                if stats.demoted_to_storage {
+                    crate::metrics::record_spill(m, &name);
+                }
+                if stats.memory_override_exceeded {
+                    crate::metrics::record_memory_override(m, &name);
+                }
+            }
             // The cached Parquet export is now stale — drop it so the next
             // `/parquet` request rebuilds from the freshly reloaded data.
             if let Some(cache) = cache {
@@ -558,6 +654,180 @@ pub async fn reload_dataset(
         }
         Err(e) => e.error_response(),
     }
+}
+
+/// `POST /datasets/reload-all` — rebuild every reloadable dataset as one
+/// wave in topological order (R8.11).
+///
+/// Admin-gated identically to per-dataset reload. Datasets that are
+/// currently `building` or are `pending` with `lazy`/`skip` on_start are
+/// placed in `skipped` in the snapshot. The remaining datasets are
+/// **enqueued**: a detached `tokio::spawn` wave task runs their builds in
+/// topological order via `try_reload` (dependencies before dependents).
+///
+/// # Returns immediately (202 Accepted)
+///
+/// The response is sent before any builds complete.  `enqueued` = datasets
+/// handed to the wave task at snapshot time; `skipped` = datasets excluded at
+/// snapshot time.  `try_reload` returning `Ok(None)` (per-dataset mutex already
+/// held) inside the wave is a coalesce — logged at DEBUG but not reflected in
+/// the 202 body since the response has already been sent.
+///
+/// # Exactly-once per wave
+///
+/// The wave processes datasets in strict topological order (dependency before
+/// dependent).  While the wave is actively building dataset `d` it holds `d`'s
+/// per-dataset reload mutex.  Any concurrent cascade `try_reload` for the same
+/// dataset during that window coalesces to `Ok(None)` (mutex held).  After the
+/// wave releases the mutex and before the cascade debounce window (default 5 s)
+/// fires, `d` is already freshly built; the cascade `try_reload` would then
+/// start a new build.  This is identical to the natural cascade behavior for
+/// any manual reload and is intentionally not suppressed: the debounce limits
+/// it to at most one extra build per upstream publish, consistent with the
+/// cascade contract.  Tests use a mock backend without a live cascade engine so
+/// build counts are stable after the wave task completes.
+///
+/// # Failure recording
+///
+/// Build failures inside the wave call `backend.record_reload_failure()` so
+/// that `consecutive_failures` and `last_error` are reflected in `/status`
+/// immediately after the failure, without waiting for the next scheduler tick.
+///
+/// # Shutdown
+///
+/// The wave task is a detached tokio task; it is NOT attached to actix's
+/// worker pool.  Each individual `try_reload` is bounded by the per-dataset
+/// reload timeout.  Graceful shutdown waits for in-flight actix requests via
+/// `shutdown_timeout_secs`; the wave task may outlive actix's drain window but
+/// is bounded by per-dataset timeout and will be abandoned on process exit.
+pub async fn reload_all_datasets(
+    req: HttpRequest,
+    backend: BackendData,
+    cache: Option<web::Data<ParquetCache>>,
+    #[cfg(feature = "metrics")] metrics: Option<
+        web::Data<std::sync::Arc<crate::metrics::DatapressMetrics>>,
+    >,
+) -> HttpResponse {
+    if let Err(e) = require_reload(&req) {
+        return e.error_response();
+    }
+
+    // ------------------------------------------------------------------ //
+    // Snapshot — classify datasets at request time.
+    // ------------------------------------------------------------------ //
+    use crate::backend::DatasetStatus;
+    use crate::config::OnStart;
+    let statuses = backend.dataset_statuses();
+
+    // Build a dependency map for Kahn's topological sort.
+    let names: Vec<String> = statuses.iter().map(|s| s.name.clone()).collect();
+    let name_idx: std::collections::HashMap<&str, usize> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.as_str(), i))
+        .collect();
+
+    let n = names.len();
+    let mut adj: Vec<Vec<usize>> = vec![vec![]; n]; // adj[dep] -> [dependents]
+    let mut in_deg: Vec<usize> = vec![0; n];
+
+    for s in &statuses {
+        if let Some(&i) = name_idx.get(s.name.as_str()) {
+            for dep in &s.depends_on {
+                if let Some(&j) = name_idx.get(dep.as_str()) {
+                    adj[j].push(i);
+                    in_deg[i] += 1;
+                }
+            }
+        }
+    }
+
+    let mut queue: std::collections::VecDeque<usize> = (0..n).filter(|&i| in_deg[i] == 0).collect();
+    let mut topo_order: Vec<usize> = Vec::with_capacity(n);
+    while let Some(i) = queue.pop_front() {
+        topo_order.push(i);
+        for &j in &adj[i] {
+            in_deg[j] -= 1;
+            if in_deg[j] == 0 {
+                queue.push_back(j);
+            }
+        }
+    }
+    // Datasets not reachable by Kahn are in a cycle (config validation
+    // already rejects cycles — be defensive).
+    let in_cycle: std::collections::HashSet<usize> =
+        (0..n).filter(|i| !topo_order.contains(i)).collect();
+
+    // Classify into enqueued / skipped at snapshot time.
+    let mut enqueued: Vec<String> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+
+    for &idx in &topo_order {
+        if in_cycle.contains(&idx) {
+            skipped.push(names[idx].clone());
+            continue;
+        }
+        let s = &statuses[idx];
+        if s.status == DatasetStatus::Building {
+            skipped.push(s.name.clone());
+            continue;
+        }
+        if s.status == DatasetStatus::Pending
+            && (s.on_start == OnStart::Lazy || s.on_start == OnStart::Skip)
+        {
+            skipped.push(s.name.clone());
+            continue;
+        }
+        enqueued.push(s.name.clone());
+    }
+
+    // ------------------------------------------------------------------ //
+    // Spawn the wave task — detached; response returns immediately.
+    // ------------------------------------------------------------------ //
+    let wave_backend: std::sync::Arc<dyn crate::backend::Backend> =
+        std::sync::Arc::clone(&*backend);
+    let wave_cache = cache.map(|c| c.into_inner());
+    let wave_names = enqueued.clone();
+    #[cfg(feature = "metrics")]
+    let wave_metrics = metrics;
+
+    tokio::spawn(async move {
+        for name in wave_names {
+            match wave_backend.try_reload(&name).await {
+                Ok(Some(stats)) => {
+                    #[cfg(feature = "metrics")]
+                    if let Some(ref m) = wave_metrics {
+                        if stats.demoted_to_storage {
+                            crate::metrics::record_spill(m, &name);
+                        }
+                        if stats.memory_override_exceeded {
+                            crate::metrics::record_memory_override(m, &name);
+                        }
+                    }
+                    #[cfg(not(feature = "metrics"))]
+                    let _ = stats;
+                    if let Some(ref c) = wave_cache {
+                        c.invalidate(&name);
+                    }
+                }
+                Ok(None) => {
+                    // Per-dataset mutex already held — coalesced.
+                    log::debug!("[reload-all] dataset='{}' coalesced (mutex held)", name);
+                }
+                Err(e) => {
+                    // Build failed; keep-last-good (G3).  Record the failure
+                    // so /status reflects consecutive_failures + last_error.
+                    log::warn!("[reload-all] dataset='{}' build failed: {}", name, e);
+                    wave_backend.record_reload_failure(&name, &e.to_string());
+                }
+            }
+        }
+    });
+
+    HttpResponse::Accepted().json(serde_json::json!({
+        "enqueued": enqueued,
+        "skipped":  skipped,
+    }))
 }
 
 /// Serve the whole dataset as a single Parquet file with HTTP range +
@@ -605,4 +875,287 @@ pub async fn parquet_dataset(
     };
 
     serve_bytes_with_range(&req, body, PARQUET_MIME)
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 — Saved Queries API
+// ---------------------------------------------------------------------------
+
+/// `POST /api/v1/queries` — create a runtime-managed dataset from SQL.
+///
+/// Auth: `X-Admin-Token` or `datasets:manage` scope (R8.6). Routes return
+/// 404 when neither the admin token nor auth is configured.
+pub async fn create_query(
+    req: HttpRequest,
+    backend: BackendData,
+    settings: web::Data<SavedQueriesSettings>,
+    ttl_handle: web::Data<crate::refresh::TtlHandle>,
+    body: web::Json<CreateQueryRequest>,
+) -> HttpResponse {
+    use crate::config::{DatasetConfig, SourceConfig, SourceKind};
+    use crate::errors::AppError;
+
+    if !settings.enabled {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "error": "queries API is disabled — set ADMIN_TOKEN or configure auth"
+        }));
+    }
+    if let Err(e) = require_manage(&req) {
+        return e.error_response();
+    }
+
+    let body = body.into_inner();
+
+    // Reserved-name guard.
+    if crate::config::RESERVED_DATASET_NAMES.contains(&body.name.as_str()) {
+        return AppError::InvalidValue(format!(
+            "dataset name '{}' is reserved and cannot be used",
+            body.name
+        ))
+        .error_response();
+    }
+
+    // Conflict check (name already exists in any form).
+    if backend.names().contains(&body.name)
+        || backend
+            .dataset_statuses()
+            .iter()
+            .any(|s| s.name == body.name)
+    {
+        return AppError::InvalidValue(format!("dataset '{}' already exists", body.name))
+            .error_response();
+    }
+
+    // --- Infer depends_on from the SQL (R8, inference is allowed here). ---
+    // Build the set of registered dataset names as the allowed set.
+    let allowed: std::collections::HashSet<String> = backend
+        .names()
+        .into_iter()
+        .map(|n| n.to_lowercase())
+        .collect();
+
+    let validated = match crate::sql::validate(&body.sql, &allowed, usize::MAX) {
+        Ok(v) => v,
+        Err(e) => {
+            return AppError::InvalidValue(format!("sql is invalid: {e}")).error_response();
+        }
+    };
+    let depends_on: Vec<String> = validated.datasets.clone();
+
+    // Build a DatasetConfig for the backend.
+    let source = SourceConfig {
+        kind: SourceKind::Query,
+        sql: Some(body.sql.clone()),
+        depends_on: depends_on.clone(),
+        location: String::new(),
+    };
+    // For query kind, location must be empty; managed=true, temp per kind.
+    let is_temp = body.kind == SavedQueryKind::Temp;
+
+    let dataset_cfg = DatasetConfig {
+        name: body.name.clone(),
+        source,
+        managed: true,
+        temp: is_temp,
+        refresh: if is_temp { None } else { body.refresh.clone() },
+        materialize: body.materialize.clone(),
+        index: body.index.clone().unwrap_or_default(),
+        s3: None,
+        columns: Vec::new(),
+        dict_encode: true,
+        lazy: false,
+        predicate_filter: Default::default(),
+        projection_filter: Default::default(),
+        on_start: crate::config::OnStart::Eager,
+    };
+
+    // Validate the config (name format, reserved names, index constraints).
+    if let Err(e) = dataset_cfg.validate_for_register() {
+        return e.error_response();
+    }
+
+    // Async build.
+    let async_mode = req
+        .uri()
+        .query()
+        .unwrap_or("")
+        .split('&')
+        .any(|p| p == "async=true");
+
+    if async_mode {
+        // Register asynchronously: spawn build in background.
+        let backend_clone = backend.clone();
+        let cfg_clone = dataset_cfg.clone();
+        tokio::spawn(async move {
+            if let Err(e) = backend_clone.register(cfg_clone).await {
+                log::warn!("[queries] async register failed: {e}");
+            }
+        });
+
+        // Return 202 immediately.
+        let resp = SavedQueryEntry {
+            name: body.name.clone(),
+            kind: body.kind,
+            depends_on,
+            state: "building".into(),
+        };
+        return HttpResponse::Accepted().json(resp);
+    }
+
+    // Synchronous build.
+    if let Err(e) = backend.register(dataset_cfg.clone()).await {
+        return e.error_response();
+    }
+
+    // For `kind = "query"`, persist to datasets.d/.
+    if !is_temp {
+        match settings.dir.as_ref() {
+            None => {
+                // No config dir — can't persist. Return 400.
+                // (The dataset is already registered so we should unregister
+                // it to keep state consistent.)
+                let _ = backend.unregister(&body.name).await;
+                return AppError::InvalidValue(
+                    "kind = \"query\" requires a server config file (cannot persist)".into(),
+                )
+                .error_response();
+            }
+            Some(dir) => {
+                if let Err(e) = dataset_cfg.persist_to_managed_dir(dir) {
+                    // Persist failed — unregister and surface the error.
+                    let _ = backend.unregister(&body.name).await;
+                    return e.error_response();
+                }
+            }
+        }
+    }
+
+    // For `kind = "temp"` with a TTL, schedule deletion.
+    if is_temp && let Some(ttl) = body.ttl {
+        let fire_at = tokio::time::Instant::now() + ttl;
+        ttl_handle.schedule(body.name.clone(), fire_at);
+    }
+
+    let state = backend
+        .dataset_statuses()
+        .into_iter()
+        .find(|s| s.name == body.name)
+        .map(|s| format!("{:?}", s.status).to_lowercase())
+        .unwrap_or_else(|| "published".into());
+
+    let resp = SavedQueryEntry {
+        name: body.name,
+        kind: body.kind,
+        depends_on,
+        state,
+    };
+    HttpResponse::Ok().json(resp)
+}
+
+/// `GET /api/v1/queries` — list all runtime-managed datasets.
+pub async fn list_queries(
+    req: HttpRequest,
+    backend: BackendData,
+    settings: web::Data<SavedQueriesSettings>,
+) -> HttpResponse {
+    if !settings.enabled {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "error": "queries API is disabled — set ADMIN_TOKEN or configure auth"
+        }));
+    }
+    if let Err(e) = require_manage(&req) {
+        return e.error_response();
+    }
+
+    let statuses = backend.dataset_statuses();
+    let entries: Vec<SavedQueryEntry> = statuses
+        .into_iter()
+        .filter(|s| backend.is_managed(&s.name))
+        .map(|s| {
+            let kind = if backend.is_temp(&s.name) {
+                SavedQueryKind::Temp
+            } else {
+                SavedQueryKind::Query
+            };
+            SavedQueryEntry {
+                depends_on: s.depends_on.clone(),
+                state: format!("{:?}", s.status).to_lowercase(),
+                name: s.name,
+                kind,
+            }
+        })
+        .collect();
+
+    HttpResponse::Ok().json(entries)
+}
+
+/// `DELETE /api/v1/queries/{name}` — unregister a managed dataset.
+///
+/// Returns `403` for config-defined datasets, `409` when dependents exist.
+pub async fn delete_query(
+    req: HttpRequest,
+    backend: BackendData,
+    settings: web::Data<SavedQueriesSettings>,
+    path: web::Path<String>,
+) -> HttpResponse {
+    use crate::errors::AppError;
+
+    if !settings.enabled {
+        return HttpResponse::NotFound().json(serde_json::json!({
+            "error": "queries API is disabled — set ADMIN_TOKEN or configure auth"
+        }));
+    }
+    if let Err(e) = require_manage(&req) {
+        return e.error_response();
+    }
+
+    let name = path.into_inner();
+
+    // Check managed — config datasets return 403.
+    if !backend.is_managed(&name) {
+        // Distinguish "not found" from "exists but not managed".
+        let exists = backend.dataset_statuses().iter().any(|s| s.name == name);
+        if !exists {
+            return AppError::NotFound(format!("dataset '{name}' not found")).error_response();
+        }
+        return AppError::Forbidden(format!(
+            "dataset '{name}' is defined in the server config and cannot be deleted via the API"
+        ))
+        .error_response();
+    }
+
+    // Check for dependents — find all datasets whose depends_on includes `name`.
+    let statuses = backend.dataset_statuses();
+    let dependents: Vec<&str> = statuses
+        .iter()
+        .filter(|s| s.depends_on.iter().any(|d| d == &name))
+        .map(|s| s.name.as_str())
+        .collect();
+    if !dependents.is_empty() {
+        return AppError::Conflict(format!(
+            "dataset '{name}' has dependents: {}; delete them first",
+            dependents.join(", ")
+        ))
+        .error_response();
+    }
+
+    // Unregister from backend.
+    if let Err(e) = backend.unregister(&name).await {
+        return e.error_response();
+    }
+
+    // Delete persisted file if it was a `kind = "query"` dataset.
+    if let Some(dir) = settings.dir.as_ref()
+        && let Err(e) = crate::config::DatasetConfig::remove_from_managed_dir(&name, dir)
+    {
+        log::warn!(
+            "[queries] failed to remove managed TOML for '{}': {e}",
+            name
+        );
+        // Non-fatal: dataset is already unregistered from the engine.
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "deleted": name,
+    }))
 }
