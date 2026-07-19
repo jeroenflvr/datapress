@@ -453,6 +453,29 @@ pub struct StorageConfig {
     /// staying in memory. Default `512`.
     #[serde(default = "default_force_lazy_above_mb")]
     pub force_lazy_above_mb: u64,
+    /// Memory budget (MiB) for the ephemeral pool used while *building* a
+    /// `query` dataset (the external sort / hash-aggregate that produces the
+    /// materialized result). Sorts larger than this spill to the OS temp dir.
+    ///
+    /// `None` (default) keeps the automatic sizing: the pool is derived from
+    /// `force_lazy_above_mb` (floored so the external-sort merge phase can
+    /// initialise). Set this explicitly when a build fails with
+    /// "Not enough memory to continue external sort" — the merge phase needs a
+    /// contiguous reservation that the derived pool can be too small for.
+    ///
+    /// Maps to DataFusion's `datafusion.runtime.memory_limit`.
+    #[serde(default)]
+    pub materialization_memory_mb: Option<u64>,
+    /// Reservation (MiB) DataFusion holds back for the external-sort merge
+    /// phase (`datafusion.execution.sort_spill_reservation_bytes`). This must
+    /// be **smaller** than `materialization_memory_mb`, leaving the remainder
+    /// for accumulating sort batches before they spill.
+    ///
+    /// `None` (default) auto-sizes it to `min(pool / 4, 10 MiB)`. If a build
+    /// fails allocating for `ExternalSorterMerge`, either raise
+    /// `materialization_memory_mb` or lower this value.
+    #[serde(default)]
+    pub materialization_sort_spill_reservation_mb: Option<u64>,
     /// S3 settings. Required when `backend = "s3"`.
     #[serde(default)]
     pub s3: StorageS3Config,
@@ -468,6 +491,8 @@ impl Default for StorageConfig {
             backend: StorageBackendKind::Local,
             root: String::new(),
             force_lazy_above_mb: default_force_lazy_above_mb(),
+            materialization_memory_mb: None,
+            materialization_sort_spill_reservation_mb: None,
             s3: StorageS3Config::default(),
         }
     }
@@ -2042,6 +2067,22 @@ impl AppConfig {
                         .into(),
                 ));
             }
+            // The external-sort merge reservation is carved OUT of the build
+            // pool, so it must be strictly smaller — otherwise the reservation
+            // alone consumes the whole pool and every build fails mid-flight
+            // with "Failed to allocate ... for ExternalSorterMerge".
+            if let (Some(pool_mb), Some(reservation_mb)) = (
+                sc.materialization_memory_mb,
+                sc.materialization_sort_spill_reservation_mb,
+            ) && reservation_mb >= pool_mb
+            {
+                return Err(AppError::Internal(format!(
+                    "server.storage.materialization_sort_spill_reservation_mb ({reservation_mb}) \
+                     must be smaller than materialization_memory_mb ({pool_mb}) — the reservation \
+                     is headroom carved out of the build pool, not a separate budget. Use a small \
+                     fraction (e.g. 64) or omit it to auto-size."
+                )));
+            }
             if sc.backend == StorageBackendKind::S3 {
                 // Validate s3 block: no inline credentials allowed (env-var indirection only).
                 // (The StorageS3Config only accepts env-var NAMES, so inline values can only
@@ -3015,6 +3056,72 @@ mod tests {
         };
         let err = cfg.validate().unwrap_err();
         assert!(matches!(err, AppError::Internal(m) if m.contains("[[dataset]]")));
+    }
+
+    #[test]
+    fn validate_rejects_reservation_ge_pool() {
+        let dir = std::env::temp_dir().join(format!("dp-mat-reservation-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.parquet");
+        std::fs::write(&file, b"PAR1").unwrap();
+
+        let mk = |memory: Option<u64>, reservation: Option<u64>| AppConfig {
+            server: ServerConfig {
+                storage: Some(StorageConfig {
+                    backend: StorageBackendKind::Local,
+                    root: dir.to_string_lossy().to_string(),
+                    force_lazy_above_mb: 512,
+                    materialization_memory_mb: memory,
+                    materialization_sort_spill_reservation_mb: reservation,
+                    s3: Default::default(),
+                }),
+                ..ServerConfig::default()
+            },
+            docs: DocsConfig::default(),
+            swagger: SwaggerConfig::default(),
+            metrics: MetricsConfig::default(),
+            explorer: ExplorerConfig::default(),
+            sql: SqlConfig::default(),
+            datafusion: DataFusionConfig::default(),
+            auth: AuthConfig::default(),
+            datasets: vec![DatasetConfig {
+                name: "d".into(),
+                source: SourceConfig {
+                    kind: SourceKind::Parquet,
+                    location: file.to_string_lossy().to_string(),
+                    sql: None,
+                    depends_on: vec![],
+                },
+                s3: None,
+                index: IndexConfig::default(),
+                columns: vec![],
+                dict_encode: true,
+                lazy: false,
+                predicate_filter: Default::default(),
+                projection_filter: Default::default(),
+                on_start: OnStart::Eager,
+                refresh: None,
+                materialize: None,
+                managed: false,
+                temp: false,
+            }],
+        };
+
+        // reservation == pool → rejected.
+        let err = mk(Some(1024), Some(1024)).validate().unwrap_err();
+        assert!(
+            matches!(&err, AppError::Internal(m) if m.contains("must be smaller than")),
+            "got: {err:?}"
+        );
+        // reservation > pool → rejected.
+        assert!(mk(Some(512), Some(1024)).validate().is_err());
+        // reservation < pool → accepted.
+        assert!(mk(Some(1024), Some(64)).validate().is_ok());
+        // only pool set → accepted (reservation auto-sized).
+        assert!(mk(Some(1024), None).validate().is_ok());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[cfg(feature = "auth")]

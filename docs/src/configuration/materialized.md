@@ -265,6 +265,8 @@ auto-demotion for `query` datasets.
 backend            = "local"                            # "local" | "s3"
 root               = "/var/lib/datapress/materialized"  # local path or "s3://bucket/prefix"
 force_lazy_above_mb = 512                               # auto-demotion threshold; default 512
+# materialization_memory_mb = 1024                       # build-time sort/aggregate pool (MiB)
+# materialization_sort_spill_reservation_mb = 64         # merge reservation (MiB); « the pool
 ```
 
 ### Local storage
@@ -297,6 +299,8 @@ root    = "s3://my-bucket/datapress"
 | `backend`              | `"local"`   | `"local"` or `"s3"`. |
 | `root`                 | *(required)*| Local path or `s3://bucket/prefix`. |
 | `force_lazy_above_mb`  | `512`       | Auto-demotion threshold in MiB. `0` disables auto-demotion (only explicit `lazy` datasets use storage). |
+| `materialization_memory_mb` | *(unset)* | Explicit memory budget (MiB) for the pool used while **building** a `query` dataset (the external sort / hash-aggregate). Set this when a build fails with *"Not enough memory to continue external sort"*. Unset = derive from `force_lazy_above_mb`. Maps to `datafusion.runtime.memory_limit`. |
+| `materialization_sort_spill_reservation_mb` | *(unset)* | Reservation (MiB) held back for the external-sort **merge** phase. **Must be strictly smaller than `materialization_memory_mb`** — it is headroom carved out of the build pool, not a separate budget; setting it ≥ the pool is a startup error. Unset = auto `min(pool / 4, 10 MiB)`. Maps to `datafusion.execution.sort_spill_reservation_bytes`. |
 | `s3.region`            | *(unset)*   | AWS region. Omit to use `AWS_REGION` or the SDK default. |
 | `s3.endpoint`          | *(unset)*   | Custom endpoint (MinIO, R2, Wasabi…). |
 | `s3.access_key_id_env` | *(unset)*   | Name of the env var holding the access key ID. Both env vars must be set together, or both omitted (provider chain). |
@@ -307,6 +311,16 @@ root    = "s3://my-bucket/datapress"
 !!! warning "Inline credentials are rejected"
     Inline secret values directly in TOML (e.g. `access_key_id = "AKI…"`) are a
     startup error in `[server.storage.s3]`. Use env-var indirection only.
+
+!!! tip "Tuning build memory for large sorts"
+    A `query` dataset that sorts millions of rows (an `ORDER BY` or a
+    `[dataset.materialize] sort_by`) can fail with *"Not enough memory to
+    continue external sort … Failed to allocate N MB for ExternalSorterMerge"*.
+    Raise `materialization_memory_mb` to give the build a bigger pool. Only set
+    `materialization_sort_spill_reservation_mb` if you need to override the
+    automatic reservation — and keep it a small fraction of the pool. Setting
+    the reservation equal to (or larger than) the pool consumes the entire
+    budget and every build fails, so it is rejected at startup.
 
 ### Generation layout
 
@@ -407,6 +421,8 @@ max_concurrent = 1     # default 1
 backend             = "local"   # "local" | "s3"
 root                = "/var/lib/datapress/materialized"
 force_lazy_above_mb = 512       # default 512
+# materialization_memory_mb = 1024               # build-time sort/aggregate pool (MiB)
+# materialization_sort_spill_reservation_mb = 64 # merge reservation (MiB); « the pool
 
   [server.storage.s3]           # required iff backend = "s3"
   region                = "us-east-1"

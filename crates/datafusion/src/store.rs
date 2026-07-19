@@ -2005,6 +2005,7 @@ fn effective_residency(
 async fn build_mat_ctx(
     serving_ctx: &SessionContext,
     pool_bytes: usize,
+    sort_spill_reservation_bytes: usize,
 ) -> Result<SessionContext, AppError> {
     // Inherit the object_store_registry from the serving runtime so S3
     // source stores are immediately visible. Then override just the pool
@@ -2016,20 +2017,15 @@ async fn build_mat_ctx(
         .map_err(|e| AppError::Internal(format!("materialization runtime: {e}")))?;
 
     // Inherit all session options (parquet pushdown, etc.) from the serving
-    // context so the query plan behaves identically — with one exception:
-    //
-    // `sort_spill_reservation_bytes` is scaled to pool_bytes / 4 so that
-    // 75% of the pool remains available for actual sort-batch accumulation.
-    // DataFusion's default (10 MiB) relative to the 12 MiB floor pool leaves
-    // only 2 MiB for data, which is narrower than a single 8192-row batch over
-    // a wide schema. Scaling to pool / 4 ensures batches can always be reserved
-    // before the sort operator is forced to spill them. (R2B.2)
-    let spill_reservation = (pool_bytes / 4).max(512 * 1024); // floor 512 KiB
+    // context so the query plan behaves identically — except the external-sort
+    // merge reservation, which the caller sizes (see
+    // [`materialization_sort_spill_bytes`]). It MUST be smaller than the pool,
+    // leaving room for sort-batch accumulation before spilling. (R2B.2)
     let mut mat_config = serving_ctx.copied_config();
     mat_config
         .options_mut()
         .execution
-        .sort_spill_reservation_bytes = spill_reservation;
+        .sort_spill_reservation_bytes = sort_spill_reservation_bytes;
 
     let mat_ctx = SessionContext::new_with_config_rt(mat_config, runtime);
 
@@ -2119,9 +2115,14 @@ pub async fn build_mat_ctx_no_spill_for_test(
 ///    which the external sort merge phase reserves before it can even start.
 /// 2. Hold the in-flight sort buffer up to `force_lazy_above_mb`.
 ///
-/// When `force_lazy_above_mb > 16`, we use that value so the sort for a
-/// result at the demotion threshold fits in memory before spilling. When it
-/// is smaller (or 0), we floor at 32 MiB so the sort reservation overhead is
+/// When `[server.storage].materialization_memory_mb` is set, that value wins
+/// and sizes the pool explicitly (floored at the sort-spill minimum). This is
+/// the operator escape hatch for large sorts whose merge phase needs more than
+/// the threshold-derived pool ("Not enough memory to continue external sort").
+///
+/// Otherwise, when `force_lazy_above_mb > 16`, we use that value so the sort
+/// for a result at the demotion threshold fits in memory before spilling. When
+/// it is smaller (or 0), we floor at 12 MiB so the sort reservation overhead is
 /// always satisfiable.
 ///
 /// When no storage is configured (sort stays in memory), we default to 512 MiB.
@@ -2135,6 +2136,16 @@ fn materialization_pool_bytes(storage: Option<&Arc<MaterializationStorage>>) -> 
 
     storage
         .map(|s| {
+            // Explicit override wins: size the build pool from
+            // `materialization_memory_mb` when the operator set it. This is the
+            // escape hatch for large sorts whose merge phase needs more than the
+            // threshold-derived pool. Still floored at SORT_SPILL_MIN_BYTES so a
+            // tiny value can't break the merge reservation.
+            if let Some(mb) = s.config.materialization_memory_mb {
+                return (mb as usize)
+                    .saturating_mul(1024 * 1024)
+                    .max(SORT_SPILL_MIN_BYTES);
+            }
             let mb = s.config.force_lazy_above_mb;
             let from_threshold = (mb as usize).saturating_mul(1024 * 1024);
             // Always at least SORT_SPILL_MIN_BYTES so the external sort can
@@ -2142,6 +2153,29 @@ fn materialization_pool_bytes(storage: Option<&Arc<MaterializationStorage>>) -> 
             from_threshold.max(SORT_SPILL_MIN_BYTES)
         })
         .unwrap_or(512 * 1024 * 1024)
+}
+
+/// External-sort merge reservation for a materialization build
+/// (`datafusion.execution.sort_spill_reservation_bytes`).
+///
+/// Explicit config wins: `[server.storage].materialization_sort_spill_reservation_mb`
+/// sets it directly (floored at 512 KiB). Otherwise it auto-sizes to
+/// `min(pool / 4, 10 MiB)` — capped at DataFusion's own default so a large pool
+/// does not inflate the reservation past what the merge phase can allocate
+/// (which is exactly what fails a big ORDER BY: "Failed to allocate N MB for
+/// ExternalSorterMerge"). The reservation must stay well below `pool_bytes`.
+fn materialization_sort_spill_bytes(
+    storage: Option<&Arc<MaterializationStorage>>,
+    pool_bytes: usize,
+) -> usize {
+    /// DataFusion's built-in default reservation (10 MiB).
+    const DEFAULT_RESERVATION: usize = 10 * 1024 * 1024;
+    const FLOOR: usize = 512 * 1024;
+
+    if let Some(mb) = storage.and_then(|s| s.config.materialization_sort_spill_reservation_mb) {
+        return (mb as usize).saturating_mul(1024 * 1024).max(FLOOR);
+    }
+    (pool_bytes / 4).clamp(FLOOR, DEFAULT_RESERVATION)
 }
 
 /// Build a query-kind dataset with the correct residency policy (R2B.1-R2B.6).
@@ -2175,7 +2209,8 @@ async fn build_query_dataset(
     // so ORDER BY (sort_by, R2B.5) and large aggregations can spill to disk
     // instead of growing unboundedly. The serving context (ctx) is unchanged.
     let pool_bytes = materialization_pool_bytes(storage);
-    let mat_ctx = build_mat_ctx(ctx, pool_bytes).await?;
+    let sort_spill_reservation_bytes = materialization_sort_spill_bytes(storage, pool_bytes);
+    let mat_ctx = build_mat_ctx(ctx, pool_bytes, sort_spill_reservation_bytes).await?;
 
     match residency {
         MaterializeResidency::Memory => {
@@ -5422,6 +5457,91 @@ impl Backend for Store {
 #[cfg(test)]
 mod tests {
     use super::is_s3_access_denied;
+    use super::{materialization_pool_bytes, materialization_sort_spill_bytes};
+    use datapress_core::config::{StorageBackendKind, StorageConfig};
+    use datapress_core::storage::build_materialization_storage;
+    use std::sync::Arc;
+
+    #[test]
+    fn mat_pool_bytes_honors_explicit_override() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = StorageConfig {
+            backend: StorageBackendKind::Local,
+            root: dir.path().to_string_lossy().to_string(),
+            force_lazy_above_mb: 128,
+            materialization_memory_mb: None,
+            materialization_sort_spill_reservation_mb: None,
+            s3: Default::default(),
+        };
+
+        // Without an override the pool is derived from force_lazy_above_mb.
+        let derived = build_materialization_storage(&base).unwrap();
+        assert_eq!(
+            materialization_pool_bytes(Some(&Arc::new(derived))),
+            128 * 1024 * 1024
+        );
+
+        // The explicit knob wins.
+        let overridden = build_materialization_storage(&StorageConfig {
+            materialization_memory_mb: Some(1024),
+            ..base.clone()
+        })
+        .unwrap();
+        assert_eq!(
+            materialization_pool_bytes(Some(&Arc::new(overridden))),
+            1024 * 1024 * 1024
+        );
+
+        // A tiny override is floored so the external-sort merge can initialise.
+        let tiny = build_materialization_storage(&StorageConfig {
+            materialization_memory_mb: Some(1),
+            ..base
+        })
+        .unwrap();
+        assert_eq!(
+            materialization_pool_bytes(Some(&Arc::new(tiny))),
+            12 * 1024 * 1024
+        );
+    }
+
+    #[test]
+    fn mat_sort_spill_bytes_is_configurable_and_capped() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = StorageConfig {
+            backend: StorageBackendKind::Local,
+            root: dir.path().to_string_lossy().to_string(),
+            force_lazy_above_mb: 512,
+            materialization_memory_mb: None,
+            materialization_sort_spill_reservation_mb: None,
+            s3: Default::default(),
+        };
+
+        // Auto default: min(pool / 4, 10 MiB). A 1 GiB pool must NOT scale the
+        // reservation to 256 MiB (that is the bug that fails ExternalSorterMerge).
+        let auto = build_materialization_storage(&base).unwrap();
+        assert_eq!(
+            materialization_sort_spill_bytes(Some(&Arc::new(auto)), 1024 * 1024 * 1024),
+            10 * 1024 * 1024
+        );
+
+        // Small pool: pool / 4 wins (below the 10 MiB cap).
+        let small = build_materialization_storage(&base).unwrap();
+        assert_eq!(
+            materialization_sort_spill_bytes(Some(&Arc::new(small)), 12 * 1024 * 1024),
+            3 * 1024 * 1024
+        );
+
+        // Explicit override wins and ignores the auto cap.
+        let overridden = build_materialization_storage(&StorageConfig {
+            materialization_sort_spill_reservation_mb: Some(64),
+            ..base
+        })
+        .unwrap();
+        assert_eq!(
+            materialization_sort_spill_bytes(Some(&Arc::new(overridden)), 1024 * 1024 * 1024),
+            64 * 1024 * 1024
+        );
+    }
 
     #[test]
     fn detects_s3_access_denied_variants() {

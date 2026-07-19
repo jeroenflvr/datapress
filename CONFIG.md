@@ -574,6 +574,8 @@ residency and auto-demotion write parquet files here.
 backend             = "local"   # "local" | "s3"
 root                = "/var/lib/datapress/materialized"
 force_lazy_above_mb = 512       # auto-demotion threshold in MiB; default 512
+# materialization_memory_mb = 1024              # optional: build-time sort/aggregate pool (MiB)
+# materialization_sort_spill_reservation_mb = 64 # optional: external-sort merge reservation (MiB)
 
   [server.storage.s3]           # required iff backend = "s3"
   region                = "eu-west-1"
@@ -589,6 +591,8 @@ force_lazy_above_mb = 512       # auto-demotion threshold in MiB; default 512
 | `backend`                   | `"local"` | `"local"` or `"s3"`. |
 | `root`                      | *(req.)*  | Local filesystem path or `s3://bucket/prefix`. |
 | `force_lazy_above_mb`       | `512`     | Auto-demotion threshold. `0` disables auto-demotion. |
+| `materialization_memory_mb` | *(unset)* | Explicit memory budget (MiB) for the build-time sort/aggregate pool. Set this when a build fails with "Not enough memory to continue external sort". Unset = derive from `force_lazy_above_mb`. Maps to `datafusion.runtime.memory_limit`. |
+| `materialization_sort_spill_reservation_mb` | *(unset)* | Reservation (MiB) held back for the external-sort **merge** phase. **Must be strictly smaller than `materialization_memory_mb`** (it is headroom carved out of the pool, not a separate budget — setting it ≥ the pool is rejected at startup). Unset = auto `min(pool/4, 10 MiB)`. If a build fails allocating for `ExternalSorterMerge`, raise `materialization_memory_mb` or lower this. Maps to `datafusion.execution.sort_spill_reservation_bytes`. |
 | `s3.access_key_id_env`      | *(unset)* | Name of the env var for the key ID. Inline values are rejected. |
 | `s3.secret_access_key_env`  | *(unset)* | Name of the env var for the secret. |
 | `s3.addressing_style`       | `"virtual"` | `"virtual"` or `"path"` (MinIO). |

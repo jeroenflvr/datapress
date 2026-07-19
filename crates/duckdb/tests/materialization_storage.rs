@@ -58,6 +58,8 @@ fn two_dataset_cfg(
         backend: StorageBackendKind::Local,
         root: d.to_string(),
         force_lazy_above_mb: 512,
+        materialization_memory_mb: None,
+        materialization_sort_spill_reservation_mb: None,
         s3: Default::default(),
     });
     AppConfig {
@@ -257,6 +259,8 @@ async fn test_duckdb_auto_demotion() {
                 backend: StorageBackendKind::Local,
                 root: storage_dir.to_str().unwrap().to_string(),
                 force_lazy_above_mb: 0,
+                materialization_memory_mb: None,
+                materialization_sort_spill_reservation_mb: None,
                 s3: Default::default(),
             }),
             ..Default::default()
@@ -351,6 +355,8 @@ async fn test_duckdb_sort_by_ordered_results() {
                 backend: StorageBackendKind::Local,
                 root: storage_dir.to_str().unwrap().to_string(),
                 force_lazy_above_mb: 512,
+                materialization_memory_mb: None,
+                materialization_sort_spill_reservation_mb: None,
                 s3: Default::default(),
             }),
             ..Default::default()
@@ -470,6 +476,8 @@ async fn test_duckdb_s3_lazy_storage() {
         backend: StorageBackendKind::S3,
         root: s3_root,
         force_lazy_above_mb: 512,
+        materialization_memory_mb: None,
+        materialization_sort_spill_reservation_mb: None,
         s3: datapress_core::config::StorageS3Config {
             region: Some("us-east-1".into()),
             endpoint: Some(endpoint),

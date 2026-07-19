@@ -71,6 +71,8 @@ fn two_dataset_cfg(
         backend: StorageBackendKind::Local,
         root: d.to_string(),
         force_lazy_above_mb: force_lazy_mb,
+        materialization_memory_mb: None,
+        materialization_sort_spill_reservation_mb: None,
         s3: Default::default(),
     });
     AppConfig {
@@ -602,6 +604,8 @@ async fn test_df_lazy_with_inmemory_object_store() {
         backend: datapress_core::config::StorageBackendKind::Local,
         root: storage_dir.to_str().unwrap().to_string(),
         force_lazy_above_mb: 512,
+        materialization_memory_mb: None,
+        materialization_sort_spill_reservation_mb: None,
         s3: Default::default(),
     });
     assert!(
@@ -692,6 +696,8 @@ async fn test_sort_by_spills_and_nonoverlapping_row_groups() {
                 backend: StorageBackendKind::Local,
                 root: storage_dir.to_str().unwrap().to_string(),
                 force_lazy_above_mb: 1, // 1 MiB → hits 12 MiB floor
+                materialization_memory_mb: None,
+                materialization_sort_spill_reservation_mb: None,
                 s3: Default::default(),
             }),
             ..Default::default()

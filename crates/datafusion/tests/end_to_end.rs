@@ -1498,6 +1498,8 @@ async fn phase6_managed_query_delete_cleans_storage_df() {
                 backend: StorageBackendKind::Local,
                 root: storage_dir.to_string_lossy().to_string(),
                 force_lazy_above_mb: 0, // force lazy at any size
+                materialization_memory_mb: None,
+                materialization_sort_spill_reservation_mb: None,
                 s3: Default::default(),
             }),
             ..datapress_core::config::ServerConfig::default()
