@@ -81,21 +81,12 @@ async fn run_server(
     };
 
     // Compute the saved-queries dir from the config path + optional override.
-    let saved_queries_dir: Option<std::path::PathBuf> =
-        crate::config::source_config_path().map(|p| {
-            let config_dir = p.parent().unwrap_or_else(|| std::path::Path::new("."));
-            match &cfg.server.saved_queries_dir {
-                Some(d) => {
-                    let path = std::path::PathBuf::from(d);
-                    if path.is_absolute() {
-                        path
-                    } else {
-                        config_dir.join(path)
-                    }
-                }
-                None => config_dir.join("datasets.d"),
-            }
-        });
+    let saved_queries_dir: Option<std::path::PathBuf> = crate::config::source_config_path()
+        .map(|p| {
+            crate::config::resolve_saved_queries_dir(&p, cfg.server.saved_queries_dir.as_deref())
+        })
+        .transpose()
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
     // Routes are enabled when the admin token is set OR auth is configured.
     let queries_api_enabled = crate::admin::require_admin_configured() || cfg.auth.enabled;
     let docs_cfg = cfg.docs.clone();
@@ -389,6 +380,7 @@ async fn run_server(
                     StorageBackendKind::S3 => "s3".to_string(),
                 }
             }),
+            saved_queries_dir: saved_queries_dir.clone(),
         }))
     } else {
         None

@@ -15,7 +15,7 @@ use serde_json::Value;
 use datapress_core::backend::{
     Backend, DatasetStatus, DatasetStatusEntry, DatasetSummary, RefreshRecord, ReloadStats,
 };
-use datapress_core::config::{DatasetConfig, IndexConfig, OnStart, SourceConfig, SourceKind};
+use datapress_core::config::{DatasetConfig, OnStart};
 use datapress_core::errors::AppError;
 use datapress_core::handlers::{self, SavedQueriesSettings};
 use datapress_core::models::CountRequest;
@@ -84,6 +84,28 @@ impl QueryMockBackend {
         })
     }
 
+    fn from_configs(configs: &[DatasetConfig]) -> Arc<Self> {
+        let mut m = HashMap::new();
+        for cfg in configs {
+            m.insert(
+                cfg.name.clone(),
+                MockEntry {
+                    schema: Self::schema_for(&cfg.name),
+                    managed: cfg.managed,
+                    temp: cfg.temp,
+                    depends_on: cfg.source.depends_on.clone(),
+                    is_config: !cfg.managed,
+                },
+            );
+        }
+        Arc::new(Self {
+            datasets: RwLock::new(m),
+            last_registered: Mutex::new(None),
+            refresh_records: RwLock::new(HashMap::new()),
+            build_count: std::sync::atomic::AtomicUsize::new(0),
+        })
+    }
+
     fn schema_for(name: &str) -> Arc<DatasetSchema> {
         Arc::new(DatasetSchema::new(
             name,
@@ -137,10 +159,14 @@ impl Backend for QueryMockBackend {
     }
     async fn query(
         &self,
-        _: &str,
+        name: &str,
         _: &datapress_core::models::QueryRequest,
     ) -> Result<String, AppError> {
-        Ok("[]".into())
+        if self.datasets.read().unwrap().contains_key(name) {
+            Ok("[]".into())
+        } else {
+            Err(AppError::NotFound(name.into()))
+        }
     }
     async fn count(&self, _: &str, _: &CountRequest) -> Result<i64, AppError> {
         Ok(0)
@@ -280,12 +306,29 @@ fn make_app(
     let (ttl_tx, _ttl_rx) = tokio::sync::mpsc::unbounded_channel();
     let ttl_handle = TtlHandle::new(ttl_tx);
 
+    make_app_with_saved_dir(backend, None, ttl_handle, true)
+}
+
+fn make_app_with_saved_dir(
+    backend: Arc<dyn Backend>,
+    saved_queries_dir: Option<std::path::PathBuf>,
+    ttl_handle: TtlHandle,
+    enabled: bool,
+) -> App<
+    impl actix_web::dev::ServiceFactory<
+        actix_web::dev::ServiceRequest,
+        Config = (),
+        Response = actix_web::dev::ServiceResponse,
+        Error = actix_web::Error,
+        InitError = (),
+    >,
+> {
     App::new()
         .app_data(web::Data::new(backend))
         .app_data(web::Data::new(handlers::BuildInfo::new("Mock")))
         .app_data(web::Data::new(SavedQueriesSettings {
-            dir: None, // no file persistence in tests
-            enabled: true,
+            dir: saved_queries_dir,
+            enabled,
         }))
         .app_data(web::Data::new(ttl_handle))
         .service(
@@ -693,6 +736,103 @@ async fn create_async_returns_202() {
     assert_eq!(body["state"], "building");
 }
 
+/// Persisted saved queries survive an in-process rebuild from the same config
+/// directory. This exercises the real managed TOML write path and the startup
+/// `datasets.d/` merge path with the source-config path reset between apps.
+#[actix_web::test]
+async fn create_query_persists_and_loads_after_restart() {
+    datapress_core::admin::init(Some(ADMIN_TOKEN));
+    datapress_core::config::reset_source_config_path_for_tests();
+
+    let original_cwd = std::env::current_dir().unwrap();
+    let temp = tempfile::tempdir_in(".").unwrap();
+    let parquet_path = temp.path().join("base.parquet");
+    std::fs::write(&parquet_path, b"PAR1").unwrap();
+    let config_path = temp.path().join("datasets.toml");
+    std::fs::write(
+        &config_path,
+        format!(
+            r#"
+[[dataset]]
+name = "base"
+
+[dataset.source]
+kind = "parquet"
+location = "{}"
+"#,
+            parquet_path.display()
+        ),
+    )
+    .unwrap();
+
+    let relative_config_path = config_path
+        .strip_prefix(&original_cwd)
+        .unwrap_or(&config_path);
+    let cfg =
+        datapress_core::config::AppConfig::load(&relative_config_path.to_string_lossy()).unwrap();
+    let saved_dir = datapress_core::config::resolve_saved_queries_dir(
+        &config_path,
+        cfg.server.saved_queries_dir.as_deref(),
+    )
+    .unwrap();
+    let backend = QueryMockBackend::from_configs(&cfg.datasets);
+    let (ttl_tx, _ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+    let app = test::init_service(make_app_with_saved_dir(
+        backend.clone(),
+        Some(saved_dir.clone()),
+        TtlHandle::new(ttl_tx),
+        true,
+    ))
+    .await;
+
+    let req = with_admin(test::TestRequest::post().uri("/api/v1/queries?async=true"))
+        .set_json(serde_json::json!({
+            "name": "derived",
+            "sql": "SELECT id FROM base",
+            "kind": "query"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["managed_file"], "datasets.d/derived.toml");
+    assert!(
+        saved_dir.join("derived.toml").is_file(),
+        "persisted save should write datasets.d/derived.toml before returning"
+    );
+
+    drop(app);
+    drop(backend);
+    datapress_core::config::reset_source_config_path_for_tests();
+
+    std::env::set_current_dir(temp.path()).unwrap();
+    let reloaded = datapress_core::config::AppConfig::load("datasets.toml").unwrap();
+    std::env::set_current_dir(&original_cwd).unwrap();
+    assert!(
+        reloaded
+            .datasets
+            .iter()
+            .any(|d| d.name == "derived" && d.managed),
+        "startup should merge the managed query from datasets.d"
+    );
+    let restarted_backend = QueryMockBackend::from_configs(&reloaded.datasets);
+    let (ttl_tx, _ttl_rx) = tokio::sync::mpsc::unbounded_channel();
+    let restarted = test::init_service(make_app_with_saved_dir(
+        restarted_backend,
+        Some(saved_dir),
+        TtlHandle::new(ttl_tx),
+        true,
+    ))
+    .await;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/datasets/derived/query")
+        .set_json(serde_json::json!({ "page_size": 10 }))
+        .to_request();
+    let resp = test::call_service(&restarted, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
 // ---------------------------------------------------------------------------
 // Tests: POST /api/v1/datasets/reload-all  (R8.11)
 // ---------------------------------------------------------------------------
@@ -939,7 +1079,7 @@ async fn reload_all_response_before_builds_complete() {
         async fn reload(&self, n: &str) -> Result<ReloadStats, AppError> {
             self.inner.reload(n).await
         }
-        async fn try_reload(&self, n: &str) -> Result<Option<ReloadStats>, AppError> {
+        async fn try_reload(&self, _n: &str) -> Result<Option<ReloadStats>, AppError> {
             // Block until the test releases the gate.
             let _permit = self.gate.acquire().await.unwrap();
             self.build_count

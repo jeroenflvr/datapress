@@ -9,7 +9,7 @@
 #![cfg(feature = "explorer")]
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use actix_web::{App, http::StatusCode, test, web};
 use async_trait::async_trait;
@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use datapress_core::backend::{
     Backend, DatasetStatus, DatasetStatusEntry, DatasetSummary, RefreshRecord, ReloadStats,
 };
-use datapress_core::config::{DatasetConfig, IndexConfig, OnStart, SourceConfig, SourceKind};
+use datapress_core::config::{DatasetConfig, OnStart};
 use datapress_core::errors::AppError;
 use datapress_core::explorer::ExplorerState;
 use datapress_core::handlers::{self, SavedQueriesSettings};
@@ -259,6 +259,7 @@ fn make_app(
         environment_color: None,
         queries_enabled: true,
         storage_backend: None,
+        saved_queries_dir: None,
     });
 
     App::new()

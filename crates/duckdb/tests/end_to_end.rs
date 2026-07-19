@@ -1194,7 +1194,6 @@ async fn phase6_managed_query_delete_cleans_storage_duck() {
         AppConfig, MaterializeConfig, MaterializeResidency, OnStart, StorageBackendKind,
         StorageConfig,
     };
-    use datapress_core::errors::AppError;
 
     let tmp = TempDir::new().unwrap();
 

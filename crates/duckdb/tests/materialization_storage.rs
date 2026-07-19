@@ -15,7 +15,6 @@ use datapress_core::config::{
     AppConfig, DatasetConfig, IndexConfig, MaterializeConfig, MaterializeResidency, ServerConfig,
     SourceConfig, SourceKind, StorageBackendKind, StorageConfig,
 };
-use datapress_core::models::CountRequest;
 
 // ---------------------------------------------------------------------------
 // Helpers

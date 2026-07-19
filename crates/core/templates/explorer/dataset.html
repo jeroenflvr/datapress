@@ -53,6 +53,9 @@
       <dt class="col-sm-3">Source</dt><dd class="col-sm-9 mono">{{ source_kind }} · {{ source_location }}</dd>
       <dt class="col-sm-3">Index mode</dt><dd class="col-sm-9">{{ index_mode }}{% if !index_columns.is_empty() %} · <span class="mono">{{ index_columns }}</span>{% endif %}</dd>
       <dt class="col-sm-3">Projection</dt><dd class="col-sm-9 mono">{{ projection }}</dd>
+      {% if !managed_file.is_empty() %}
+      <dt class="col-sm-3">Managed file</dt><dd class="col-sm-9 mono">persisted · {{ managed_file }}</dd>
+      {% endif %}
       <dt class="col-sm-3">Dictionary encode</dt><dd class="col-sm-9">{{ dict_encode }}</dd>
       <dt class="col-sm-3">Lazy</dt><dd class="col-sm-9">{{ lazy }}</dd>
       {% if has_s3 %}

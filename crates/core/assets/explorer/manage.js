@@ -385,9 +385,16 @@
           resultEl.classList.remove("d-none");
           const nameSpan = document.getElementById("save-result-name");
           const depsSpan = document.getElementById("save-result-deps");
+          const managedFileWrap = document.getElementById("save-result-managed-file");
           const buildingSpan = document.getElementById("save-result-building");
           if (nameSpan) nameSpan.textContent = data.name || name;
           if (depsSpan) depsSpan.textContent = (data.depends_on || []).join(", ") || "none";
+          if (managedFileWrap) {
+            const managedFile = data.managed_file || "";
+            managedFileWrap.classList.toggle("d-none", !managedFile);
+            const pathSpan = managedFileWrap.querySelector(".mono");
+            if (pathSpan) pathSpan.textContent = managedFile;
+          }
           if (buildingSpan) {
             if (data.state === "building") {
               buildingSpan.classList.remove("d-none");

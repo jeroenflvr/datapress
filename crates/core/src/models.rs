@@ -1008,4 +1008,7 @@ pub struct SavedQueryEntry {
     pub depends_on: Vec<String>,
     /// Current state of the dataset.
     pub state: String,
+    /// Managed TOML file written for persisted `kind = "query"` datasets.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub managed_file: Option<String>,
 }

@@ -982,6 +982,29 @@ pub async fn create_query(
         .split('&')
         .any(|p| p == "async=true");
 
+    let mut managed_file = None;
+
+    // For `kind = "query"`, persist to datasets.d/. Do this before async
+    // registration too; the Explorer save flow uses `?async=true`, and the
+    // persisted definition must survive a process restart even while the
+    // current process finishes building it in the background.
+    if !is_temp {
+        match settings.dir.as_ref() {
+            None => {
+                return AppError::InvalidValue(
+                    "kind = \"query\" requires a server config file (cannot persist)".into(),
+                )
+                .error_response();
+            }
+            Some(dir) => match dataset_cfg.persist_to_managed_dir(dir) {
+                Ok(path) => {
+                    managed_file = Some(crate::config::display_path_relative_to_config(&path));
+                }
+                Err(e) => return e.error_response(),
+            },
+        }
+    }
+
     if async_mode {
         // Register asynchronously: spawn build in background.
         let backend_clone = backend.clone();
@@ -998,6 +1021,7 @@ pub async fn create_query(
             kind: body.kind,
             depends_on,
             state: "building".into(),
+            managed_file,
         };
         return HttpResponse::Accepted().json(resp);
     }
@@ -1005,29 +1029,6 @@ pub async fn create_query(
     // Synchronous build.
     if let Err(e) = backend.register(dataset_cfg.clone()).await {
         return e.error_response();
-    }
-
-    // For `kind = "query"`, persist to datasets.d/.
-    if !is_temp {
-        match settings.dir.as_ref() {
-            None => {
-                // No config dir — can't persist. Return 400.
-                // (The dataset is already registered so we should unregister
-                // it to keep state consistent.)
-                let _ = backend.unregister(&body.name).await;
-                return AppError::InvalidValue(
-                    "kind = \"query\" requires a server config file (cannot persist)".into(),
-                )
-                .error_response();
-            }
-            Some(dir) => {
-                if let Err(e) = dataset_cfg.persist_to_managed_dir(dir) {
-                    // Persist failed — unregister and surface the error.
-                    let _ = backend.unregister(&body.name).await;
-                    return e.error_response();
-                }
-            }
-        }
     }
 
     // For `kind = "temp"` with a TTL, schedule deletion.
@@ -1048,6 +1049,7 @@ pub async fn create_query(
         kind: body.kind,
         depends_on,
         state,
+        managed_file,
     };
     HttpResponse::Ok().json(resp)
 }
@@ -1082,6 +1084,7 @@ pub async fn list_queries(
                 state: format!("{:?}", s.status).to_lowercase(),
                 name: s.name,
                 kind,
+                managed_file: None,
             }
         })
         .collect();

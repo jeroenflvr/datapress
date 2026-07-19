@@ -90,12 +90,37 @@ where
     deserialize_optional_duration(de)
 }
 
-/// Serialize a `Duration` as its millisecond count (for JSON/TOML output).
+/// Format a `Duration` as a human-readable string that [`parse_duration`]
+/// can read back (e.g. `"5s"`, `"15m"`, `"500ms"`). The coarsest unit that
+/// divides the duration exactly is chosen so the value round-trips losslessly
+/// through TOML/JSON serialization. This MUST stay compatible with
+/// [`deserialize_duration`], which only accepts the string form — emitting a
+/// bare integer here would make persisted configs fail to reload.
+pub fn format_duration(d: &Duration) -> String {
+    let ms = d.as_millis() as u64;
+    if ms == 0 {
+        return "0s".to_string();
+    }
+    if ms.is_multiple_of(86_400_000) {
+        format!("{}d", ms / 86_400_000)
+    } else if ms.is_multiple_of(3_600_000) {
+        format!("{}h", ms / 3_600_000)
+    } else if ms.is_multiple_of(60_000) {
+        format!("{}m", ms / 60_000)
+    } else if ms.is_multiple_of(1_000) {
+        format!("{}s", ms / 1_000)
+    } else {
+        format!("{ms}ms")
+    }
+}
+
+/// Serialize a `Duration` as a human-readable string (for JSON/TOML output).
+/// See [`format_duration`] for why this is a string and not an integer.
 fn serialize_duration<S>(d: &Duration, ser: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
-    ser.serialize_u64(d.as_millis() as u64)
+    ser.serialize_str(&format_duration(d))
 }
 
 fn serialize_optional_duration<S>(d: &Option<Duration>, ser: S) -> Result<S::Ok, S::Error>
@@ -104,19 +129,72 @@ where
 {
     match d {
         None => ser.serialize_none(),
-        Some(dur) => ser.serialize_some(&(dur.as_millis() as u64)),
+        Some(dur) => ser.serialize_some(&format_duration(dur)),
     }
 }
 
-/// Absolute path of the `datasets.toml` this process was loaded from, set
-/// once by [`AppConfig::load`]. `None` when the config was constructed
-/// in-process (e.g. the Python bindings) rather than read from a file — in
-/// that case the explorer's "append to server config" export is unavailable.
-static SOURCE_CONFIG_PATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+/// Absolute path of the `datasets.toml` this process was loaded from. `None`
+/// when the config was constructed in-process (e.g. the Python bindings)
+/// rather than read from a file — in that case the explorer's "append to
+/// server config" export is unavailable.
+static SOURCE_CONFIG_PATH: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
 
 /// Path of the config file this process was loaded from, if any.
-pub fn source_config_path() -> Option<&'static std::path::Path> {
-    SOURCE_CONFIG_PATH.get().map(|p| p.as_path())
+pub fn source_config_path() -> Option<PathBuf> {
+    SOURCE_CONFIG_PATH.lock().unwrap().clone()
+}
+
+/// Clear the remembered source config path. Intended for in-process restart
+/// tests that rebuild app state from a different config file.
+#[doc(hidden)]
+pub fn reset_source_config_path_for_tests() {
+    *SOURCE_CONFIG_PATH.lock().unwrap() = None;
+}
+
+fn set_source_config_path(path: PathBuf) {
+    *SOURCE_CONFIG_PATH.lock().unwrap() = Some(path);
+}
+
+/// Resolve the saved-query managed dataset directory exactly once from the
+/// config file path. Relative `saved_queries_dir` values are anchored to the
+/// canonical parent directory of the config file, independent of process CWD.
+pub fn resolve_saved_queries_dir(
+    config_path: &std::path::Path,
+    configured: Option<&str>,
+) -> Result<PathBuf, AppError> {
+    let canonical_config = std::fs::canonicalize(config_path).map_err(|e| {
+        AppError::Internal(format!(
+            "failed to canonicalize config path {}: {e}",
+            config_path.display()
+        ))
+    })?;
+    let config_dir = canonical_config
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let dir = match configured {
+        Some(d) => {
+            let path = PathBuf::from(d);
+            if path.is_absolute() {
+                path
+            } else {
+                config_dir.join(path)
+            }
+        }
+        None => config_dir.join("datasets.d"),
+    };
+    Ok(dir)
+}
+
+/// Display a managed TOML path relative to the loaded config directory when
+/// possible (for example `datasets.d/my_query.toml`).
+pub fn display_path_relative_to_config(path: &std::path::Path) -> String {
+    if let Some(config_path) = source_config_path()
+        && let Some(config_dir) = config_path.parent()
+        && let Ok(rel) = path.strip_prefix(config_dir)
+    {
+        return rel.display().to_string();
+    }
+    path.display().to_string()
 }
 
 /// Mount paths the user MUST NOT pick for `[docs].path` or
@@ -1531,21 +1609,11 @@ impl AppConfig {
         // Load datasets.d/ managed datasets BEFORE validate so the full
         // merged dataset list (with dependency cross-references) is validated
         // as a unit.
-        let config_dir = Path::new(path)
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .to_path_buf();
-        let managed_dir: PathBuf = match &cfg.server.saved_queries_dir {
-            Some(d) => {
-                let p = PathBuf::from(d);
-                if p.is_absolute() {
-                    p
-                } else {
-                    config_dir.join(p)
-                }
-            }
-            None => config_dir.join("datasets.d"),
-        };
+        let canonical_path = std::fs::canonicalize(path).map_err(|e| {
+            AppError::Internal(format!("failed to canonicalize config path {path}: {e}"))
+        })?;
+        let managed_dir =
+            resolve_saved_queries_dir(&canonical_path, cfg.server.saved_queries_dir.as_deref())?;
         if managed_dir.is_dir() {
             let managed = AppConfig::load_managed_dir(&managed_dir)?;
             if !managed.is_empty() {
@@ -1564,10 +1632,9 @@ impl AppConfig {
         }
 
         cfg.validate()?;
-        // Remember where we loaded from so the explorer can optionally
-        // append newly-registered datasets back to this file. Ignore the
-        // error if it was already set (only the first load wins).
-        let _ = SOURCE_CONFIG_PATH.set(PathBuf::from(path));
+        // Remember where we loaded from so the explorer can optionally append
+        // newly-registered datasets back to this file.
+        set_source_config_path(canonical_path);
         Ok(cfg)
     }
 
@@ -2473,7 +2540,7 @@ impl DatasetConfig {
         let block = self.to_toml_block()?;
         let mut file = std::fs::OpenOptions::new()
             .append(true)
-            .open(path)
+            .open(&path)
             .map_err(|e| {
                 AppError::Internal(format!("failed to open config {}: {e}", path.display()))
             })?;
@@ -2481,7 +2548,7 @@ impl DatasetConfig {
         write!(file, "\n{block}").map_err(|e| {
             AppError::Internal(format!("failed to write config {}: {e}", path.display()))
         })?;
-        Ok(path.to_path_buf())
+        Ok(path)
     }
 }
 
@@ -2709,6 +2776,73 @@ mod tests {
         assert!(s.quack.read_only);
         assert_eq!(s.prefix, "");
         assert!(s.listen.is_loopback());
+    }
+
+    #[test]
+    fn duration_format_round_trips() {
+        for (dur, expected) in [
+            (Duration::from_secs(5), "5s"),
+            (Duration::from_millis(500), "500ms"),
+            (Duration::from_secs(15 * 60), "15m"),
+            (Duration::from_secs(2 * 3600), "2h"),
+            (Duration::from_secs(86_400), "1d"),
+            (Duration::from_millis(0), "0s"),
+        ] {
+            assert_eq!(format_duration(&dur), expected);
+            assert_eq!(parse_duration(expected).unwrap(), dur);
+        }
+    }
+
+    #[test]
+    fn managed_query_with_refresh_round_trips() {
+        // Regression: persisting a saved query with a [dataset.refresh] block
+        // and reloading it must not fail. Duration fields (debounce, timeout,
+        // interval) previously serialized as bare integers, which the string
+        // deserializer rejected on the next startup.
+        let cfg = DatasetConfig {
+            name: "same_location_accidents".into(),
+            source: SourceConfig {
+                kind: SourceKind::Query,
+                location: String::new(),
+                sql: Some("SELECT id FROM base".into()),
+                depends_on: vec!["base".into()],
+            },
+            managed: true,
+            temp: false,
+            refresh: Some(RefreshConfig {
+                interval: Some(Duration::from_secs(15 * 60)),
+                on_upstream_reload: true,
+                timeout: Duration::from_secs(600),
+                jitter: true,
+                debounce: Duration::from_secs(5),
+            }),
+            materialize: None,
+            index: IndexConfig::default(),
+            s3: None,
+            columns: Vec::new(),
+            dict_encode: true,
+            lazy: false,
+            predicate_filter: Default::default(),
+            projection_filter: Default::default(),
+            on_start: OnStart::Eager,
+        };
+
+        let toml_text = cfg.to_managed_toml().unwrap();
+
+        // Parse it back exactly as load_managed_dir does.
+        #[derive(serde::Deserialize)]
+        struct OneDataset {
+            #[serde(rename = "dataset", default)]
+            datasets: Vec<DatasetConfig>,
+        }
+        let parsed: OneDataset = toml::from_str(&toml_text)
+            .unwrap_or_else(|e| panic!("managed TOML failed to reload: {e}\n---\n{toml_text}"));
+        assert_eq!(parsed.datasets.len(), 1);
+        let rc = parsed.datasets[0].refresh.as_ref().unwrap();
+        assert_eq!(rc.interval, Some(Duration::from_secs(15 * 60)));
+        assert_eq!(rc.debounce, Duration::from_secs(5));
+        assert_eq!(rc.timeout, Duration::from_secs(600));
+        assert!(rc.on_upstream_reload);
     }
 
     #[test]

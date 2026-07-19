@@ -908,11 +908,13 @@ async fn unknown_filter_column_fails_registration() {
 
 use datapress_core::backend::Backend;
 
+type ParquetFixture<'a> = (&'a str, &'a [i64], &'a [&'a str], &'a [f64]);
+
 /// Build an `AppConfig` with `n` file-backed parquet datasets plus the
 /// given query datasets. Returns (cfg, tempdir) — tempdir holds the
 /// parquet files so they outlive the test.
 fn make_query_cfg(
-    file_datasets: &[(&str, &[i64], &[&str], &[f64])],
+    file_datasets: &[ParquetFixture<'_>],
     query_datasets: &[(&str, &str, &[&str])], // (name, sql, depends_on)
 ) -> (AppConfig, TempDir) {
     let tmp = TempDir::new().unwrap();
@@ -1349,10 +1351,7 @@ fn df_validation_rejections() {
 /// Uses only a parquet fixture for the base dataset (no HTTP server needed).
 #[tokio::test]
 async fn phase6_managed_query_persisted_round_trip_df() {
-    use datapress_core::config::{
-        AppConfig, MaterializeConfig, MaterializeResidency, OnStart, StorageBackendKind,
-        StorageConfig,
-    };
+    use datapress_core::config::{AppConfig, OnStart};
 
     let tmp = TempDir::new().unwrap();
 

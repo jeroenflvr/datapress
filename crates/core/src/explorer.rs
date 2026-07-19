@@ -77,6 +77,8 @@ pub struct ExplorerState {
     /// `"s3"`.  `None` when `[server.storage]` is not configured — the
     /// residency/sort_by form fields are hidden when `None` (R8.7).
     pub storage_backend: Option<String>,
+    /// Directory used for persisted saved-query TOML files.
+    pub saved_queries_dir: Option<std::path::PathBuf>,
 }
 
 #[derive(Template)]
@@ -166,6 +168,8 @@ struct DatasetTemplate {
     /// Whether this dataset was created via the saved-queries API
     /// (managed = true). Only managed datasets show the delete action.
     is_managed: bool,
+    /// Relative managed TOML path for persisted saved-query datasets.
+    managed_file: String,
 }
 
 struct ColumnView {
@@ -606,6 +610,19 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
             ),
         };
 
+    let is_managed = state.backend.is_managed(&name);
+    let managed_file = if is_managed && !state.backend.is_temp(&name) {
+        state
+            .saved_queries_dir
+            .as_ref()
+            .map(|dir| dir.join(format!("{name}.toml")))
+            .filter(|path| path.is_file())
+            .map(|path| crate::config::display_path_relative_to_config(&path))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+
     let tpl = DatasetTemplate {
         name: name.clone(),
         rows,
@@ -631,7 +648,8 @@ async fn dataset_detail(state: web::Data<ExplorerState>, path: web::Path<String>
         s3_partitioning,
         s3_creds,
         api_base: state.api_base.clone(),
-        is_managed: state.backend.is_managed(&name),
+        is_managed,
+        managed_file,
     };
     render(&tpl)
 }

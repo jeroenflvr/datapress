@@ -12,7 +12,6 @@ use arrow::record_batch::RecordBatch;
 use parquet::arrow::ArrowWriter;
 use tempfile::TempDir;
 
-use datapress_core::backend::Backend;
 use datapress_core::config::{
     AppConfig, DataFusionConfig, DatasetConfig, IndexConfig, MaterializeConfig,
     MaterializeResidency, ServerConfig, SourceConfig, SourceKind, StorageBackendKind,
@@ -572,7 +571,7 @@ async fn test_df_lazy_with_inmemory_object_store() {
     // Use an in-memory object store to test S3-style path construction without
     // needing a real S3 endpoint. We inject it via a custom StorageConfig-alike
     // and build the store manually.
-    use datapress_core::storage::{MaterializationStorage, build_materialization_storage};
+    use datapress_core::storage::build_materialization_storage;
 
     let tmp = TempDir::new().unwrap();
     let src_path = tmp.path().join("src.parquet");

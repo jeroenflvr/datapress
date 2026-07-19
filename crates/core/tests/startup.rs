@@ -76,6 +76,7 @@ impl ControllableBackend {
         }
     }
 
+    #[allow(dead_code)]
     fn set_building(&self, name: &str) {
         let mut lock = self.datasets.lock().unwrap();
         if let Some((_, e)) = lock.iter_mut().find(|(n, _)| n.as_str() == name) {
