@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.7.1] - 2026-07-19
+
+### Bug Fixes
+
+- Materialized queries from cli ([37f70b3](https://github.com/jeroenflvr/datapress/commit/37f70b37ece0f1d9c2538104ed3462c9f3197595))
+- Write materialized query def to datasets.d dir ([70bd2da](https://github.com/jeroenflvr/datapress/commit/70bd2dae6dc08d3126ccd1979f028cfcf80b72bb))
+
+### CI
+
+- Add tests ([be37de7](https://github.com/jeroenflvr/datapress/commit/be37de7f4615e4365bf1073ae8f2cc5b8e90b9a7))
+
 ## [0.7.0] - 2026-07-17
 
 ### Bug Fixes
