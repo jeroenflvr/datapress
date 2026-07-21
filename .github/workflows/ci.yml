@@ -82,10 +82,19 @@ jobs:
         run: python3 scripts/check-doc-routes.py
       # Catch dead relative / anchor links in the README and docs source.
       # Offline mode skips external URLs for deterministic, network-free runs.
+      # Exclude:
+      #   - docs/src/architecture/ — internal design briefs that reference
+      #     SVG assets not committed to the repo
+      #   - generated vendor/asset paths that only exist after a build step
       - name: Link check
         uses: lycheeverse/lychee-action@v2
         with:
-          args: --offline --no-progress README.md 'docs/src/**/*.md'
+          args: >-
+            --offline --no-progress
+            --exclude 'assets/vendor/'
+            --exclude 'assets/duckdb-terminal\.html'
+            README.md 'docs/src/**/*.md'
+            --exclude-path 'docs/src/architecture'
           fail: true
 
   audit:

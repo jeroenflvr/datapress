@@ -24,6 +24,17 @@ versioning follows [SemVer](https://semver.org/).
 - Add `docs/src/clients/mcp.md` (Claude Desktop / Claude Code / VS Code examples).
 - README: add MCP section alongside explorer/swagger/metrics.
 - README: fix stale claim that `/sql` allows only one dataset (joins are supported).
+## [0.8.0] - 2026-07-21
+
+### Bug Fixes
+
+- *(ci)* Update docs ([6f41541](https://github.com/jeroenflvr/datapress/commit/6f4154155fc38ff7f53682cdbb99797fd4c240c3))
+- *(ci)* Relative links ([19041b1](https://github.com/jeroenflvr/datapress/commit/19041b11ed71f921a9a196234ecb9715ef833791))
+
+### Documentation
+
+- Clean up ([deb8e90](https://github.com/jeroenflvr/datapress/commit/deb8e9066318899fda1021ece49c396d2f6b6ef7))
+- Polish README/globs + T6 CI hardening ([a2b9979](https://github.com/jeroenflvr/datapress/commit/a2b9979472c5b359c3846adcd71a5b7d354d6a81))
 
 ## [0.7.2] - 2026-07-21
 
