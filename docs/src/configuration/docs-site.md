@@ -1,8 +1,9 @@
 # Documentation site
 
-DataPress can serve **this site** directly from the running binary.
-Disabled by default; opt in with a feature flag at build time **and** a
-config switch at runtime.
+DataPress can serve **this site** directly from the running binary. It
+requires the `docs` build feature (not part of default builds). Once
+compiled in, the runtime `[docs].enabled` switch defaults to `true`, so the
+site is served unless you explicitly set `enabled = false`.
 
 ## Build with the `docs` feature
 
@@ -27,13 +28,13 @@ Add a `[docs]` section to `datasets.toml`:
 
 ```toml
 [docs]
-enabled = true           # default: false
+enabled = true           # default: true (once built with --features docs)
 path    = "/mkdocs"      # default: /mkdocs
 ```
 
 | Field     | Default     | Notes                                                                          |
 |-----------|-------------|--------------------------------------------------------------------------------|
-| `enabled` | `false`     | Master switch. The whole section can be omitted to disable.                    |
+| `enabled` | `true`      | Master switch. Defaults to `true` when the `docs` feature is compiled in; omitting the section keeps it enabled. Set `false` to suppress the UI. |
 | `path`    | `/mkdocs`   | Mount point. Must start with `/`, not end with `/`. Reserved paths are rejected (`/api`, `/api/v1`, `/health*`, `/readyz`, `/version`, `/docs` is reserved for the Swagger UI). |
 
 When the **feature is off** but `enabled = true`, the server logs a

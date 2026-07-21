@@ -44,7 +44,7 @@ enabled = true       # off by default
 path    = "/metrics" # scrape path
 
 [docs]
-enabled = true           # default: false
+enabled = true           # default: true (once built with --features docs)
 path    = "/mkdocs"      # default: /mkdocs
 
 [explorer]
@@ -79,7 +79,7 @@ start_degraded       = true                 # warn-and-continue if IdP unreachab
 
 | Field                   | Default     | Notes                                                                                     |
 |-------------------------|-------------|-------------------------------------------------------------------------------------------|
-| `backend`               | `datafusion`| Informational hint logged at startup. Each binary always runs as its own backend regardless. |
+| `backend`               | `datafusion`| Selects the engine (`datafusion` or `duckdb`). The unified `datapress` binary dispatches on this at startup. The single-backend `datapress-datafusion` / `datapress-duckdb` binaries treat it as an informational hint — a mismatch logs a WARN and the binary runs its compiled-in engine anyway. |
 | `listen`                | `127.0.0.1` | Loopback by default — the service is **not** network-exposed unless you opt in.           |
 | `port`                  | `8080`      | TCP port.                                                                                 |
 | `workers`               | *(unset)*   | Actix worker threads. Unset = one per CPU.                                                |
