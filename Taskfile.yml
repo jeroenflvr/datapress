@@ -41,12 +41,12 @@ tasks:
   build:datafusion:all:
     desc: Build the Arrow + DataFusion-backed binary (release)
     cmds:
-      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion --features pgwire,docs,swagger,auth,metrics,explorer
+      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion --features pgwire,mcp,docs,swagger,auth,metrics,explorer
 
   build:dev:datafusion:all:
     desc: Build the Arrow + DataFusion-backed binary (dev)
     cmds:
-      - cargo build -p datapress-datafusion --bin datapress-datafusion --features pgwire,docs,swagger,auth,metrics,explorer
+      - cargo build -p datapress-datafusion --bin datapress-datafusion --features pgwire,mcp,docs,swagger,auth,metrics,explorer
 
   build:datafusion:pgwire:
     desc: Build the DataFusion binary with the PostgreSQL wire protocol server
@@ -57,7 +57,7 @@ tasks:
     desc: Build the unified `datapress` CLI (both backends bundled, release)
     deps: [docs:build]
     cmds:
-      - cargo build {{.RELEASE}} -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer,pgwire
+      - cargo build {{.RELEASE}} -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer,pgwire,mcp
 
   # ---------------------------------------------------------------------
   # Static (musl) Linux binaries — glibc-free, run on any Linux regardless
@@ -83,7 +83,7 @@ tasks:
     cmds:
       # CXXFLAGS bypasses DuckDB's `__GNUC__ < 5` ABI guard, which zig cc
       # (reporting GCC 4.2.1) would otherwise trip.
-      - CXXFLAGS="-DDUCKDB_CUSTOM_PLATFORM={{.DUCKDB_PLATFORM}}" cargo zigbuild --release --target {{.TARGET}} -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer,pgwire
+      - CXXFLAGS="-DDUCKDB_CUSTOM_PLATFORM={{.DUCKDB_PLATFORM}}" cargo zigbuild --release --target {{.TARGET}} -p datapress --bin datapress --features docs,swagger,auth,metrics,explorer,pgwire,mcp
       - cargo zigbuild --release --target {{.TARGET}} -p datapress-cli --bin datapress-cli
       - 'echo "Built: target/{{.TARGET}}/release/datapress and datapress-cli"'
 
@@ -175,14 +175,14 @@ tasks:
     desc: Run the DuckDB binary (release, with embedded docs site + swagger UI)
     deps: [docs:build]
     cmds:
-      - cargo build {{.RELEASE}} -p datapress-duckdb --bin datapress-duckdb --features docs,swagger,metrics,explorer
+      - cargo build {{.RELEASE}} -p datapress-duckdb --bin datapress-duckdb --features docs,swagger,metrics,explorer,mcp
       - RUST_LOG=info ./target/release/datapress-duckdb
 
   run:datafusion:
     desc: Run the DataFusion binary (release, with embedded docs site + swagger UI)
     deps: [docs:build]
     cmds:
-      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion --features docs,swagger,metrics,explorer,pgwire
+      - cargo build {{.RELEASE}} -p datapress-datafusion --bin datapress-datafusion --features docs,swagger,metrics,explorer,pgwire,mcp
       - RUST_LOG=info ./target/release/datapress-datafusion
 
   check:
@@ -200,9 +200,14 @@ tasks:
     cmds:
       - cargo test -p datapress-core --features explorer
 
+  test:mcp:
+    desc: Run MCP integration tests (requires the `mcp` feature)
+    cmds:
+      - cargo test -p datapress-core --features mcp --test mcp
+
   test:all:
     desc: Run all tests including explorer feature tests
-    deps: [test, test:explorer]
+    deps: [test, test:explorer, test:mcp]
 
   check:no-legacy-api:
     desc: Fail if any source file outside docs/docs/site still references the removed /api unversioned alias
@@ -238,13 +243,13 @@ tasks:
     deps: [docs:build]
     cmds:
       - uv venv --allow-existing
-      - uv tool run --with maturin maturin develop --release --uv --features docs,swagger,auth,metrics,explorer,pgwire
+      - uv tool run --with maturin maturin develop --release --uv --features docs,swagger,auth,metrics,explorer,pgwire,mcp
 
   py:build:
     desc: Build a release wheel into ./target/wheels/ with the published feature set
     deps: [docs:build]
     cmds:
-      - uv tool run --with maturin maturin build --release --features docs,swagger,auth,metrics,explorer,pgwire
+      - uv tool run --with maturin maturin build --release --features docs,swagger,auth,metrics,explorer,pgwire,mcp
 
   # ---------------------------------------------------------------------
   # Documentation (MkDocs + Material)

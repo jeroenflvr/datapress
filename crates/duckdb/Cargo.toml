@@ -19,6 +19,7 @@ swagger = ["datapress-core/swagger"]
 metrics = ["datapress-core/metrics"]
 auth    = ["datapress-core/auth"]
 explorer = ["datapress-core/explorer"]
+mcp     = ["datapress-core/mcp"]
 
 [dependencies]
 datapress-core = { workspace = true, features = ["duckdb"] }

@@ -72,6 +72,7 @@ fn two_dataset_cfg(
         auth: Default::default(),
         metrics: Default::default(),
         explorer: Default::default(),
+        mcp: Default::default(),
         sql: Default::default(),
         datafusion: Default::default(),
         datasets: vec![
@@ -270,6 +271,7 @@ async fn test_duckdb_auto_demotion() {
         auth: Default::default(),
         metrics: Default::default(),
         explorer: Default::default(),
+        mcp: Default::default(),
         sql: Default::default(),
         datafusion: Default::default(),
         datasets: vec![
@@ -366,6 +368,7 @@ async fn test_duckdb_sort_by_ordered_results() {
         auth: Default::default(),
         metrics: Default::default(),
         explorer: Default::default(),
+        mcp: Default::default(),
         sql: Default::default(),
         datafusion: Default::default(),
         datasets: vec![

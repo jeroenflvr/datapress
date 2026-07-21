@@ -68,6 +68,7 @@ async fn make_people_store(location: &str) -> Store {
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        mcp: datapress_core::config::McpConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
         datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets: vec![DatasetConfig {

@@ -104,6 +104,7 @@ async fn make_delta_store_lazy(location: &str, lazy: bool) -> Store {
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        mcp: datapress_core::config::McpConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
         datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets: vec![DatasetConfig {
@@ -168,6 +169,7 @@ async fn make_store_with_max_page_size(location: &str, lazy: bool, max_page_size
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        mcp: datapress_core::config::McpConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
         datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets: vec![DatasetConfig {
@@ -801,6 +803,7 @@ async fn make_store_with_filters(
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        mcp: datapress_core::config::McpConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
         datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets: vec![DatasetConfig {
@@ -867,6 +870,7 @@ async fn unknown_filter_column_fails_registration() {
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        mcp: datapress_core::config::McpConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
         datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets: vec![DatasetConfig {
@@ -977,6 +981,7 @@ fn make_query_cfg(
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        mcp: datapress_core::config::McpConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
         datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets,
@@ -1096,6 +1101,7 @@ async fn df_query_source_reload() {
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        mcp: datapress_core::config::McpConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
         datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets: vec![
@@ -1218,6 +1224,7 @@ fn df_validation_missing_depends_on() {
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        mcp: datapress_core::config::McpConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
         datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets,
@@ -1300,6 +1307,7 @@ fn df_validation_rejections() {
             auth: datapress_core::config::AuthConfig::default(),
             metrics: datapress_core::config::MetricsConfig::default(),
             explorer: datapress_core::config::ExplorerConfig::default(),
+        mcp: datapress_core::config::McpConfig::default(),
             sql: datapress_core::config::SqlConfig::default(),
             datafusion: datapress_core::config::DataFusionConfig::default(),
             datasets,
@@ -1509,7 +1517,7 @@ async fn phase6_managed_query_delete_cleans_storage_df() {
         auth: Default::default(),
         metrics: Default::default(),
         explorer: Default::default(),
-        sql: Default::default(),
+        mcp: Default::default(),        sql: Default::default(),
         datafusion: Default::default(),
         datasets: vec![DatasetConfig {
             name: "base".into(),

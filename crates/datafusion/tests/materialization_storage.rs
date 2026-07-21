@@ -85,6 +85,7 @@ fn two_dataset_cfg(
         auth: Default::default(),
         metrics: Default::default(),
         explorer: Default::default(),
+        mcp: Default::default(),
         sql: Default::default(),
         datafusion: DataFusionConfig::default(),
         datasets: vec![
@@ -707,6 +708,7 @@ async fn test_sort_by_spills_and_nonoverlapping_row_groups() {
         auth: Default::default(),
         metrics: Default::default(),
         explorer: Default::default(),
+        mcp: Default::default(),
         sql: Default::default(),
         datafusion: Default::default(),
         datasets: vec![
@@ -1062,6 +1064,7 @@ async fn test_sort_by_no_spill_fails_resources_exhausted() {
         auth: Default::default(),
         metrics: Default::default(),
         explorer: Default::default(),
+        mcp: Default::default(),
         sql: Default::default(),
         datafusion: Default::default(),
         datasets: vec![DatasetConfig {

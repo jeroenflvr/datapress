@@ -343,6 +343,29 @@ enabled = true       # default once feature compiled in
 path    = "/explore"
 ```
 
+### MCP (AI agents / LLM tools)
+
+Build with `--features mcp` to expose an [MCP (Model Context Protocol)][mcp]
+server at `/mcp`. AI agents and LLM applications can call DataPress datasets
+as structured tools: list, describe schema, query with filters, count rows,
+and (optionally) run raw SQL joins. Disabled by default — opt in explicitly.
+
+```toml
+[mcp]
+enabled    = false    # opt in
+path       = "/mcp"
+expose_sql = false    # also register the sql tool (requires [sql].enabled = true)
+page_size  = 100      # default rows per query_dataset page
+```
+
+Connect via any MCP client. Example with Claude Code:
+
+```bash
+claude mcp add datapress --transport http http://localhost:8080/mcp
+```
+
+[mcp]: https://modelcontextprotocol.io/
+
 ### Metrics (Prometheus)
 
 Build with `--features metrics` to expose a Prometheus scrape endpoint.
@@ -734,7 +757,8 @@ through the engine.
 ### `POST /api/v1/sql` *(raw SQL — opt-in)*
 
 Runs a single read-only `SELECT` / `WITH … SELECT` (or `DESCRIBE <table>`)
-that references **exactly one** registered dataset by its configured `name`.
+referencing any combination of registered datasets — joins, CTEs, and
+subqueries across all registered datasets are supported.
 **Disabled by default** — while off the route returns `404`, so its presence
 isn't even revealed. Every statement is parsed and validated (no file
 functions, `ATTACH`, `COPY`, `PRAGMA`, DDL or DML) before any engine sees it.
