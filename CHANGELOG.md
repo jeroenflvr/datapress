@@ -3,6 +3,28 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [Unreleased]
+
+### Features
+
+- *(mcp)* Add `mcp` cargo feature: MCP 2025-11-25 streamable-HTTP server at
+  configurable path (default `/mcp`), exposing 6 tools (`list_datasets`,
+  `describe_dataset`, `describe_all_datasets`, `query_dataset`, `count_rows`,
+  `sql`) over hand-rolled JSON-RPC 2.0 with no new dependencies.
+- *(config)* Add `[mcp]` config block with `enabled`, `path`, `expose_sql`,
+  `page_size`, and `allowed_origins` fields; startup path-collision validation.
+- *(mcp)* Origin validation (DNS-rebinding guard) on the MCP endpoint.
+- *(mcp)* `Mcp-Session-Id` header injected on `initialize` responses.
+- *(mcp)* RFC 9728 `/.well-known/oauth-protected-resource` metadata endpoint
+  (only when both `mcp` and `auth` features are compiled in and enabled).
+
+### Documentation
+
+- Add `docs/src/configuration/mcp.md` (MCP configuration reference).
+- Add `docs/src/clients/mcp.md` (Claude Desktop / Claude Code / VS Code examples).
+- README: add MCP section alongside explorer/swagger/metrics.
+- README: fix stale claim that `/sql` allows only one dataset (joins are supported).
+
 ## [0.7.2] - 2026-07-21
 
 ### Bug Fixes

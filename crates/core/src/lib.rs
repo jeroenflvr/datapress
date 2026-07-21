@@ -34,3 +34,5 @@ pub mod storage;
 #[cfg(feature = "swagger")]
 pub mod swagger;
 pub mod timeout;
+#[cfg(feature = "mcp")]
+pub mod mcp;

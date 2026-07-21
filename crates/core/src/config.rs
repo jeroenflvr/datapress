@@ -228,6 +228,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub sql: SqlConfig,
     #[serde(default)]
+    pub mcp: McpConfig,
+    #[serde(default)]
     pub datafusion: DataFusionConfig,
     #[serde(default)]
     pub auth: AuthConfig,
@@ -1058,6 +1060,58 @@ impl Default for SqlConfig {
     }
 }
 
+/// MCP (Model Context Protocol) server endpoint (`[mcp]` block).
+///
+/// Exposes dataset discovery and query tools over streamable HTTP at
+/// `{prefix}{path}` (default `/mcp`), using the MCP 2025-11-25 revision.
+/// The protocol layer is hand-rolled JSON-RPC 2.0 with no extra dependencies.
+///
+/// **Disabled by default** (`enabled = false`) — MCP exposes the full query
+/// surface and should be opted into explicitly. When the binary was built
+/// without the `mcp` cargo feature, `enabled = true` is harmless: the server
+/// logs a warning and skips the mount.
+///
+/// The `sql` tool is a conditional extra: it is only offered when BOTH
+/// `[sql].enabled = true` AND `[mcp].expose_sql = true`.
+///
+/// Origin validation: requests carrying an `Origin` header are checked against
+/// the server's own host and `localhost`. Deployments with browser-based MCP
+/// clients behind a reverse proxy should add extra origins to
+/// `allowed_origins`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct McpConfig {
+    /// Enable the MCP endpoint. Default `false`.
+    pub enabled: bool,
+    /// URL path for the MCP endpoint. Must start with `/` and not end with
+    /// `/`. Default `/mcp`.
+    pub path: String,
+    /// Offer the `sql` tool via MCP. Only has effect when `[sql].enabled =
+    /// true` is also set. Default `false`.
+    pub expose_sql: bool,
+    /// Default `page_size` injected into `query_dataset` calls that omit it.
+    /// Clamped to `server.max_page_size` at runtime. Default `100`.
+    pub page_size: u64,
+    /// Extra `Origin` header values accepted on the MCP endpoint (in addition
+    /// to same-host and localhost). Leave empty for same-host + localhost only.
+    /// Required when browser-based MCP clients connect through a reverse proxy
+    /// whose origin differs from the server's bind address.
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
+}
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            path: "/mcp".into(),
+            expose_sql: false,
+            page_size: 100,
+            allowed_origins: vec![],
+        }
+    }
+}
+
 /// DataFusion backend performance tuning (`[datafusion]` block).
 ///
 /// Every knob is **off / stock by default**, so the backend behaves exactly
@@ -1883,6 +1937,47 @@ impl AppConfig {
             if ep == &self.metrics.path {
                 return Err(AppError::Internal(format!(
                     "explorer.path and metrics.path must differ (both '{ep}')"
+                )));
+            }
+        }
+
+        // MCP endpoint mount path. Validated even when disabled so an
+        // inactive config typo can't go unnoticed.
+        {
+            let mp = &self.mcp.path;
+            if !mp.starts_with('/') {
+                return Err(AppError::Internal(format!(
+                    "mcp.path must start with '/' (got '{mp}')"
+                )));
+            }
+            if mp.len() > 1 && mp.ends_with('/') {
+                return Err(AppError::Internal(format!(
+                    "mcp.path must not end with '/' (got '{mp}')"
+                )));
+            }
+            if RESERVED_MOUNTS.iter().any(|r| *r == mp) {
+                return Err(AppError::Internal(format!(
+                    "mcp.path '{mp}' collides with a reserved route"
+                )));
+            }
+            if mp == &self.docs.path {
+                return Err(AppError::Internal(format!(
+                    "mcp.path and docs.path must differ (both '{mp}')"
+                )));
+            }
+            if mp == &self.swagger.path {
+                return Err(AppError::Internal(format!(
+                    "mcp.path and swagger.path must differ (both '{mp}')"
+                )));
+            }
+            if mp == &self.metrics.path {
+                return Err(AppError::Internal(format!(
+                    "mcp.path and metrics.path must differ (both '{mp}')"
+                )));
+            }
+            if mp == &self.explorer.path {
+                return Err(AppError::Internal(format!(
+                    "mcp.path and explorer.path must differ (both '{mp}')"
                 )));
             }
         }
@@ -3010,6 +3105,7 @@ mod tests {
                 swagger: SwaggerConfig::default(),
                 metrics: MetricsConfig::default(),
                 explorer: ExplorerConfig::default(),
+                mcp: McpConfig::default(),
                 sql: SqlConfig::default(),
                 datafusion: DataFusionConfig::default(),
                 auth: AuthConfig::default(),
@@ -3027,6 +3123,7 @@ mod tests {
             swagger: SwaggerConfig::default(),
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
+                mcp: McpConfig::default(),
             sql: SqlConfig::default(),
             datafusion: DataFusionConfig::default(),
             auth: AuthConfig {
@@ -3049,6 +3146,7 @@ mod tests {
             swagger: SwaggerConfig::default(),
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
+                mcp: McpConfig::default(),
             sql: SqlConfig::default(),
             datafusion: DataFusionConfig::default(),
             auth: AuthConfig::default(),
@@ -3082,6 +3180,7 @@ mod tests {
             swagger: SwaggerConfig::default(),
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
+                mcp: McpConfig::default(),
             sql: SqlConfig::default(),
             datafusion: DataFusionConfig::default(),
             auth: AuthConfig::default(),
@@ -3144,6 +3243,7 @@ mod tests {
             swagger: SwaggerConfig::default(),
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
+                mcp: McpConfig::default(),
             sql: SqlConfig::default(),
             datafusion: DataFusionConfig::default(),
             auth: AuthConfig {
@@ -3194,6 +3294,7 @@ mod tests {
             swagger: SwaggerConfig::default(),
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
+                mcp: McpConfig::default(),
             sql: SqlConfig::default(),
             datafusion: DataFusionConfig::default(),
             auth: AuthConfig::default(),
@@ -3522,6 +3623,7 @@ mod tests {
             auth: AuthConfig::default(),
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
+                mcp: McpConfig::default(),
             sql: SqlConfig::default(),
             datafusion: DataFusionConfig::default(),
             datasets: vec![
@@ -3646,6 +3748,7 @@ mod tests {
             auth: AuthConfig::default(),
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
+                mcp: McpConfig::default(),
             sql: SqlConfig::default(),
             datafusion: DataFusionConfig::default(),
             datasets: vec![
@@ -3738,6 +3841,7 @@ mod tests {
             auth: AuthConfig::default(),
             metrics: MetricsConfig::default(),
             explorer: ExplorerConfig::default(),
+                mcp: McpConfig::default(),
             sql: SqlConfig::default(),
             datafusion: DataFusionConfig::default(),
             datasets: vec![

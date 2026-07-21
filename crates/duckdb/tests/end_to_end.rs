@@ -80,6 +80,7 @@ fn make_registry_at(location: &str) -> Arc<Registry> {
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        mcp: datapress_core::config::McpConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
         datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets: vec![DatasetConfig {
@@ -118,6 +119,7 @@ fn make_registry_lazy(location: &str) -> Arc<Registry> {
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        mcp: datapress_core::config::McpConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
         datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets: vec![DatasetConfig {
@@ -211,6 +213,7 @@ fn make_registry_with_filters(
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        mcp: datapress_core::config::McpConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
         datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets: vec![DatasetConfig {
@@ -868,6 +871,7 @@ fn make_query_registry(
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        mcp: datapress_core::config::McpConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
         datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets,
@@ -983,6 +987,7 @@ async fn duck_query_source_reload() {
         auth: datapress_core::config::AuthConfig::default(),
         metrics: datapress_core::config::MetricsConfig::default(),
         explorer: datapress_core::config::ExplorerConfig::default(),
+        mcp: datapress_core::config::McpConfig::default(),
         sql: datapress_core::config::SqlConfig::default(),
         datafusion: datapress_core::config::DataFusionConfig::default(),
         datasets: vec![
@@ -1229,7 +1234,7 @@ async fn phase6_managed_query_delete_cleans_storage_duck() {
         auth: Default::default(),
         metrics: Default::default(),
         explorer: Default::default(),
-        sql: Default::default(),
+        mcp: Default::default(),        sql: Default::default(),
         datafusion: Default::default(),
         datasets: vec![DatasetConfig {
             name: "base".into(),

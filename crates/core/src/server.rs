@@ -392,6 +392,35 @@ async fn run_server(
     let (ttl_tx, ttl_rx) = tokio::sync::mpsc::unbounded_channel::<(tokio::time::Instant, String)>();
     let ttl_handle = TtlHandle::new(ttl_tx);
 
+    #[cfg(not(feature = "mcp"))]
+    if cfg.mcp.enabled {
+        log::warn!(
+            "[mcp] enabled = true in config, but this binary was built \
+             without --features mcp; skipping MCP endpoint"
+        );
+    }
+
+    // Build the MCP settings and compute its prefixed mount string.
+    #[cfg(feature = "mcp")]
+    let mcp_cfg = cfg.mcp.clone();
+    #[cfg(feature = "mcp")]
+    let mcp_mount = format!("{prefix}{}", mcp_cfg.path);
+    #[cfg(feature = "mcp")]
+    let mcp_settings = web::Data::new(crate::mcp::http::McpSettings {
+        enabled: mcp_cfg.enabled,
+        mcp: mcp_cfg.clone(),
+        sql: cfg.sql.clone(),
+        max_page_size,
+        own_host: format!("{}:{}", cfg.server.listen, cfg.server.port),
+    });
+
+    #[cfg(feature = "mcp")]
+    if mcp_cfg.enabled {
+        log::info!("  {mcp_mount} (MCP endpoint):");
+        log::info!("    POST   {mcp_mount}");
+        log::info!("    DELETE {mcp_mount}");
+    }
+
     // Clone backend for the scheduler BEFORE it is moved into HttpServer::new.
     let scheduler_backend = backend.clone();
     // Clone again to install the cascade handle after spawn (both need the
@@ -427,6 +456,10 @@ async fn run_server(
         let prometheus = prometheus.clone();
         #[cfg(feature = "metrics")]
         let datapress_metrics = datapress_metrics.clone();
+        #[cfg(feature = "mcp")]
+        let mcp_mount = mcp_mount.clone();
+        #[cfg(feature = "mcp")]
+        let mcp_settings = mcp_settings.clone();
         let app = App::new()
             .app_data(web::Data::new(backend))
             .app_data(build_info.clone())
@@ -496,6 +529,42 @@ async fn run_server(
         let app = match explorer_state {
             Some(state) => app.configure(|c| crate::explorer::configure(state, c)),
             None => app,
+        };
+        // MCP endpoint — registered BEFORE the prefix scope catch-all for
+        // the same reason as docs/swagger/explorer.
+        #[cfg(feature = "mcp")]
+        let app = {
+            let mcp_settings_clone = mcp_settings.clone();
+            app.configure(|c| {
+                crate::mcp::http::configure(&mcp_mount, mcp_settings_clone, c)
+            })
+        };
+        // MCP OAuth2 protected-resource metadata — only when both auth and
+        // mcp features are on and mcp is runtime-enabled. Served at the
+        // bare root (no prefix) as required by RFC 9728.
+        #[cfg(all(feature = "mcp", feature = "auth"))]
+        let app = {
+            use crate::mcp::http::OAuthProtectedResourceSettings;
+            let mcp_s = mcp_settings.get_ref();
+            let auth_cfg_opt = auth_state.as_ref().map(|s| s.cfg.clone());
+            if mcp_s.enabled {
+                if let Some(auth_cfg) = auth_cfg_opt.as_ref().filter(|a| a.enabled) {
+                    let own_host = mcp_s.own_host.clone();
+                    let resource_settings = web::Data::new(OAuthProtectedResourceSettings {
+                        resource: format!("http://{own_host}/"),
+                        issuer: auth_cfg.issuer.clone(),
+                        scopes_supported: auth_cfg.read_scopes.clone(),
+                    });
+                    app.route(
+                        "/.well-known/oauth-protected-resource",
+                        web::get().to(crate::mcp::http::handle_oauth_protected_resource),
+                    ).app_data(resource_settings)
+                } else {
+                    app
+                }
+            } else {
+                app
+            }
         };
         app.service(
             web::scope(prefix.as_str())

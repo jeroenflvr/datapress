@@ -48,6 +48,14 @@ auth       = ["dep:jsonwebtoken", "jsonwebtoken/aws_lc_rs", "dep:reqwest", "dep:
 # startup when `[explorer.oauth2]` is configured (the API Query tab's
 # Authorization Code + PKCE login).
 explorer   = ["dep:askama", "dep:include_dir", "dep:mime_guess", "dep:reqwest"]
+# Serve an MCP (Model Context Protocol) server over streamable HTTP at a
+# configurable path (default `/mcp`), exposing the dataset query surface as
+# MCP tools. Zero new dependencies — the JSON-RPC 2.0 layer is hand-rolled
+# with `serde_json` (already a workspace dep). Off by default; enable at
+# runtime via `[mcp].enabled = true`. When the binary was built without this
+# feature, `enabled = true` is harmless: the server logs a warning and
+# continues.
+mcp        = []
 
 [dependencies]
 actix-web.workspace   = true

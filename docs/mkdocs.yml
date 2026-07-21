@@ -140,6 +140,7 @@ nav:
       - Indexing: configuration/indexing.md
       - Explorer UI: configuration/explorer.md
       - Swagger UI: configuration/swagger.md
+      - MCP (AI tools): configuration/mcp.md
       - Prometheus metrics: configuration/metrics.md
       - Authentication: configuration/auth.md
       - Documentation site: configuration/docs-site.md
@@ -167,6 +168,7 @@ nav:
       - Rust: clients/rust.md
       - JDBC driver: clients/jdbc.md
       - PostgreSQL (pgwire): clients/postgresql.md
+      - AI agents (MCP): clients/mcp.md
   - Python:
       - python/index.md
       - Config classes: python/config.md
