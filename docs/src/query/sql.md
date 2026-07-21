@@ -310,12 +310,3 @@ table.
 - **Read scopes apply.** When [authentication](../operations/auth.md) is
   enabled, the endpoint enforces the same `read` scopes as the structured
   query API.
-
-## Roadmap
-
-The validation gate already tracks **which** datasets a statement touches
-and enforces a configurable maximum (Phase 1 passes `1`). Cross-dataset
-joins become available by raising that bound — the allowlist, file-function
-denial, single-statement, and read-only guarantees all stay in force. No
-isolated per-dataset connections are used, so a multi-dataset `JOIN` is an
-additive change rather than a rewrite.
