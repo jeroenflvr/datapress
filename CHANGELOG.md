@@ -3,27 +3,8 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
-## [Unreleased]
+## [0.8.1] - 2026-07-21
 
-### Features
-
-- *(mcp)* Add `mcp` cargo feature: MCP 2025-11-25 streamable-HTTP server at
-  configurable path (default `/mcp`), exposing 6 tools (`list_datasets`,
-  `describe_dataset`, `describe_all_datasets`, `query_dataset`, `count_rows`,
-  `sql`) over hand-rolled JSON-RPC 2.0 with no new dependencies.
-- *(config)* Add `[mcp]` config block with `enabled`, `path`, `expose_sql`,
-  `page_size`, and `allowed_origins` fields; startup path-collision validation.
-- *(mcp)* Origin validation (DNS-rebinding guard) on the MCP endpoint.
-- *(mcp)* `Mcp-Session-Id` header injected on `initialize` responses.
-- *(mcp)* RFC 9728 `/.well-known/oauth-protected-resource` metadata endpoint
-  (only when both `mcp` and `auth` features are compiled in and enabled).
-
-### Documentation
-
-- Add `docs/src/configuration/mcp.md` (MCP configuration reference).
-- Add `docs/src/clients/mcp.md` (Claude Desktop / Claude Code / VS Code examples).
-- README: add MCP section alongside explorer/swagger/metrics.
-- README: fix stale claim that `/sql` allows only one dataset (joins are supported).
 ## [0.8.0] - 2026-07-21
 
 ### Bug Fixes
@@ -35,6 +16,10 @@ versioning follows [SemVer](https://semver.org/).
 
 - Clean up ([deb8e90](https://github.com/jeroenflvr/datapress/commit/deb8e9066318899fda1021ece49c396d2f6b6ef7))
 - Polish README/globs + T6 CI hardening ([a2b9979](https://github.com/jeroenflvr/datapress/commit/a2b9979472c5b359c3846adcd71a5b7d354d6a81))
+
+### Features
+
+- Add mcp endpoint ([f48182b](https://github.com/jeroenflvr/datapress/commit/f48182bf4c724bbad8ed203bc0a086c78201b1b0))
 
 ## [0.7.2] - 2026-07-21
 
