@@ -233,7 +233,7 @@ name = "accidents"                    # used in the URL: /api/datasets/accidents
 
 | Field     | Default       | Notes                                                                                          |
 |-----------|---------------|------------------------------------------------------------------------------------------------|
-| `backend` | `datafusion`  | Informational hint; logged at startup. Each binary always runs as its own backend regardless of this value. |
+| `backend` | `datafusion`  | Selects the engine for the unified `datapress` binary (`datafusion` or `duckdb`). Single-backend binaries (`datapress-datafusion` / `datapress-duckdb`) log a WARN on mismatch and run their compiled-in engine regardless. |
 | `listen`  | `127.0.0.1`   | Loopback by default — the service is **not** exposed on a network interface unless you opt in. |
 | `port`    | `8080`        |                                                                                                |
 | `workers` | *(unset)*     | Actix worker threads. Unset = one per CPU.                                                     |
@@ -241,8 +241,12 @@ name = "accidents"                    # used in the URL: /api/datasets/accidents
 | `compress`           | `true`     | Negotiate response compression via `Accept-Encoding` (gzip / brotli / zstd). Disable when sitting behind a proxy that compresses for you. |
 | `max_body_bytes`     | `1048576`  | Maximum accepted JSON request body, in bytes. Bigger bodies are rejected with `413 Payload Too Large`. |
 | `max_page_size`      | `100000`   | Maximum rows returned by one `/query` page. Larger `page_size` values are clamped. |
+| `force_lazy_above_mb` | `0`       | When `> 0`, datasets whose backing files exceed this many MiB are forced into `lazy` mode at startup. `0` disables. DataFusion sizes S3 datasets by listing the object store; DuckDB sizes local sources only. |
 | `request_timeout_ms` | `30000`    | Per-request handler timeout, in milliseconds. Long-running handlers are cancelled and the client gets `504 Gateway Timeout`. `0` disables the timeout. |
-| `shutdown_timeout_secs` | `30`     | Grace period for in-flight requests after the process receives `SIGTERM` / `SIGINT`, in seconds. The listening socket is closed immediately; existing connections then have up to this many seconds to finish before workers are force-stopped. |
+| `shutdown_timeout_secs` | `30`     | Grace period for in-flight requests after the process receives `SIGTERM` / `SIGINT`, in seconds. |
+| `environment`        | *(unset)*  | Label shown in the Explorer navbar badge (e.g. `"production"`). |
+| `environment_color`  | *(unset)*  | Bootstrap colour for the badge (`"danger"`, `"warning"`, etc.). |
+| `saved_queries_dir`  | *(unset)*  | Directory where saved `query` datasets are persisted across restarts. Unset = runtime-only. |
 
 DuckDB builds can also opt into `[server.quack]`, DuckDB's experimental
 remote protocol server. Keep it disabled unless you intentionally want
@@ -333,6 +337,33 @@ for poking at datasets — list / schema browsing plus an API Query tab that
 issues `/query` calls and decodes the Arrow IPC responses client-side. Like
 the docs surfaces it is compiled in opt-in and served by default once present.
 
+```toml
+[explorer]
+enabled = true       # default once feature compiled in
+path    = "/explore"
+```
+
+### Metrics (Prometheus)
+
+Build with `--features metrics` to expose a Prometheus scrape endpoint.
+
+```toml
+[metrics]
+enabled = false      # off by default
+path    = "/metrics"
+```
+
+### DataFusion performance tuning
+
+```toml
+[datafusion]
+pushdown_filters     = false  # push predicates into parquet row-group pruning
+reorder_filters      = false  # reorder predicates by selectivity estimate
+list_files_cache     = false  # cache `list_files` results (lazy datasets)
+list_files_cache_mb  = 64
+list_files_cache_ttl_secs = 60
+```
+
 ### Authentication (OIDC / OAuth2)
 
 Build with `--features auth` to enable JWT bearer enforcement against
@@ -349,7 +380,11 @@ audience        = "api://datapress"
 algorithms      = ["RS256"]
 read_scopes     = ["datasets:read"]
 reload_scopes   = ["datasets:reload"]
+manage_scopes   = ["datasets:manage"]  # default; for register/persist/saved-queries endpoints
 anonymous_read  = false      # set true to keep read endpoints public
+start_degraded  = true       # boot even if the JWKS fetch fails at startup
+leeway_secs     = 60         # clock-skew tolerance
+jwks_refresh_secs = 3600     # background JWKS refresh interval
 tenant_claim    = "/tid"     # JSON-pointer into the JWT claims
 allowed_tenants = ["<tenant-id>"]
 admin_token_fallback = true  # keep X-Admin-Token working in parallel
@@ -466,8 +501,7 @@ connector pointed at `host:port` and the same credentials.
 ## HTTP API
 
 
-Five core routes, both backends — list / schema / query / count / reload —
-plus an opt-in raw-SQL endpoint (see below):
+Routes are versioned under `/api/v1`. Both backends serve the same surface; feature-gated routes are listed separately below.
 
 ### API versioning
 
@@ -773,6 +807,40 @@ The HTTP contract is the same for both backends: clients observe either
 the old dataset or the new dataset, never a partially loaded one. The
 resource profile differs: DataFusion owns the Arrow buffers in process;
 DuckDB relies on DuckDB's storage engine and buffer manager.
+
+### `GET /api/v1/datasets/{name}/status`
+
+Returns the full status entry for one dataset: `state`, `kind`, `residency`,
+row/column counts, refresh timestamps, `consecutive_failures`, `last_error`.
+`state` is one of `pending` | `building` | `published` | `failed`.
+
+### `POST /api/v1/datasets/{name}/query/stream`
+
+Like `/query` but streams **all** matching rows (no pagination) as a single
+Arrow IPC stream. Use when the consumer can absorb the full result in one
+pass (e.g. ML pipelines, full-table exports). The `limit` / `page` /
+`page_size` fields are ignored.
+
+### `GET /api/v1/datasets/{name}/parquet`
+
+Exports the current dataset generation as a self-contained Parquet file with
+HTTP range and `HEAD` support. Cached until the next reload. The
+`.../all.parquet` alias serves the same bytes under a `.parquet`-suffixed URL
+so DuckDB's bare-`FROM` form (`FROM 'http://…/all.parquet'`) auto-detects
+the format.
+
+### `POST /api/v1/datasets/reload-all` *(admin)*
+
+Enqueues every non-lazy, non-skipped dataset in topological dependency order.
+Returns `202` with `{ "enqueued": [...], "skipped": [...] }` immediately;
+reloads run in the background. Requires `X-Admin-Token`.
+
+### `POST /api/v1/queries` / `GET /api/v1/queries` / `DELETE /api/v1/queries/{name}` *(saved queries)*
+
+Runtime management of `query`-kind datasets (materialized views over other
+registered datasets). Require the `datasets:manage` JWT scope or
+`X-Admin-Token`. Created datasets persist across restarts when
+`server.saved_queries_dir` is configured.
 
 ---
 
