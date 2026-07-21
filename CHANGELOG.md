@@ -3,6 +3,21 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.7.2] - 2026-07-21
+
+### Bug Fixes
+
+- *(ci)* Unblock v0.7.1 CI ([fd1215b](https://github.com/jeroenflvr/datapress/commit/fd1215b12acd5a5c34c4be4126996a444d86b915))
+
+### Documentation
+
+- Fill README gaps (T3) — missing server fields, routes, auth, metrics, datafusion, explorer ([f67cb65](https://github.com/jeroenflvr/datapress/commit/f67cb65d27f109f91f1a9ad6c3c6508a06a6aee4))
+- Reconcile README/docs contradictions with code on main ([0f456f5](https://github.com/jeroenflvr/datapress/commit/0f456f5b94af7ea53644fd5b2bcbdf58023ed0ab))
+
+### Miscellaneous
+
+- Cleanup ([a914982](https://github.com/jeroenflvr/datapress/commit/a91498220fa69579033339703aca86d2a291c00e))
+
 ## [0.7.1] - 2026-07-19
 
 ### Bug Fixes
