@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.8.2] - 2026-07-21
+
+### Documentation
+
+- Update with examples ([c00e6ca](https://github.com/jeroenflvr/datapress/commit/c00e6ca459008d9170abff43ac141ce9e654c201))
+
+### Miscellaneous
+
+- Include mcp on published builds ([5abf6a0](https://github.com/jeroenflvr/datapress/commit/5abf6a0947f9ef5dd052a2c9b127c8ed001d6068))
+
 ## [0.8.1] - 2026-07-21
 
 ## [0.8.0] - 2026-07-21
