@@ -85,6 +85,11 @@ async fn make_people_store(location: &str) -> Store {
             lazy: false,
             predicate_filter: Default::default(),
             projection_filter: Default::default(),
+            on_start: Default::default(),
+            refresh: None,
+            materialize: None,
+            managed: false,
+            temp: false,
         }],
     };
     Store::load(&cfg).await.expect("Store::load")
