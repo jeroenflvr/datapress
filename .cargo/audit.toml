@@ -1,0 +1,23 @@
+# cargo-audit configuration.
+#
+# The `ignore` list holds RUSTSEC advisories we have consciously accepted for
+# now, each with a reason and an upstream tracking link. Everything not listed
+# here still fails `cargo audit` in CI.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2026-0194 / RUSTSEC-2026-0195 — quadratic / unbounded allocation
+    # DoS in quick-xml < 0.41.0 when parsing untrusted XML via `NsReader` /
+    # attribute duplicate checks.
+    #
+    # Reachable in our tree ONLY through `object_store` (parsing the
+    # ListBucket-style XML responses of the S3/GCS/Azure endpoint the operator
+    # configures), not via any attacker-facing parser. `object_store 0.13.2`
+    # pins `quick-xml = ^0.39`; the fixed `quick-xml >= 0.41.0` first ships in
+    # `object_store 0.14`, which requires a `datafusion 53 -> 54` + `deltalake`
+    # major upgrade cascade. Deferred to keep the v0.7.1 patch release minimal.
+    #
+    # Tracking issue: https://github.com/jeroenflvr/datapress/issues/20
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+]
