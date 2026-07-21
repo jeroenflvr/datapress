@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.8.3] - 2026-07-21
+
+### CI
+
+- Add mcp to the umbrella crate ([550bd3a](https://github.com/jeroenflvr/datapress/commit/550bd3adf99c0d1ed5887b3dde93dce2b0210211))
+
 ## [0.8.2] - 2026-07-21
 
 ### Documentation
