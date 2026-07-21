@@ -136,6 +136,13 @@ When built with `--features metrics` and `[metrics] enabled = true`:
 
 See [Operations › Prometheus metrics](../operations/metrics.md).
 
+## PostgreSQL wire protocol (optional)
+
+The DataFusion backend, built with `--features pgwire` and enabled under
+`[server.pgwire]`, additionally serves datasets over the PostgreSQL wire
+protocol on a separate TCP port (default `5432`) — this is **not** an HTTP
+route. See [Clients › PostgreSQL](../clients/postgresql.md).
+
 ## Admin
 
 `POST .../reload` requires the `ADMIN_TOKEN` environment variable to

@@ -15,7 +15,7 @@ configure and launch the server from Python.
 [Documentation](https://docs.datap-rs.org)
 
 - Built on [actix-web](https://actix.rs/) 4
-- Datasets declared in a single [`datasets.toml`](datasets.toml) (Rust
+- Datasets declared in a single [`datasets.toml`](CONFIG.md) (Rust
   binaries) or programmatically (Python wrapper)
 - Dynamic schema inference at startup (no hard-coded columns)
 - Identical request/response shapes across both backends
@@ -404,7 +404,8 @@ block — it gets rendered as an `OpenIdConnect` security scheme with PKCE.
 | `kind`    | `location` / `sql`                                  | Notes                                                                                  |
 |-----------|-----------------------------------------------------|----------------------------------------------------------------------------------------|
 | `parquet` | a `.parquet` file                                   | Read as-is.                                                                            |
-| `parquet` | a directory                                         | Every `*.parquet` inside (sorted, non-recursive). No glob patterns.                    |
+| `parquet` | a directory                                         | Every `*.parquet` inside (sorted, non-recursive).                                      |
+| `parquet` | a glob (`data/*/2024-*.parquet`)                    | Supported wildcards: `*`, `?`, `[abc]`. Works for local paths and S3 prefixes on both backends. |
 | `parquet` | `s3://bucket/key.parquet` or `s3://bucket/prefix/`  | Requires a `[dataset.s3]` block. DuckDB autoloads `httpfs`.                            |
 | `delta`   | a local directory                                   | Pointed at the table root (the dir containing `_delta_log/`).                          |
 | `delta`   | `s3://bucket/path/to/table`                         | Requires `[dataset.s3]`. DuckDB autoloads `delta`; DataFusion uses the `deltalake` crate. |
@@ -954,4 +955,7 @@ in `datasets.toml`, not in env vars.
   pages get expensive (see `H5` in `TEST_Q.md`). `ORDER BY` is supported via
   the `order_by` field, but sorted queries always go through the SQL engine
   (no in-memory fast path).
-- DataFusion backend keeps the whole dataset in memory. DuckDB does not.
+- Eager datasets are held resident: DataFusion keeps Arrow `RecordBatch`
+  chunks in RAM, DuckDB uses its own buffer manager. Setting `lazy = true`
+  (or crossing `[server] force_lazy_above_mb`) streams from disk instead —
+  see "Lazy mode" above. So neither backend is unconditionally in-memory.

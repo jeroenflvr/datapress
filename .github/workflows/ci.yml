@@ -71,6 +71,23 @@ jobs:
         run: uv tool run --with 'mkdocs>=1.6,<2' --with 'mkdocs-material>=9.6,<10' mkdocs build -f docs/mkdocs.yml -d site --strict
       - run: cargo test --workspace --features docs,swagger,explorer,pgwire --locked
 
+  docs-checks:
+    name: docs link + route diff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # Every route registered in the code must have a matching row in
+      # docs/src/reference/endpoints.md, so the reference can't drift.
+      - name: Route diff against code
+        run: python3 scripts/check-doc-routes.py
+      # Catch dead relative / anchor links in the README and docs source.
+      # Offline mode skips external URLs for deterministic, network-free runs.
+      - name: Link check
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --offline --no-progress README.md 'docs/src/**/*.md'
+          fail: true
+
   audit:
     name: cargo audit
     runs-on: ubuntu-latest
