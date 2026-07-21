@@ -174,3 +174,95 @@ while True:
         break
     page += 1
 ```
+
+## R11. AI agent session via MCP
+
+Connect an LLM agent to DataPress with the `mcp` feature enabled
+(`[mcp] enabled = true`). The agent follows a typical
+discover → size-check → query → drill-down workflow:
+
+**1. Discover available datasets**
+
+```json
+{
+  "jsonrpc": "2.0", "id": 1,
+  "method": "tools/call",
+  "params": { "name": "list_datasets", "arguments": {} }
+}
+```
+
+**2. Get the schema and a sample row**
+
+```json
+{
+  "jsonrpc": "2.0", "id": 2,
+  "method": "tools/call",
+  "params": { "name": "describe_dataset", "arguments": { "name": "accidents" } }
+}
+```
+
+**3. Count before fetching — avoid surprise result sets**
+
+```json
+{
+  "jsonrpc": "2.0", "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "count_rows",
+    "arguments": {
+      "name": "accidents",
+      "predicates": [
+        { "col": "state",    "op": "eq",  "val": "CA" },
+        { "col": "severity", "op": "gte", "val": 3    }
+      ]
+    }
+  }
+}
+```
+
+**4. Structured query — worst counties in California**
+
+```json
+{
+  "jsonrpc": "2.0", "id": 4,
+  "method": "tools/call",
+  "params": {
+    "name": "query_dataset",
+    "arguments": {
+      "name": "accidents",
+      "predicates": [
+        { "col": "state",    "op": "eq",  "val": "CA" },
+        { "col": "severity", "op": "gte", "val": 3    }
+      ],
+      "group_by": ["county"],
+      "aggregations": [
+        { "op": "count",                     "alias": "n"       },
+        { "col": "severity", "op": "avg",    "alias": "avg_sev" }
+      ],
+      "order_by":  [{ "col": "n", "dir": "desc" }],
+      "page_size": 10
+    }
+  }
+}
+```
+
+**5. Cross-dataset SQL join** *(requires `[mcp].expose_sql = true` and `[sql].enabled = true`)*
+
+```json
+{
+  "jsonrpc": "2.0", "id": 5,
+  "method": "tools/call",
+  "params": {
+    "name": "sql",
+    "arguments": {
+      "sql": "SELECT a.state, COUNT(*) AS n, AVG(a.severity) AS avg_sev FROM accidents a JOIN weather_events w ON a.weather_condition = w.condition WHERE a.severity >= 3 GROUP BY a.state ORDER BY n DESC LIMIT 20"
+    }
+  }
+}
+```
+
+All MCP requests go to `POST /mcp` with `Content-Type: application/json`.
+Tool errors (bad dataset name, policy violation) return HTTP 200 with
+`"isError": true` inside the result — the JSON-RPC call itself succeeded.
+See the [MCP configuration page](../configuration/mcp.md) for setup details.
+
