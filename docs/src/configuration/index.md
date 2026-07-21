@@ -7,8 +7,11 @@ description: >-
 # Configuration
 
 Every DataPress instance reads a single TOML file at startup. By
-convention it's called `datasets.toml`; override with the
-`DATASETS_CONFIG` environment variable.
+convention it's called `datasets.toml`. The unified `datapress` binary
+resolves it from `--config <FILE>`, then `$DATAPRESS_CONFIG_FILE`, then
+`./datasets.toml`, then `$HOME/datasets.toml`; the single-backend
+`datapress-datafusion` / `datapress-duckdb` binaries read the
+`DATASETS_CONFIG` environment variable instead.
 
 It has one `[server]` block and one `[[dataset]]` block per table you
 want to expose.

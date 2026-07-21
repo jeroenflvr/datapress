@@ -75,7 +75,7 @@ Prefer cargo? Install from crates.io:
 
 ```bash
 cargo install datapress        # both DuckDB + DataFusion
-datapress                      # reads ./datasets.toml (or $DATASETS_CONFIG)
+datapress                      # reads ./datasets.toml (or $DATAPRESS_CONFIG_FILE)
 ```
 
 For a slimmer single-backend build, or to opt into the docs / Swagger /
@@ -166,11 +166,11 @@ directory, checksum-verified, no `PATH` edits — using `DATAPRESS_CLI_VERSION` 
 | Aspect              | `datapress-duckdb`                             | `datapress-datafusion`                               |
 |---------------------|------------------------------------------------|------------------------------------------------------|
 | Engine              | DuckDB (embedded C++)                          | Arrow compute + DataFusion (pure Rust)               |
-| Storage             | DuckDB in-memory table per dataset             | One contiguous `RecordBatch` per dataset             |
+| Storage             | DuckDB in-memory table per dataset             | Arrow `RecordBatch` chunks in RAM (eager) or `ListingTable` (lazy)  |
 | Concurrency model   | Connection pool, blocking → `web::block`       | Async-native, multi-threaded `MemTable` partitions   |
 | Predicate execution | DuckDB optimiser + parallel hash/vector ops    | Equality index → SIMD scan → DataFusion SQL          |
 | Indexes             | Native DuckDB internals (zone maps, etc.)      | Per-dataset eq-index built at startup (configurable) |
-| Memory profile      | DuckDB's own buffer manager                    | Whole dataset resident in RAM                        |
+| Memory profile      | DuckDB's own buffer manager                    | Eager: whole dataset resident in RAM; lazy: streamed from parquet   |
 | Binary size         | Bundled DuckDB ≈ tens of MB                    | Lean — pure Rust                                     |
 | Startup time        | Fast (just `read_parquet`)                     | Slower — reads all rows + builds eq-index            |
 | Best at             | Heterogeneous SQL, joins, aggregations         | Dense filter scans, low-latency point lookups        |
@@ -250,17 +250,19 @@ DuckDB clients to attach/query this process directly. It binds to
 `quack:localhost` by default, uses token authentication, and DataPress
 installs a read-only authorization hook by default.
 
-The server exposes three probe endpoints. `/healthz` and `/readyz` are
-mounted at the bare host root (regardless of `prefix`) so orchestrators
-don't need to know how the service is exposed. `/health` lives under
-`prefix` and is intended for in-app health checks.
+The server exposes four probe endpoints, all mounted under `server.prefix`
+(empty by default, so they sit at the host root unless a prefix is set).
+With `prefix = "/dp"` they live at `/dp/healthz`, `/dp/readyz`,
+`/dp/version`, and `/dp/health`. `/healthz` and `/readyz` are the
+liveness/readiness gates for orchestrators; `/health` is an app-level
+liveness alias.
 
-| Route      | Status                                                                 | Body                                                                       |
-|------------|------------------------------------------------------------------------|----------------------------------------------------------------------------|
-| `/healthz` | Liveness — always `200` while the process is running.                  | `{"status":"ok"}`                                                          |
-| `/readyz`  | Readiness — `200` once eager datasets are published (configurable via `[server.startup] readiness`), `503` otherwise. The HTTP listener binds immediately; `/readyz` is the traffic gate. | `{"status":"ready","datasets":N}` / `{"status":"not ready","reason":"..." }` |
-| `/version` | Build / version metadata — always `200`.                              | `{"name":"datapress-core","version":"x.y.z","backend":"DuckDB\|DataFusion","profile":"debug\|release", ...}` |
-| `{prefix}/health` | App-level liveness — always `200`.                             | `{"status":"ok"}`                                                          |
+| Route              | Status                                                                 | Body                                                                       |
+|--------------------|------------------------------------------------------------------------|----------------------------------------------------------------------------|
+| `{prefix}/healthz` | Liveness — always `200` while the process is running.                  | `{"status":"ok"}`                                                          |
+| `{prefix}/readyz`  | Readiness — `200` once eager datasets are published (configurable via `[server.startup] readiness`), `503` otherwise. The HTTP listener binds immediately; `/readyz` is the traffic gate. | `{"status":"ready","datasets":N}` / `{"status":"not ready","reason":"..." }` |
+| `{prefix}/version` | Build / version metadata — always `200`.                              | `{"name":"datapress-core","version":"x.y.z","backend":"DuckDB\|DataFusion","profile":"debug\|release", ...}` |
+| `{prefix}/health`  | App-level liveness — always `200`.                             | `{"status":"ok"}`                                                          |
 
 `/healthz` does not touch the backend, so it stays `200` even while the
 dataset registry is still loading at startup. Use `/readyz` to gate
@@ -424,7 +426,9 @@ startup so that `eq` / `in` predicates resolve in O(1).
 | `none`   | Skip the index entirely — every query goes through DataFusion SQL.     |
 | `list`   | Index only the named `columns`. Useful for huge datasets.              |
 
-Override the config path with `DATASETS_CONFIG=/path/to/file.toml`.
+Override the config path with `--config <FILE>` or `$DATAPRESS_CONFIG_FILE`
+(the unified `datapress` binary); the single-backend `datapress-datafusion` /
+`datapress-duckdb` binaries read `$DATASETS_CONFIG` instead.
 
 ### PostgreSQL wire protocol (pgwire) *(DataFusion only, opt-in)*
 
@@ -855,7 +859,8 @@ inner loops.
 
 | Variable          | Default          | Purpose                                                                          |
 |-------------------|------------------|----------------------------------------------------------------------------------|
-| `DATASETS_CONFIG` | `datasets.toml`  | Path to the dataset registry file.                                               |
+| `DATAPRESS_CONFIG_FILE` | *(unset)*  | Config path for the unified `datapress` binary (after `--config`, before `./datasets.toml` and `$HOME/datasets.toml`). |
+| `DATASETS_CONFIG` | `datasets.toml`  | Config path for the single-backend `datapress-datafusion` / `datapress-duckdb` binaries. |
 | `ADMIN_TOKEN`     | *(unset)*        | Enables `POST /api/v1/datasets/{name}/reload`. Unset = admin endpoints disabled. |
 | `DB_POOL_SIZE`    | `num_cpus`       | DuckDB connection pool size (DuckDB only).                                       |
 | `RUST_LOG`        | `info`           | Standard `env_logger` filter.                                                    |
