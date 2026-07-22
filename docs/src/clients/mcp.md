@@ -121,3 +121,50 @@ you invoke each tool interactively.
 3. Call `count_rows` with predicates → check result size before paginating.
 4. Call `query_dataset` → run structured queries with filters, sorting, and pagination.
 5. Call `sql` (if enabled) → express joins or complex expressions the structured tool cannot.
+
+## Local models (Ollama)
+
+Run DataPress tools with a local model via [`ollmcp`][ollmcp]:
+
+```bash
+# Install ollmcp once
+pip install mcp-client-for-ollama   # or: uvx --from mcp-client-for-ollama ollmcp
+
+# Run with qwen3 (recommended: ≥14B or MoE variant for multi-step queries)
+uvx --from mcp-client-for-ollama ollmcp \
+  --servers-json '{"mcpServers":{"datapress":{"type":"streamable_http","url":"http://localhost:8080/mcp"}}}' \
+  --model qwen3:30b-a3b
+```
+
+Or save the server config in a file and reference it:
+
+```json
+{
+  "mcpServers": {
+    "datapress": {
+      "type": "streamable_http",
+      "url": "http://localhost:8000/mcp"
+    }
+  }
+}
+```
+
+```bash
+uvx --from mcp-client-for-ollama ollmcp \
+  --servers-json-file datapress-mcp.json \
+  --model qwen3:30b-a3b
+```
+
+[ollmcp]: https://github.com/pabl-o-ce/mcp-client-for-ollama
+
+### Troubleshooting with Ollama
+
+- **Model calls no tools.** Reasoning models with thinking enabled sometimes
+  emit a thinking block but no tool call. Disable thinking with `/tm` in the
+  chat, or switch to a non-reasoning model.
+- **Tool calls fail or truncate.** Raise `num_ctx` to at least 16 000 tokens
+  in the Ollama model file. Multi-step queries with large schemas fill context
+  quickly.
+- **Poor multi-step behaviour.** Prefer ≥ 14 B parameter or MoE (mixture-of-
+  experts) models — smaller models struggle with the discover → schema →
+  count → query workflow reliably.

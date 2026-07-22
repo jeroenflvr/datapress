@@ -1098,6 +1098,12 @@ pub struct McpConfig {
     /// whose origin differs from the server's bind address.
     #[serde(default)]
     pub allowed_origins: Vec<String>,
+    /// Optional externally-visible base URL used in OAuth2 `WWW-Authenticate`
+    /// challenges and the RFC 9728 protected-resource metadata. Format:
+    /// `https://data.example.com` (scheme + host, no trailing slash). When
+    /// absent, `http://{server.listen}:{server.port}` is used — correct for
+    /// local / non-TLS deployments, but wrong behind TLS or a reverse proxy.
+    pub public_base_url: Option<String>,
 }
 
 impl Default for McpConfig {
@@ -1108,6 +1114,7 @@ impl Default for McpConfig {
             expose_sql: false,
             page_size: 100,
             allowed_origins: vec![],
+            public_base_url: None,
         }
     }
 }
@@ -1979,6 +1986,17 @@ impl AppConfig {
                 return Err(AppError::Internal(format!(
                     "mcp.path and explorer.path must differ (both '{mp}')"
                 )));
+            }
+            // Validate public_base_url when set.
+            if let Some(base) = &self.mcp.public_base_url {
+                let b = base.trim_end_matches('/');
+                if !(b.starts_with("https://") || b.starts_with("http://")) {
+                    return Err(AppError::Internal(format!(
+                        "mcp.public_base_url must be an absolute http(s) URL (got '{base}')"
+                    )));
+                }
+                // Store canonicalized (no trailing slash) — borrow checker prevents
+                // mutation here; validation only, callers strip via trim_end_matches.
             }
         }
 

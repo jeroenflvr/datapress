@@ -21,6 +21,19 @@ refreshed as work lands. For shipped changes see the
 
 - **pgwire.** A native postgreSQL interface so PowerBI and other Postgres-speaking tools (Tableau, DBeaver, psql, pandas, Alteryx via postgreSQL ODBC, ..) can connect directly.
 
+- **MCP 2026-07-28 revision.** Support the stateless-core revision of the
+  Model Context Protocol as a second accepted protocol version alongside the
+  current 2025-11-25 stable revision. Key additions: `Mcp-Method` /
+  `Mcp-Name` headers and the stateless request model. The transport layer is
+  already structured for this addition (protocol version isolated in
+  `mcp/http.rs`).
+
+- **Per-query engine resource caps.** Bound agent-written joins and
+  aggregations with engine-level memory limits: `memory_limit` for DuckDB and
+  a DataFusion memory pool cap. This prevents a poorly-written SQL tool call
+  from exhausting server memory; the current `request_timeout_ms` only bounds
+  wall-clock time.
+
 ## Q4 2026
 
 - PowerBI [DirectQuery](https://learn.microsoft.com/en-us/power-bi/connect-data/desktop-use-directquery) support.  

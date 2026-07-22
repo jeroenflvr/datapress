@@ -135,6 +135,30 @@ pub fn validate(
     })
 }
 
+/// Validate `sql` against the currently registered datasets and apply each
+/// referenced dataset's column-level access filters.
+///
+/// This is the single authorization pipeline shared by the `/api/v1/sql`
+/// handler and the MCP `sql` tool. Execution (JSON vs Arrow, row caps) stays
+/// with the caller. Accepts joins across any number of registered datasets.
+pub fn validate_and_authorize(
+    sql: &str,
+    backend: &std::sync::Arc<dyn crate::backend::Backend>,
+) -> Result<ValidatedSql, AppError> {
+    let allowed: std::collections::HashSet<String> = backend
+        .names()
+        .into_iter()
+        .map(|n| n.to_lowercase())
+        .collect();
+    let validated = validate(sql, &allowed, allowed.len().max(1))?;
+    for ds in &validated.datasets {
+        if let Ok(schema) = backend.schema(ds) {
+            enforce_column_access(&validated.sql, &schema)?;
+        }
+    }
+    Ok(validated)
+}
+
 /// Returns `true` if `sql` is a single `DESCRIBE` / `DESC <table>` statement.
 ///
 /// `DESCRIBE` yields a schema listing rather than a row stream and cannot be
@@ -776,5 +800,50 @@ mod tests {
         let sch = filtered_schema(&[], &["email"]);
         let err = enforce_column_access("SELECT e.email FROM events e", &sch).unwrap_err();
         assert!(matches!(err, AppError::UnknownColumn(_)));
+    }
+
+    // ------------------------------------------------------------------
+    // validate_and_authorize
+    // ------------------------------------------------------------------
+
+    struct TwoDatasetBackend;
+
+    #[async_trait::async_trait]
+    impl crate::backend::Backend for TwoDatasetBackend {
+        fn names(&self) -> Vec<String> { vec!["a".into(), "b".into()] }
+        fn summary(&self, name: &str) -> Result<crate::backend::DatasetSummary, AppError> {
+            Ok(crate::backend::DatasetSummary { name: name.into(), columns: 1, rows: 0, lazy: false })
+        }
+        fn schema(&self, name: &str) -> Result<std::sync::Arc<DatasetSchema>, AppError> {
+            Ok(std::sync::Arc::new(DatasetSchema::new(name, vec![crate::schema::ColumnInfo {
+                name: "id".into(),
+                logical: crate::schema::LogicalType::Int,
+                sql_type: "BIGINT".into(),
+                nullable: false,
+            }])))
+        }
+        async fn sample(&self, _: &str) -> Result<String, AppError> { Ok("null".into()) }
+        async fn query(&self, _: &str, _: &crate::models::QueryRequest) -> Result<String, AppError> { Ok("[]".into()) }
+        async fn count(&self, _: &str, _: &crate::models::CountRequest) -> Result<i64, AppError> { Ok(0) }
+        async fn reload(&self, _: &str) -> Result<crate::backend::ReloadStats, AppError> { Ok(crate::backend::ReloadStats::default()) }
+    }
+
+    #[tokio::test]
+    async fn validate_and_authorize_join_ok() {
+        let backend: std::sync::Arc<dyn crate::backend::Backend> =
+            std::sync::Arc::new(TwoDatasetBackend);
+        let v = validate_and_authorize(
+            "SELECT a.id, b.id FROM a JOIN b ON a.id = b.id",
+            &backend,
+        ).unwrap();
+        assert_eq!(v.datasets.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn validate_and_authorize_unknown_table_err() {
+        let backend: std::sync::Arc<dyn crate::backend::Backend> =
+            std::sync::Arc::new(TwoDatasetBackend);
+        let err = validate_and_authorize("SELECT * FROM secrets", &backend).unwrap_err();
+        assert!(matches!(err, AppError::InvalidValue(_)));
     }
 }

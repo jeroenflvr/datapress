@@ -412,6 +412,8 @@ async fn run_server(
         sql: cfg.sql.clone(),
         max_page_size,
         own_host: format!("{}:{}", cfg.server.listen, cfg.server.port),
+        public_base: mcp_cfg.public_base_url.clone(),
+        request_timeout_ms: cfg.server.request_timeout_ms,
     });
 
     #[cfg(feature = "mcp")]
@@ -549,9 +551,9 @@ async fn run_server(
             let auth_cfg_opt = auth_state.as_ref().map(|s| s.cfg.clone());
             if mcp_s.enabled {
                 if let Some(auth_cfg) = auth_cfg_opt.as_ref().filter(|a| a.enabled) {
-                    let own_host = mcp_s.own_host.clone();
+                    let base = mcp_s.public_base_url();
                     let resource_settings = web::Data::new(OAuthProtectedResourceSettings {
-                        resource: format!("http://{own_host}/"),
+                        resource: format!("{base}/"),
                         issuer: auth_cfg.issuer.clone(),
                         scopes_supported: auth_cfg.read_scopes.clone(),
                     });

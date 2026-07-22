@@ -393,29 +393,13 @@ pub async fn sql_query(
         return e.error_response();
     }
 
-    // Build the case-insensitive allowlist of registered datasets. Phase 1
-    // permits at most one distinct dataset per statement.
-    let allowed: std::collections::HashSet<String> = backend
-        .names()
-        .into_iter()
-        .map(|n| n.to_lowercase())
-        .collect();
-
-    let validated = match crate::sql::validate(&body.sql, &allowed, allowed.len().max(1)) {
+    // Build the allowlist, validate, and apply column-level access filters via
+    // the shared pipeline. Joins across any number of registered datasets are
+    // supported (the "one dataset" Phase-1 restriction was lifted).
+    let validated = match crate::sql::validate_and_authorize(&body.sql, &backend) {
         Ok(v) => v,
         Err(e) => return e.error_response(),
     };
-
-    // Apply each referenced dataset's column-level access filters. Datasets
-    // with no active filters are a no-op, so this only costs a schema lookup
-    // in the common case.
-    for ds in &validated.datasets {
-        if let Ok(schema) = backend.schema(ds)
-            && let Err(e) = crate::sql::enforce_column_access(&validated.sql, &schema)
-        {
-            return e.error_response();
-        }
-    }
 
     // The effective row cap is the server limit, optionally lowered (never
     // raised) by the request's `max_rows`.

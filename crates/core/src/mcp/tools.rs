@@ -12,7 +12,6 @@
 //! - `count_rows` — cheap row count with optional predicates
 //! - `sql` — raw SELECT (only when `[mcp].expose_sql && [sql].enabled`)
 
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -23,8 +22,6 @@ use crate::models::{CountRequest, QueryRequest};
 use crate::schema::DatasetSchema;
 
 use super::protocol::{ToolInfo, tool_err, tool_ok};
-#[allow(unused_imports)]
-use super::protocol::tool_result;
 
 // ---------------------------------------------------------------------------
 // Tool definitions
@@ -61,7 +58,11 @@ pub static TOOL_QUERY_DATASET: ToolInfo = ToolInfo {
                   (count/sum/avg/min/max), distinct, and pagination. Prefer this over \
                   the sql tool for anything touching a single dataset. Results are \
                   paged; default page_size is small — use count_rows first if unsure \
-                  of result size, and always project only the columns you need.",
+                  of result size, and always project only the columns you need. \
+                  NEVER guess column names: if you have not seen this dataset's schema in \
+                  this conversation, call describe_dataset first. Date/time columns must be \
+                  filtered with the exact column name and a string value in the column's \
+                  native format (see the sample row).",
     input_schema_json: r#"{"type":"object","properties":{"name":{"type":"string"},"columns":{"type":"array","items":{"type":"string"}},"predicates":{"type":"array","items":{"type":"object","properties":{"col":{"type":"string"},"op":{"type":"string","enum":["eq","neq","gt","gte","lt","lte","like","ilike","in","is_null","is_not_null"]},"val":{}},"required":["col","op"]}},"group_by":{"type":"array","items":{"type":"string"}},"aggregations":{"type":"array","items":{"type":"object","properties":{"op":{"type":"string","enum":["count","sum","avg","min","max"]},"col":{"type":"string"},"alias":{"type":"string"}},"required":["op"]}},"having":{"type":"array","items":{"type":"object","properties":{"col":{"type":"string"},"op":{"type":"string"},"val":{}},"required":["col","op"]}},"distinct":{"type":"boolean"},"order_by":{"type":"array","items":{"type":"object","properties":{"col":{"type":"string"},"dir":{"type":"string","enum":["asc","desc"]}},"required":["col"]}},"limit":{"type":"integer"},"page":{"type":"integer"},"page_size":{"type":"integer"}},"required":["name"]}"#,
 };
 
@@ -79,7 +80,8 @@ pub static TOOL_SQL: ToolInfo = ToolInfo {
                   are supported. Not allowed: writes, DDL, file functions, multiple statements. \
                   ALWAYS include a LIMIT. Prefer query_dataset for single-dataset filters; \
                   use this tool for joins and expressions it cannot express. \
-                  Call describe_all_datasets first to get the schemas.",
+                  Call describe_all_datasets first to get the schemas. \
+                  NEVER guess column or dataset names; get them from describe_all_datasets.",
     input_schema_json: r#"{"type":"object","properties":{"sql":{"type":"string","description":"Read-only SQL statement."},"max_rows":{"type":"integer","description":"Optional row cap (clamped to server limit)."}},"required":["sql"]}"#,
 };
 
@@ -116,6 +118,8 @@ pub struct ToolSettings {
     pub sql_enabled: bool,
     pub expose_sql: bool,
     pub sql_max_rows: u64,
+    /// Per-tool-call timeout in ms (from `server.request_timeout_ms`). `0` = disabled.
+    pub request_timeout_ms: u64,
 }
 
 /// Dispatch a `tools/call` request. Returns the JSON value for the
@@ -191,9 +195,14 @@ async fn call_describe_all_datasets(backend: &Arc<dyn Backend>) -> Value {
     let names = backend.names();
     let mut map = serde_json::Map::new();
     for name in &names {
-        if let Ok(schema) = backend.schema(name) {
-            let cols = schema_columns_json(&schema);
-            map.insert(name.clone(), serde_json::json!({ "columns": cols }));
+        match backend.schema(name) {
+            Ok(schema) => {
+                let cols = schema_columns_json(&schema);
+                map.insert(name.clone(), serde_json::json!({ "columns": cols }));
+            }
+            Err(e) => {
+                map.insert(name.clone(), serde_json::json!({ "error": format!("{e}") }));
+            }
         }
     }
     tool_ok(Value::Object(map).to_string())
@@ -243,28 +252,23 @@ async fn call_query_dataset(
     }
 
     let page = req.page;
-    let returned;
-    let data_json = match backend.query(&name, &req).await {
-        Ok(arr) => {
-            // Count returned rows (parse the JSON array).
-            returned = count_json_rows(&arr);
-            arr
-        }
+    let data: Value = match backend.query(&name, &req).await {
+        Ok(arr) => serde_json::from_str(&arr).unwrap_or(Value::Array(vec![])),
         Err(e) => return tool_err(format!("{e}")),
     };
-
-    let mut result = format!(
-        r#"{{"data":{data_json},"page":{page},"page_size":{page_size},"returned":{returned}}}"#
-    );
+    let returned = data.as_array().map(|a| a.len()).unwrap_or(0);
+    let mut envelope = serde_json::json!({
+        "data": data,
+        "page": page,
+        "page_size": page_size,
+        "returned": returned,
+    });
     if returned == page_size as usize {
-        // Append a note suggesting pagination.
-        // Trim the closing `}` and re-append.
-        if result.ends_with('}') {
-            result.pop();
-            result.push_str(r#","note":"more rows may exist; request the next page or add predicates"}"#);
-        }
+        envelope["note"] = Value::String(
+            "more rows may exist; request the next page or add predicates".into(),
+        );
     }
-    tool_ok(result)
+    tool_ok(envelope.to_string())
 }
 
 async fn call_count_rows(args: &Value, backend: &Arc<dyn Backend>) -> Value {
@@ -287,35 +291,6 @@ async fn call_count_rows(args: &Value, backend: &Arc<dyn Backend>) -> Value {
     }
 }
 
-/// Shared SQL execution pipeline, also used by the `/api/v1/sql` handler.
-///
-/// Builds the allowlist, validates, applies column-access filters, runs
-/// the query and returns the JSON data array. Called from both the MCP
-/// `sql` tool and the HTTP SQL handler via the helper below.
-pub async fn execute_sql_pipeline(
-    sql: &str,
-    max_rows: u64,
-    backend: &Arc<dyn Backend>,
-) -> Result<String, crate::errors::AppError> {
-    let allowed: HashSet<String> = backend
-        .names()
-        .into_iter()
-        .map(|n| n.to_lowercase())
-        .collect();
-
-    let validated = crate::sql::validate(sql, &allowed, allowed.len().max(1))?;
-
-    for ds in &validated.datasets {
-        if let Ok(schema) = backend.schema(ds) {
-            crate::sql::enforce_column_access(&validated.sql, &schema)?;
-        }
-    }
-
-    backend
-        .query_sql(&validated.sql, &validated.datasets, max_rows)
-        .await
-}
-
 async fn call_sql(
     args: &Value,
     backend: &Arc<dyn Backend>,
@@ -331,7 +306,14 @@ async fn call_sql(
         None => settings.sql_max_rows,
     };
 
-    match execute_sql_pipeline(&sql, max_rows, backend).await {
+    let validated = match crate::sql::validate_and_authorize(&sql, backend) {
+        Ok(v) => v,
+        Err(e) => return tool_err(format!("{e}")),
+    };
+    match backend
+        .query_sql(&validated.sql, &validated.datasets, max_rows)
+        .await
+    {
         Ok(arr) => tool_ok(format!(r#"{{"data":{arr},"max_rows":{max_rows}}}"#)),
         Err(e) => tool_err(format!("{e}")),
     }
@@ -359,15 +341,6 @@ fn schema_columns_json(schema: &DatasetSchema) -> Value {
     Value::Array(cols)
 }
 
-/// Count rows in a JSON array string without allocating a full Vec. Falls back
-/// to 0 on any parse error. Used to determine whether a `note` about more
-/// pages should be appended.
-fn count_json_rows(json: &str) -> usize {
-    match serde_json::from_str::<Value>(json) {
-        Ok(Value::Array(a)) => a.len(),
-        _ => 0,
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Tests

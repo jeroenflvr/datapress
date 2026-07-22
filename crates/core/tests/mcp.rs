@@ -108,6 +108,8 @@ fn default_settings() -> McpSettings {
         sql: SqlConfig { enabled: true, max_rows: 1000 },
         max_page_size: 1000,
         own_host: "localhost:8080".into(),
+        public_base: None,
+        request_timeout_ms: 0, // disabled in tests
     }
 }
 
@@ -672,4 +674,131 @@ async fn test_canonical_session_replay() {
 
 
 // ---------------------------------------------------------------- mock ----
+
+// ----------------------------------------------------------------
+// New tests for items 5, 6, 7 (no auth feature needed)
+// ----------------------------------------------------------------
+
+#[actix_web::test]
+async fn test_query_note_present_when_full_page() {
+    // MockBackend returns exactly 2 rows; with page_size=2 note must appear.
+    let mut settings = default_settings();
+    settings.mcp.page_size = 2;
+    let app = mk_app!(settings);
+    let req = test::TestRequest::post()
+        .uri("/mcp")
+        .set_json(json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_dataset","arguments":{"name":"events","page_size":2}}}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let text = body["result"]["content"][0]["text"].as_str().unwrap();
+    let data: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(data["returned"], 2);
+    assert!(data.get("note").is_some(), "note should be present: {text}");
+}
+
+#[actix_web::test]
+async fn test_query_note_absent_when_partial_page() {
+    // page_size=100 > 2 rows returned → no note.
+    let mut settings = default_settings();
+    settings.mcp.page_size = 100;
+    let app = mk_app!(settings);
+    let req = test::TestRequest::post()
+        .uri("/mcp")
+        .set_json(json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"query_dataset","arguments":{"name":"events"}}}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let text = body["result"]["content"][0]["text"].as_str().unwrap();
+    let data: Value = serde_json::from_str(text).unwrap();
+    assert!(data.get("note").is_none(), "note should be absent: {text}");
+}
+
+#[actix_web::test]
+async fn test_describe_all_surfaces_schema_error() {
+    // A backend that errors on one dataset should include an "error" key in the
+    // result rather than silently omitting it.
+    struct PartialBackend;
+
+    #[async_trait::async_trait]
+    impl Backend for PartialBackend {
+        fn names(&self) -> Vec<String> { vec!["good".into(), "bad".into()] }
+        fn summary(&self, name: &str) -> Result<datapress_core::backend::DatasetSummary, AppError> {
+            Ok(datapress_core::backend::DatasetSummary {
+                name: name.into(), columns: 0, rows: 0, lazy: false,
+            })
+        }
+        fn schema(&self, name: &str) -> Result<std::sync::Arc<datapress_core::schema::DatasetSchema>, AppError> {
+            if name == "good" {
+                Ok(std::sync::Arc::new(datapress_core::schema::DatasetSchema::new(
+                    "good",
+                    vec![datapress_core::schema::ColumnInfo {
+                        name: "id".into(),
+                        logical: datapress_core::schema::LogicalType::Int,
+                        sql_type: "BIGINT".into(),
+                        nullable: false,
+                    }],
+                )))
+            } else {
+                Err(AppError::NotReady { dataset: name.into(), state: "building".into() })
+            }
+        }
+        async fn sample(&self, _: &str) -> Result<String, AppError> { Ok("null".into()) }
+        async fn query(&self, _: &str, _: &datapress_core::models::QueryRequest) -> Result<String, AppError> { Ok("[]".into()) }
+        async fn count(&self, _: &str, _: &datapress_core::models::CountRequest) -> Result<i64, AppError> { Ok(0) }
+        async fn reload(&self, _: &str) -> Result<datapress_core::backend::ReloadStats, AppError> { Ok(datapress_core::backend::ReloadStats::default()) }
+    }
+
+    let s = web::Data::new(default_settings());
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::<Arc<dyn Backend>>::new(Arc::new(PartialBackend)))
+            .configure(|c| datapress_core::mcp::http::configure("/mcp", s, c)),
+    ).await;
+
+    let req = test::TestRequest::post()
+        .uri("/mcp")
+        .set_json(json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"describe_all_datasets","arguments":{}}}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["result"]["isError"], false, "overall should not be isError");
+    let text = body["result"]["content"][0]["text"].as_str().unwrap();
+    let data: Value = serde_json::from_str(text).unwrap();
+    assert!(data["good"]["columns"].is_array(), "good should have columns");
+    assert!(data["bad"]["error"].is_string(), "bad should have error key");
+}
+
+#[actix_web::test]
+async fn test_disabled_sql_message() {
+    // The exact error message when sql tool is not enabled must not regress.
+    let mut settings = default_settings();
+    settings.mcp.expose_sql = false;
+    let app = mk_app!(settings);
+    let req = test::TestRequest::post()
+        .uri("/mcp")
+        .set_json(json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"sql","arguments":{"sql":"SELECT 1"}}}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["error"]["code"], -32602);
+    let msg = body["error"]["message"].as_str().unwrap_or("");
+    assert_eq!(msg, "unknown tool: sql (not enabled on this server)");
+}
+
+#[actix_web::test]
+async fn test_float_id_roundtrips_as_integer() {
+    // id `1.0` (float) should be accepted and echoed back as `1` (integer).
+    let app = mk_app!(default_settings());
+    let req = test::TestRequest::post()
+        .uri("/mcp")
+        .insert_header(("Content-Type", "application/json"))
+        .set_payload(b"{\"jsonrpc\":\"2.0\",\"id\":1.0,\"method\":\"ping\"}".as_ref())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["id"], 1);
+    assert!(body["result"].is_object());
+}
 

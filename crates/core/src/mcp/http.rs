@@ -25,6 +25,8 @@ use std::sync::Arc;
 
 use actix_web::http::header::{self, HeaderValue};
 use actix_web::{HttpRequest, HttpResponse, web};
+#[cfg(feature = "auth")]
+use actix_web::{HttpMessage, ResponseError};
 use serde_json::Value;
 
 use crate::backend::Backend;
@@ -50,9 +52,23 @@ pub struct McpSettings {
     /// Own host string (host[:port]) extracted from the server bind address,
     /// for origin validation.
     pub own_host: String,
+    /// Optional externally-visible base URL (scheme://host[:port], no trailing
+    /// slash). Used in WWW-Authenticate challenges and well-known metadata.
+    /// Falls back to `http://{own_host}` when absent.
+    pub public_base: Option<String>,
+    /// Per-tool-call timeout in ms (mirrors `server.request_timeout_ms`).
+    /// `0` means disabled. Timed-out calls return `isError: true` (HTTP 200).
+    pub request_timeout_ms: u64,
 }
 
 impl McpSettings {
+    /// Externally-visible base URL without a trailing slash.
+    pub fn public_base_url(&self) -> String {
+        self.public_base
+            .clone()
+            .unwrap_or_else(|| format!("http://{}", self.own_host))
+    }
+
     /// Return `true` if `origin_header` passes the allow-list.
     ///
     /// Accepts:
@@ -232,8 +248,15 @@ pub async fn handle_post(
         }
     };
 
+    // Auth enforcement: must produce 401/403, not a JSON-RPC 200 error.
+    // Checked here (before dispatch) so HTTP status codes are still available.
+    #[cfg(feature = "auth")]
+    if let Err(e) = check_auth(method, &req) {
+        return auth_failure_response(e, &settings);
+    }
+
     // Dispatch.
-    let result = dispatch_method(method, &msg.params, &req, &settings, &backend).await;
+    let result = dispatch_method(method, &msg.params, &settings, &backend).await;
     match result {
         Ok(val) => rpc_json(RpcResponse::ok(Some(id), val)),
         Err(e) => rpc_json(RpcResponse::err(Some(id), e)),
@@ -291,16 +314,9 @@ pub async fn handle_options(settings: web::Data<McpSettings>) -> HttpResponse {
 async fn dispatch_method(
     method: &str,
     params: &Value,
-    req: &HttpRequest,
     settings: &McpSettings,
     backend: &Arc<dyn Backend>,
 ) -> Result<Value, RpcError> {
-    // Auth enforcement (feature-gated).
-    #[cfg(feature = "auth")]
-    check_auth(method, req, settings)?;
-    #[cfg(not(feature = "auth"))]
-    let _ = req; // suppress unused warning
-
     match method {
         "initialize" => handle_initialize(params),
         "ping" => Ok(serde_json::json!({})),
@@ -341,21 +357,40 @@ async fn handle_tools_call(
         sql_enabled: settings.sql.enabled,
         expose_sql: settings.mcp.expose_sql,
         sql_max_rows: settings.sql.max_rows,
+        request_timeout_ms: settings.request_timeout_ms,
     };
 
-    dispatch(name, args, backend, &tool_settings).await
+    let fut = dispatch(name, args, backend, &tool_settings);
+    if tool_settings.request_timeout_ms > 0 {
+        match tokio::time::timeout(
+            std::time::Duration::from_millis(tool_settings.request_timeout_ms),
+            fut,
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(_elapsed) => Ok(super::protocol::tool_err(format!(
+                "query timed out after {}ms; add predicates, reduce page_size, \
+                 or use count_rows first",
+                tool_settings.request_timeout_ms
+            ))),
+        }
+    } else {
+        fut.await
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Auth enforcement (feature-gated)
 // ---------------------------------------------------------------------------
 
+/// Enforce auth for one JSON-RPC method. Returns the underlying `AppError` so
+/// the caller can map it to a proper HTTP 401/403 rather than a JSON-RPC 200.
 #[cfg(feature = "auth")]
 fn check_auth(
     method: &str,
     req: &HttpRequest,
-    _settings: &McpSettings,
-) -> Result<(), RpcError> {
+) -> Result<(), crate::errors::AppError> {
     use std::sync::Arc;
 
     let cfg = match req.app_data::<web::Data<Arc<crate::config::AuthConfig>>>() {
@@ -363,26 +398,52 @@ fn check_auth(
         None => return Ok(()), // auth not configured
     };
 
-    if !cfg.enabled {
-        return Ok(());
-    }
-    if cfg.anonymous_read {
+    if !cfg.enabled || cfg.anonymous_read {
         return Ok(());
     }
 
-    // For lifecycle methods we only require a valid token (no scope check).
-    // For tool calls we require read_scopes.
+    // Lifecycle methods: any valid token is sufficient (no scope check).
+    // We check for a Principal directly because require_scopes(&[]) would
+    // return Ok even with no Principal attached (the anonymous-read fast path).
     match method {
         "initialize" | "ping" | "tools/list" => {
-            crate::auth::require_scopes(req, &[])
-                .map_err(|e| RpcError::internal(format!("auth: {e}")))?;
+            let ext = req.extensions();
+            if ext.get::<crate::auth::Principal>().is_none() {
+                return Err(crate::errors::AppError::Unauthorized(
+                    "missing or invalid bearer token".into(),
+                ));
+            }
+            Ok(())
         }
-        _ => {
-            crate::auth::require_scopes(req, &cfg.read_scopes)
-                .map_err(|e| RpcError::internal(format!("auth: {e}")))?;
-        }
+        _ => crate::auth::require_scopes(req, &cfg.read_scopes),
     }
-    Ok(())
+}
+
+/// Render an auth failure as a proper HTTP 401/403 with a `WWW-Authenticate`
+/// challenge (401) or plain forbidden body (403). This is a transport-level
+/// rejection, so the body is plain JSON rather than a JSON-RPC envelope.
+#[cfg(feature = "auth")]
+fn auth_failure_response(
+    err: crate::errors::AppError,
+    settings: &McpSettings,
+) -> HttpResponse {
+    use crate::errors::AppError;
+    match err {
+        AppError::Unauthorized(msg) => {
+            let base = settings.public_base_url();
+            HttpResponse::Unauthorized()
+                .insert_header((
+                    actix_web::http::header::WWW_AUTHENTICATE,
+                    format!(
+                        "Bearer resource_metadata=\"{base}/.well-known/oauth-protected-resource\""
+                    ),
+                ))
+                .json(serde_json::json!({ "error": format!("unauthorized: {msg}") }))
+        }
+        AppError::Forbidden(msg) => HttpResponse::Forbidden()
+            .json(serde_json::json!({ "error": format!("forbidden: {msg}") })),
+        other => other.error_response(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -534,6 +595,8 @@ mod tests {
             sql: SqlConfig::default(),
             max_page_size: 1000,
             own_host: "example.com".into(),
+            public_base: None,
+            request_timeout_ms: 0,
         };
         // Build a test request with no Origin header.
         let req = actix_web::test::TestRequest::get().to_http_request();
@@ -548,6 +611,8 @@ mod tests {
             sql: SqlConfig::default(),
             max_page_size: 1000,
             own_host: "example.com".into(),
+            public_base: None,
+            request_timeout_ms: 0,
         };
         let req = actix_web::test::TestRequest::get()
             .insert_header(("Origin", "http://localhost:3000"))
@@ -563,6 +628,8 @@ mod tests {
             sql: SqlConfig::default(),
             max_page_size: 1000,
             own_host: "example.com".into(),
+            public_base: None,
+            request_timeout_ms: 0,
         };
         let req = actix_web::test::TestRequest::get()
             .insert_header(("Origin", "https://evil.example.org"))

@@ -36,7 +36,8 @@ enabled    = false    # default FALSE — opt in explicitly
 path       = "/mcp"   # mount point; must start with "/"
 expose_sql = false    # also offer the raw-SQL tool (requires [sql].enabled = true)
 page_size  = 100      # default rows per page for query_dataset calls
-# allowed_origins = []  # extra origins accepted (see Security below)
+# allowed_origins = []        # extra origins accepted (see Security below)
+# public_base_url = "https://data.example.com"  # external URL when behind TLS or a proxy
 ```
 
 | Key               | Default   | Notes |
@@ -46,6 +47,7 @@ page_size  = 100      # default rows per page for query_dataset calls
 | `expose_sql`      | `false`   | Offer the `sql` tool only when this AND `[sql].enabled = true`. |
 | `page_size`       | `100`     | Injected into `query_dataset` calls that omit `page_size`. Clamped to `server.max_page_size`. |
 | `allowed_origins` | `[]`      | Extra `Origin` values accepted in addition to same-host and localhost. |
+| `public_base_url` | *(unset)* | External base URL (`https://host[:port]`, no trailing slash). Used in `WWW-Authenticate` challenges and RFC 9728 metadata. Defaults to `http://{server.listen}:{server.port}` — correct for local/non-TLS but wrong behind TLS or a reverse proxy. |
 
 ## Tools
 
@@ -87,17 +89,29 @@ endpoint enforces the same token requirements as the API:
 
 - `anonymous_read = true` → full MCP surface is public.
 - Otherwise, every tool call requires a valid bearer token with `read_scopes`.
+- `401 Unauthorized` is returned for missing or invalid tokens; `403 Forbidden` for a valid token missing the required scope.
 
 On `401`, the server responds with:
 ```
-WWW-Authenticate: Bearer resource_metadata="{origin}/.well-known/oauth-protected-resource"
+WWW-Authenticate: Bearer resource_metadata="{public_base_url}/.well-known/oauth-protected-resource"
 ```
 
 The `/.well-known/oauth-protected-resource` endpoint (RFC 9728) is served at
 the root (not under the prefix) when both `mcp` and `auth` features are on and
 both are runtime-enabled.
 
+## Tool call timeout
+
+MCP tool calls respect `server.request_timeout_ms` (default 30 000 ms).
+When a tool call exceeds the budget it returns HTTP 200 with
+`"isError": true` and a message containing `"timed out"` — the agent can
+read this and narrow the query (add predicates, reduce `page_size`, call
+`count_rows` first). Set `server.request_timeout_ms = 0` to disable.
+
+Note: the timeout abandons the future but cannot cancel a blocking DuckDB
+query mid-flight; engine-level memory/CPU caps are a separate roadmap item.
+
 ## Connecting clients
 
 See [AI agents / MCP](../clients/mcp.md) for connection examples with Claude
-Desktop, Claude Code, and VS Code.
+Desktop, Claude Code, VS Code, and local Ollama models.

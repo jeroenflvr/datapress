@@ -101,6 +101,10 @@ impl RpcMessage {
             Value::Number(n) => {
                 if let Some(i) = n.as_i64() {
                     Ok(Some(Id::Number(i)))
+                } else if let Some(f) = n.as_f64().filter(|f| f.fract() == 0.0 && f.abs() < 9.0e15) {
+                    // Tolerate whole-number floats (e.g. `1.0`) sent by some
+                    // clients. Round-trip as an integer.
+                    Ok(Some(Id::Number(f as i64)))
                 } else {
                     Err(RpcError::invalid_request(
                         "request id must be an integer or string",
