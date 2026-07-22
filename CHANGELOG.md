@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.8.4] - 2026-07-22
+
+### Bug Fixes
+
+- Multiple sql/mcp issues ([0e5207a](https://github.com/jeroenflvr/datapress/commit/0e5207a7e974542d68ddcf4b2c5f4c484a8ac206))
+
+### Documentation
+
+- Update for mcp ([ba10a48](https://github.com/jeroenflvr/datapress/commit/ba10a48f519642aa0f2b2806792fb38cc547985e))
+
 ## [0.8.3] - 2026-07-21
 
 ### CI
