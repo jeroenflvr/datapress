@@ -14,7 +14,7 @@ products that also handle writes, governance, and broad federation.
 |---|---|---|---|---|
 | Language / engine | Rust · DuckDB and Arrow+DataFusion | Rust · DataFusion | Rust · DataFusion + delta-rs | Python · SQLite |
 | Query interface | Structured JSON predicates (raw SQL opt-in) | SQL · GraphQL · REST · FlightSQL | SQL (HTTP) | SQL · JSON REST · web UI |
-| PostgreSQL wire protocol | **Yes** (DataFusion backend, opt-in) | No | No | No |
+| PostgreSQL wire protocol | **Yes** (DataFusion backend, opt-in) | Yes | No | No |
 | Client drivers / SDKs | **First-party CLI, Python, Rust, REST, HTTP, SQL clients; JDBC driver; any Postgres driver via pgwire** (Tableau, PowerBI, DBeaver, ..) | FlightSQL / REST clients | HTTP / SQL clients | Python API · HTTP |
 | Engine choice | **Two, interchangeable, identical API** | One | One | One |
 | Native sources | Parquet, Delta (local / S3) | Parquet, CSV, JSON, XLS, Delta, MySQL, Postgres, Sheets, Airtable | Parquet/CSV external tables; internal Delta storage | SQLite (plus loaders/plugins) |
