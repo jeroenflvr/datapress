@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/),
 versioning follows [SemVer](https://semver.org/).
+## [0.8.6] - 2026-07-26
+
+### Bug Fixes
+
+- Explorer/sql order by ([6b2165d](https://github.com/jeroenflvr/datapress/commit/6b2165dde6e4145d15c4cbae6c7f1b8d87e4e208))
+- *(doc)* ROAPI does support pgwire ([3eba4ee](https://github.com/jeroenflvr/datapress/commit/3eba4ee6318b8c96a47487b704e2510af2d14fb3))
+
 ## [0.8.4] - 2026-07-22
 
 ### Bug Fixes
