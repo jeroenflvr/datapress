@@ -1033,10 +1033,11 @@ impl Store {
 
     /// Execute a pre-validated raw `SELECT` and return the JSON `data`
     /// array. The statement has already passed
-    /// [`datapress_core::sql::validate`]; here it is wrapped in an outer
-    /// `LIMIT max_rows` so the result is bounded regardless of the user's
-    /// own clauses, executed through the shared `SessionContext`, and run
-    /// through the same fast JSON encoder as [`Self::query`].
+    /// [`datapress_core::sql::validate`]; here a `LIMIT max_rows` fetch is
+    /// applied on top of the planned statement so the result is bounded
+    /// regardless of the user's own clauses, executed through the shared
+    /// `SessionContext`, and run through the same fast JSON encoder as
+    /// [`Self::query`].
     ///
     /// `datasets` lists every dataset name the statement touches. An Arc
     /// clone of each is captured before planning (snapshot rule R4.5/T1.2)
@@ -1056,16 +1057,15 @@ impl Store {
         let _snapshots = self.capture_snapshots(datasets)?;
         let cap = max_rows.max(1);
         let sql = self.canonicalize_sql(sql);
-        // DESCRIBE yields a schema listing and cannot be nested in a
-        // subquery on DataFusion, so run it directly. Its row count is
-        // bounded by the column count and the slice below still enforces
-        // `cap`; everything else is wrapped in an outer LIMIT.
-        let wrapped = if datapress_core::sql::is_describe(&sql) {
-            sql
+        let df = self.ctx.sql(&sql).await?;
+        // DESCRIBE yields a schema listing; its row count is bounded by the
+        // column count and the slice below still enforces `cap`. Everything
+        // else gets the cap as a fetch on top of the user's own plan.
+        let df = if datapress_core::sql::is_describe(&sql) {
+            df
         } else {
-            format!("SELECT * FROM ({sql}) AS _datapress_sql LIMIT {cap}")
+            df.limit(0, Some(cap_to_usize(cap)))?
         };
-        let df = self.ctx.sql(&wrapped).await?;
         let batches = df.collect().await?;
         if batches.is_empty() || batches.iter().all(|b| b.num_rows() == 0) {
             return Ok("[]".to_string());
@@ -1098,15 +1098,14 @@ impl Store {
         let _snapshots = self.capture_snapshots(datasets)?;
         let cap = max_rows.max(1);
         let sql = self.canonicalize_sql(sql);
-        // DESCRIBE cannot be nested in a subquery on DataFusion (see
-        // `query_sql`); run it directly. Its output is bounded by the
-        // column count, so the missing outer LIMIT is harmless.
-        let wrapped = if datapress_core::sql::is_describe(&sql) {
-            sql
+        let df = self.ctx.sql(&sql).await?;
+        // DESCRIBE output is bounded by the column count, so the missing
+        // cap is harmless (see `query_sql`).
+        let df = if datapress_core::sql::is_describe(&sql) {
+            df
         } else {
-            format!("SELECT * FROM ({sql}) AS _datapress_sql LIMIT {cap}")
+            df.limit(0, Some(cap_to_usize(cap)))?
         };
-        let df = self.ctx.sql(&wrapped).await?;
         let batches = df.collect().await?;
         Ok(stream_arrow_batches(batches))
     }
@@ -3992,6 +3991,12 @@ impl Params {
     fn into_values(self) -> Vec<ScalarValue> {
         self.values
     }
+}
+
+/// Clamp a `max_rows` cap to `usize` for `DataFrame::limit` (saturating on
+/// 32-bit targets, where the cap can exceed `usize::MAX`).
+fn cap_to_usize(cap: u64) -> usize {
+    usize::try_from(cap).unwrap_or(usize::MAX)
 }
 
 fn build_query_sql(

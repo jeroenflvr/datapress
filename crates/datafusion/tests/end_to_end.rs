@@ -571,6 +571,58 @@ async fn raw_sql_preserves_identifier_case() {
 }
 
 #[actix_web::test]
+async fn sql_order_by_is_preserved_without_limit() {
+    // Regression: the row cap used to be applied by wrapping the statement
+    // in `SELECT * FROM (<sql>) LIMIT n`. DataFusion drops a `Sort` that is
+    // not at the root of the plan, so an ORDER BY without the user's own
+    // LIMIT came back unsorted. The cap is now a fetch on top of the plan.
+    let tmp = TempDir::new().unwrap();
+    let file = tmp.path().join("people.parquet");
+
+    let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![Arc::new(Int64Array::from(vec![3_i64, 1, 4, 2]))],
+    )
+    .unwrap();
+    let f = std::fs::File::create(&file).unwrap();
+    let mut writer = ArrowWriter::try_new(f, schema, None).unwrap();
+    writer.write(&batch).unwrap();
+    writer.close().unwrap();
+
+    let store = make_store(&file.display().to_string(), true).await;
+
+    let out = store
+        .query_sql(
+            "SELECT id FROM people ORDER BY id DESC",
+            &["people".to_string()],
+            100,
+        )
+        .await
+        .expect("ORDER BY without LIMIT should execute");
+    let ids: Vec<i64> = parse_rows(&out)
+        .iter()
+        .filter_map(|r| r["id"].as_i64())
+        .collect();
+    assert_eq!(ids, vec![4, 3, 2, 1], "rows must come back sorted");
+
+    // The cap must still bound the result, and keep the ordering.
+    let out = store
+        .query_sql(
+            "SELECT id FROM people ORDER BY id",
+            &["people".to_string()],
+            2,
+        )
+        .await
+        .expect("capped ORDER BY should execute");
+    let ids: Vec<i64> = parse_rows(&out)
+        .iter()
+        .filter_map(|r| r["id"].as_i64())
+        .collect();
+    assert_eq!(ids, vec![1, 2], "cap must apply after the sort");
+}
+
+#[actix_web::test]
 async fn sql_describe_returns_schema() {
     // DESCRIBE must run directly (not wrapped in a subquery, which
     // DataFusion cannot plan) and list the dataset's columns.
