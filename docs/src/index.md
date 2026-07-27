@@ -1,7 +1,7 @@
 ---
 description: >-
   DataPress turns Parquet and Delta datasets in object storage into fast, typed
-  HTTP APIs — JSON and Arrow IPC — backed by DuckDB or Apache Arrow + DataFusion,
+  HTTP APIs — JSON and Arrow — backed by Apache Arrow + DataFusion or duckdb,
   with no warehouse and no service layer to build.
 ---
 
@@ -15,8 +15,8 @@ object storage.
 
 DataPress is an opinionated small and fast data server for teams that already have
 columnar files and need a dependable way to publish them: JSON for
-applications, Arrow IPC for analytics clients, health probes for
-orchestrators, mcp endpoint for AI agents, and a Python package for notebooks, jobs, and embedded services.  There's even a JDBC client driver and it's compatible with PostgreSQL drivers using the [PostgreSQL wire protocol](https://beta.pgcon.org/2014/schedule/attachments/330_postgres-for-the-wire.pdf).
+applications, Arrow for analytics clients, health probes for
+orchestrators, mcp endpoint for AI agents, and a Python package for notebooks, jobs, and embedded services.  There's an easy-to-use [cli tool](https://docs.datap-rs.org/clients/cli/) and a [JDBC client driver](https://docs.datap-rs.org/clients/jdbc/). It's even compatible with PostgreSQL drivers using the [PostgreSQL wire protocol](https://beta.pgcon.org/2014/schedule/attachments/330_postgres-for-the-wire.pdf), (including [DirectQuery with PowerBi](https://learn.microsoft.com/en-us/power-bi/connect-data/desktop-use-directquery)).
 
 ```bash
 pip install datap-rs
@@ -70,7 +70,7 @@ DataPress exposes configured datasets over a versioned HTTP API:
 - query columns with predicates, sorting, grouping, aggregation,
   distinct, limits, and pagination;
 - count matching rows without fetching them;
-- stream large results as Arrow IPC;
+- stream large results as Arrow;
 - reload datasets without restarting the server;
 - enforce bearer-token scopes when OIDC/OAuth2 auth is enabled.
 
@@ -111,20 +111,20 @@ DataPress leans on columnar formats and mature query engines instead of
 serialising everything through an application ORM.
 
 - **Rust + actix-web** keeps the HTTP layer compact and predictable.
-- **DuckDB** is excellent for huge or growing datasets, object storage,
-  Delta, and rich SQL execution \u2014 served eagerly from memory or streamed
-  lazily from source.
 - **Apache Arrow + DataFusion** gives a pure-Rust path with resident
   Arrow batches (or lazy streaming) and optional equality indexes for
-  hot point lookups.
-- **Arrow IPC** avoids JSON overhead when clients need many rows.
+  hot point lookups. This is the project's main focus.
+- **DuckDB** is a full-featured in-process database. In some cases, this may
+  perform better or may just be your preference.
+- **Arrow** avoids JSON overhead when clients need many rows.
 - **Projection and predicate pushdown** mean clients can ask for the
   columns and rows they need instead of downloading whole files.
 
 !!! tip "Two engines, one API"
     DuckDB and DataFusion expose the same HTTP request and response
     shapes. Pick the engine in config, A/B-test, and switch without
-    rewriting clients.
+    rewriting clients. Datafusion is the default, but for some cases duckdB might
+    be preferred.  
 
 ## Why Rust
 
